@@ -1,0 +1,413 @@
+<mxfile host="app.diagrams.net" modified="2026-01-21" agent="Claude" version="1.0">
+  <diagram name="IntelliRentOps ERD" id="erd-main">
+    <mxGraphModel dx="1400" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <!-- SECTION: ACTORS -->
+        <mxCell id="section-actors" value="I. ACTORS" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="20" y="10" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- Guest -->
+        <mxCell id="guest" value="Guest&#xa;─────────────&#xa;PK id: UUID&#xa;email: VARCHAR(255)&#xa;phone: VARCHAR(20)&#xa;full_name: VARCHAR(255)&#xa;preferred_contact_method&#xa;ip_address: VARCHAR(45)&#xa;session_token&#xa;created_at, updated_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="20" y="50" width="180" height="170" as="geometry"/>
+        </mxCell>
+        
+        <!-- User -->
+        <mxCell id="user" value="User&#xa;─────────────&#xa;PK id: UUID&#xa;email: VARCHAR(255)&#xa;phone: VARCHAR(20)&#xa;full_name: VARCHAR(255)&#xa;date_of_birth: DATE&#xa;national_id: VARCHAR(50)&#xa;password_hash&#xa;is_active, is_verified&#xa;FK created_by_staff_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="220" y="50" width="180" height="190" as="geometry"/>
+        </mxCell>
+        
+        <!-- Staff -->
+        <mxCell id="staff" value="Staff&#xa;─────────────&#xa;PK id: UUID&#xa;email: VARCHAR(255)&#xa;phone: VARCHAR(20)&#xa;full_name: VARCHAR(255)&#xa;employee_code&#xa;role: ENUM&#xa;department&#xa;hire_date: DATE&#xa;password_hash&#xa;is_active" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="420" y="50" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- Operator -->
+        <mxCell id="operator" value="Operator&#xa;─────────────&#xa;PK id: UUID&#xa;email: VARCHAR(255)&#xa;phone: VARCHAR(20)&#xa;full_name: VARCHAR(255)&#xa;employee_code&#xa;shift: ENUM&#xa;password_hash&#xa;is_active" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="620" y="50" width="180" height="170" as="geometry"/>
+        </mxCell>
+        
+        <!-- Admin -->
+        <mxCell id="admin" value="Admin&#xa;─────────────&#xa;PK id: UUID&#xa;email: VARCHAR(255)&#xa;username: VARCHAR(100)&#xa;full_name: VARCHAR(255)&#xa;password_hash&#xa;role_level: ENUM&#xa;permissions: JSON&#xa;is_active" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="820" y="50" width="180" height="170" as="geometry"/>
+        </mxCell>
+        
+        <!-- Partner -->
+        <mxCell id="partner" value="Partner&#xa;─────────────&#xa;PK id: UUID&#xa;email: VARCHAR(255)&#xa;phone, full_name&#xa;company_name&#xa;tax_code, national_id&#xa;bank_account_number&#xa;commission_rate&#xa;is_verified, is_active" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="50" width="180" height="170" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: ASSETS -->
+        <mxCell id="section-assets" value="II. ASSETS" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="20" y="280" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- Apartment -->
+        <mxCell id="apartment" value="Apartment&#xa;─────────────&#xa;PK id: UUID&#xa;building_name&#xa;apartment_number&#xa;address, city, district&#xa;total_area, usable_area&#xa;number_of_bedrooms&#xa;base_rent_price&#xa;status: ENUM&#xa;FK partner_id&#xa;FK approved_by_operator_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="20" y="320" width="200" height="210" as="geometry"/>
+        </mxCell>
+        
+        <!-- Room -->
+        <mxCell id="room" value="Room&#xa;─────────────&#xa;PK id: UUID&#xa;FK apartment_id&#xa;room_number&#xa;room_type: ENUM&#xa;area&#xa;max_occupancy&#xa;rent_price&#xa;status: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="250" y="320" width="180" height="170" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: CONTRACTS -->
+        <mxCell id="section-contracts" value="III. CONTRACTS" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="460" y="280" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- RentalContract -->
+        <mxCell id="rental_contract" value="RentalContract&#xa;─────────────&#xa;PK id: UUID&#xa;contract_number&#xa;FK apartment_id&#xa;start_date, end_date&#xa;monthly_rent&#xa;deposit_amount&#xa;payment_due_day&#xa;status: ENUM&#xa;FK created_by_staff_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="460" y="320" width="200" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- UserContractMember -->
+        <mxCell id="user_contract_member" value="UserContractMember&#xa;─────────────&#xa;PK id: UUID&#xa;FK user_id&#xa;FK rental_contract_id&#xa;member_type: ENUM&#xa;is_primary_contact&#xa;share_percentage&#xa;access_level: ENUM&#xa;status: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="690" y="320" width="200" height="180" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: REQUESTS -->
+        <mxCell id="section-requests" value="IV. REQUESTS" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="920" y="280" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- ContactRequest -->
+        <mxCell id="contact_request" value="ContactRequest&#xa;─────────────&#xa;PK id: UUID&#xa;FK guest_id&#xa;FK apartment_id&#xa;full_name, email, phone&#xa;message&#xa;status: ENUM&#xa;FK assigned_to_operator_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="920" y="320" width="200" height="170" as="geometry"/>
+        </mxCell>
+        
+        <!-- BookingRequest -->
+        <mxCell id="booking_request" value="BookingRequest&#xa;─────────────&#xa;PK id: UUID&#xa;FK guest_id&#xa;FK apartment_id&#xa;FK contact_request_id&#xa;desired_start/end_date&#xa;total_amount&#xa;status: ENUM&#xa;FK approved_by_operator_id&#xa;FK created_rental_contract_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="320" width="200" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: OPERATIONS - Row 2 -->
+        <mxCell id="section-ops" value="V. OPERATIONS" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="20" y="560" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- Appointment -->
+        <mxCell id="appointment" value="Appointment&#xa;─────────────&#xa;PK id: UUID&#xa;FK guest_id&#xa;FK apartment_id&#xa;FK contact_request_id&#xa;FK assigned_staff_id&#xa;appointment_date/time&#xa;type: ENUM&#xa;status: ENUM&#xa;outcome: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="20" y="600" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- PartnerRequest -->
+        <mxCell id="partner_request" value="PartnerRequest&#xa;─────────────&#xa;PK id: UUID&#xa;FK partner_id&#xa;property_type: ENUM&#xa;address, city, district&#xa;expected_rent_price&#xa;status: ENUM&#xa;FK reviewed_by_operator_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="220" y="600" width="180" height="170" as="geometry"/>
+        </mxCell>
+        
+        <!-- Task -->
+        <mxCell id="task" value="Task&#xa;─────────────&#xa;PK id: UUID&#xa;title, description&#xa;task_type: ENUM&#xa;priority: ENUM&#xa;status: ENUM&#xa;FK assigned_to_staff_id&#xa;FK assigned_by_operator_id&#xa;FK apartment_id&#xa;scheduled_date/time" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="420" y="600" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- MaintenanceRequest -->
+        <mxCell id="maintenance_request" value="MaintenanceRequest&#xa;─────────────&#xa;PK id: UUID&#xa;FK user_id&#xa;FK rental_contract_id&#xa;FK apartment_id&#xa;FK room_id&#xa;category: ENUM&#xa;title, description&#xa;urgency: ENUM&#xa;status: ENUM&#xa;FK assigned_task_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="620" y="600" width="180" height="220" as="geometry"/>
+        </mxCell>
+        
+        <!-- Ticket -->
+        <mxCell id="ticket" value="Ticket&#xa;─────────────&#xa;PK id: UUID&#xa;ticket_number&#xa;FK user_id&#xa;FK rental_contract_id&#xa;category: ENUM&#xa;subject, description&#xa;priority: ENUM&#xa;status: ENUM&#xa;FK assigned_to_staff_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="820" y="600" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: FINANCIAL -->
+        <mxCell id="section-fin" value="VI. FINANCIAL" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="560" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- Invoice -->
+        <mxCell id="invoice" value="Invoice&#xa;─────────────&#xa;PK id: UUID&#xa;invoice_number&#xa;FK rental_contract_id&#xa;billing_period_start/end&#xa;issue_date, due_date&#xa;base_rent&#xa;utility_charges: JSON&#xa;total_amount&#xa;status: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="600" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- Payment -->
+        <mxCell id="payment" value="Payment&#xa;─────────────&#xa;PK id: UUID&#xa;payment_reference&#xa;FK invoice_id&#xa;FK user_id&#xa;amount&#xa;payment_method: ENUM&#xa;payment_gateway&#xa;transaction_id&#xa;payment_date&#xa;status: ENUM&#xa;FK processed_by_staff_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="600" width="180" height="230" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: IOT - Row 3 -->
+        <mxCell id="section-iot" value="VII. IOT &amp; DEVICES" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="20" y="860" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- IoTDevice -->
+        <mxCell id="iot_device" value="IoTDevice&#xa;─────────────&#xa;PK id: UUID&#xa;device_name&#xa;device_type: ENUM&#xa;brand, model&#xa;serial_number&#xa;FK apartment_id&#xa;FK room_id&#xa;status: ENUM&#xa;is_controllable_by_tenant" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="20" y="900" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- UtilityMeter -->
+        <mxCell id="utility_meter" value="UtilityMeter&#xa;─────────────&#xa;PK id: UUID&#xa;meter_number&#xa;meter_type: ENUM&#xa;brand, model&#xa;FK apartment_id&#xa;installation_date&#xa;rate_per_unit&#xa;current_reading&#xa;status: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="220" y="900" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- UtilityReading -->
+        <mxCell id="utility_reading" value="UtilityReading&#xa;─────────────&#xa;PK id: UUID&#xa;FK utility_meter_id&#xa;FK rental_contract_id&#xa;reading_date&#xa;reading_value&#xa;consumption&#xa;reading_type: ENUM&#xa;FK read_by_staff_id&#xa;FK verified_by_staff_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="420" y="900" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: DOCUMENTS -->
+        <mxCell id="section-docs" value="VIII. DOCUMENTS" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="640" y="860" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- Policy -->
+        <mxCell id="policy" value="Policy&#xa;─────────────&#xa;PK id: UUID&#xa;policy_type: ENUM&#xa;title, content&#xa;version&#xa;language&#xa;effective_date&#xa;is_active&#xa;FK created_by_admin_id&#xa;FK approved_by_admin_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="640" y="900" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- LegalDocument -->
+        <mxCell id="legal_document" value="LegalDocument&#xa;─────────────&#xa;PK id: UUID&#xa;document_type: ENUM&#xa;title, description&#xa;file_url&#xa;file_type, file_size&#xa;version&#xa;is_template&#xa;is_public&#xa;FK created_by_admin_id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="840" y="900" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- SECTION: AUDIT -->
+        <mxCell id="section-audit" value="IX. AUDIT &amp; LOGGING" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="860" width="200" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- ActivityLog -->
+        <mxCell id="activity_log" value="ActivityLog&#xa;─────────────&#xa;PK id: UUID&#xa;actor_type: ENUM&#xa;actor_id&#xa;action&#xa;entity_type&#xa;entity_id&#xa;changes: JSON&#xa;ip_address&#xa;status: ENUM&#xa;created_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#e6e6e6;strokeColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="900" width="180" height="210" as="geometry"/>
+        </mxCell>
+        
+        <!-- Notification -->
+        <mxCell id="notification" value="Notification&#xa;─────────────&#xa;PK id: UUID&#xa;recipient_type: ENUM&#xa;recipient_id&#xa;notification_type: ENUM&#xa;channel: ENUM&#xa;title, message&#xa;priority: ENUM&#xa;is_read&#xa;delivery_status: ENUM" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=5;fillColor=#e6e6e6;strokeColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="900" width="180" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- ========== RELATIONSHIPS ========== -->
+        
+        <!-- Staff -> User (created_by) -->
+        <mxCell id="rel1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="staff" target="user">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- Partner -> Apartment -->
+        <mxCell id="rel2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="partner" target="apartment">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1110" y="270"/><mxPoint x="120" y="270"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Apartment -> Room -->
+        <mxCell id="rel3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="apartment" target="room">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- Apartment -> RentalContract -->
+        <mxCell id="rel4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="apartment" target="rental_contract">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- User -> UserContractMember -->
+        <mxCell id="rel5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="user" target="user_contract_member">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="310" y="260"/><mxPoint x="790" y="260"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- RentalContract -> UserContractMember -->
+        <mxCell id="rel6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="rental_contract" target="user_contract_member">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- RentalContract -> Invoice -->
+        <mxCell id="rel7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="rental_contract" target="invoice">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="560" y="550"/><mxPoint x="1110" y="550"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Invoice -> Payment -->
+        <mxCell id="rel8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="invoice" target="payment">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- User -> Payment -->
+        <mxCell id="rel9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="user" target="payment">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="310" y="850"/><mxPoint x="1310" y="850"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- User -> MaintenanceRequest -->
+        <mxCell id="rel10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="user" target="maintenance_request">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="350" y="550"/><mxPoint x="710" y="550"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- User -> Ticket -->
+        <mxCell id="rel11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="user" target="ticket">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="380" y="560"/><mxPoint x="910" y="560"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Guest -> ContactRequest -->
+        <mxCell id="rel12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERzeroToOne;startFill=0;endFill=0;" edge="1" parent="1" source="guest" target="contact_request">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="110" y="260"/><mxPoint x="880" y="260"/><mxPoint x="880" y="405"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Guest -> BookingRequest -->
+        <mxCell id="rel13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERzeroToOne;startFill=0;endFill=0;" edge="1" parent="1" source="guest" target="booking_request">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="140" y="260"/><mxPoint x="140" y="260"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Guest -> Appointment -->
+        <mxCell id="rel14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERzeroToOne;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="guest" target="appointment">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- Staff -> Task -->
+        <mxCell id="rel15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="staff" target="task">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="510" y="260"/><mxPoint x="510" y="580"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Staff -> Appointment -->
+        <mxCell id="rel16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="staff" target="appointment">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="470" y="580"/><mxPoint x="110" y="580"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Operator -> ContactRequest (assigned_to) -->
+        <mxCell id="rel17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERzeroToOne;startFill=0;endFill=0;" edge="1" parent="1" source="operator" target="contact_request">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- Operator -> Task (assigned_by) -->
+        <mxCell id="rel18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERzeroToOne;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="operator" target="task">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="670" y="580"/><mxPoint x="550" y="580"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Partner -> PartnerRequest -->
+        <mxCell id="rel19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="partner" target="partner_request">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1110" y="580"/><mxPoint x="310" y="580"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Apartment -> IoTDevice -->
+        <mxCell id="rel20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="apartment" target="iot_device">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="120" y="840"/><mxPoint x="110" y="840"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Apartment -> UtilityMeter -->
+        <mxCell id="rel21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="apartment" target="utility_meter">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="140" y="840"/><mxPoint x="310" y="840"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- UtilityMeter -> UtilityReading -->
+        <mxCell id="rel22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERone;startFill=0;endFill=0;" edge="1" parent="1" source="utility_meter" target="utility_reading">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- Admin -> Policy (created_by) -->
+        <mxCell id="rel23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERzeroToOne;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="admin" target="policy">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="910" y="840"/><mxPoint x="730" y="840"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Admin -> LegalDocument -->
+        <mxCell id="rel24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERmany;startArrow=ERzeroToOne;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="admin" target="legal_document">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="910" y="850"/><mxPoint x="930" y="850"/></Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Task -> MaintenanceRequest -->
+        <mxCell id="rel25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;endArrow=ERzeroToOne;startArrow=ERzeroToOne;startFill=0;endFill=0;dashed=1;" edge="1" parent="1" source="task" target="maintenance_request">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- LEGEND -->
+        <mxCell id="legend" value="LEGEND" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="50" width="100" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="80" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend1t" value="Actors" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="77" width="60" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="100" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend2t" value="Assets" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="97" width="60" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="120" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend3t" value="Contracts" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="117" width="70" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend4" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="140" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend4t" value="Requests" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="137" width="70" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend5" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="160" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend5t" value="Operations" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="157" width="80" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend6" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="180" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend6t" value="Financial" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="177" width="70" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend7" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="200" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend7t" value="IoT" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="197" width="50" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend8" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="220" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend8t" value="Documents" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="217" width="80" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="legend9" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="240" width="20" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend9t" value="Audit" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="237" width="50" height="20" as="geometry"/>
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
