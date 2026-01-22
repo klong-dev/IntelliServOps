@@ -10,5 +10,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// TODO: Add entity models based on database schema
-// Entity models will be added in the next phase
+// Placeholder model to allow Prisma client generation
+// Real models will be added in the entity implementation phase
+model Placeholder {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+}
+
+// TODO: Add all 26 entity models based on database schema
+// Entities will be added in priority order:
+// 1. Actors: Guest, User, Staff, Operator, Admin, Partner
+// 2. Assets: Apartment, Room
+// 3. Contracts: RentalContract, UserContractMember
+// 4. Requests: ContactRequest, BookingRequest, Appointment, PartnerRequest
+// 5. Operations: Task, MaintenanceRequest, Ticket
+// 6. Financial: Invoice, Payment
+// 7. IoT: IoTDevice, UtilityMeter, UtilityReading
+// 8. Documents: Policy, LegalDocument
+// 9. Audit: ActivityLog, Notification
