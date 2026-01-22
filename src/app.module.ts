@@ -12,14 +12,16 @@ import {
   tuyaConfig,
 } from './config';
 
-// Core Modules
-import { PrismaModule } from './prisma';
-import { RedisModule } from './redis';
-import { QueueModule } from './queue';
-import { AuthModule } from './auth';
-import { JwtAuthGuard, RolesGuard } from './auth/guards';
+// Shared Infrastructure
+import { SharedModule } from './shared';
 
-// Controllers
+// Common Guards
+import { JwtAuthGuard, RolesGuard } from './common/guards';
+
+// Feature Modules
+import { AuthModule } from './modules/auth';
+
+// App Core
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -39,13 +41,13 @@ import { AppService } from './app.service';
       envFilePath: ['.env'],
     }),
 
-    // Core Infrastructure
-    PrismaModule,
-    RedisModule,
-    QueueModule,
+    // Shared Infrastructure (Prisma, Redis, Queue)
+    SharedModule,
+
+    // Feature Modules
     AuthModule,
 
-    // Feature Modules (to be added)
+    // TODO: Add more feature modules as they are developed
     // UsersModule,
     // ApartmentsModule,
     // ContractsModule,
