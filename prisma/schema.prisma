@@ -434,18 +434,22 @@ model User {
 }
 
 model Staff {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  phone        String
-  fullName     String
-  employeeCode String    @unique
-  role         StaffRole
-  department   String?
-  hireDate     DateTime
-  passwordHash String
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id              String    @id @default(uuid())
+  email           String    @unique
+  phone           String
+  fullName        String
+  employeeCode    String    @unique
+  role            StaffRole
+  department      String?
+  workingCity     String?
+  workingDistrict String?
+  latitude        Decimal?  @db.Decimal(10, 8)
+  longitude       Decimal?  @db.Decimal(11, 8)
+  hireDate        DateTime
+  passwordHash    String
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Relations
   createdUsers       User[]              @relation("UserCreatedByStaff")
@@ -545,34 +549,36 @@ model Partner {
 // ============================================================================
 
 model Apartment {
-  id                  String           @id @default(uuid())
-  buildingName        String?
-  apartmentNumber     String
-  floorNumber         Int?
-  address             String
-  city                String
-  district            String
-  ward                String?
-  latitude            Decimal?         @db.Decimal(10, 8)
-  longitude           Decimal?         @db.Decimal(11, 8)
-  totalArea           Decimal          @db.Decimal(10, 2)
-  usableArea          Decimal?         @db.Decimal(10, 2)
-  numberOfBedrooms    Int              @default(0)
-  numberOfBathrooms   Int              @default(0)
-  furnishingStatus    FurnishingStatus @default(unfurnished)
-  amenities           Json?
-  baseRentPrice       Decimal          @db.Decimal(12, 2)
-  depositAmount       Decimal?         @db.Decimal(12, 2)
-  status              ApartmentStatus  @default(available)
-  description         String?
-  images              Json?
-  videoTourUrl        String?
-  yearBuilt           Int?
-  partnerId           String?
-  approvedByOperatorId String?
-  approvedAt          DateTime?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  id                    String           @id @default(uuid())
+  buildingName          String?
+  apartmentNumber       String
+  apartmentType         String?          // VIP, NORMAL, STANDARD, etc.
+  maxConcurrentViewings Int              @default(2)
+  floorNumber           Int?
+  address               String
+  city                  String
+  district              String
+  ward                  String?
+  latitude              Decimal?         @db.Decimal(10, 8)
+  longitude             Decimal?         @db.Decimal(11, 8)
+  totalArea             Decimal          @db.Decimal(10, 2)
+  usableArea            Decimal?         @db.Decimal(10, 2)
+  numberOfBedrooms      Int              @default(0)
+  numberOfBathrooms     Int              @default(0)
+  furnishingStatus      FurnishingStatus @default(unfurnished)
+  amenities             Json?
+  baseRentPrice         Decimal          @db.Decimal(12, 2)
+  depositAmount         Decimal?         @db.Decimal(12, 2)
+  status                ApartmentStatus  @default(available)
+  description           String?
+  images                Json?
+  videoTourUrl          String?
+  yearBuilt             Int?
+  partnerId             String?
+  approvedByOperatorId  String?
+  approvedAt            DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
 
   // Relations
   partner           Partner?           @relation(fields: [partnerId], references: [id])

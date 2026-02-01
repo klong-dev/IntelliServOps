@@ -27,6 +27,7 @@ import { InvoicesModule } from './modules/invoices';
 import { PaymentsModule } from './modules/payments';
 import { MaintenanceModule } from './modules/maintenance';
 import { TicketsModule } from './modules/tickets';
+import { ViewingRequestsModule } from './modules/viewing-requests';
 
 // App Core
 import { AppController } from './app.controller';
@@ -60,6 +61,7 @@ import { AppService } from './app.service';
     PaymentsModule,
     MaintenanceModule,
     TicketsModule,
+    ViewingRequestsModule,
   ],
   controllers: [AppController],
   providers: [
