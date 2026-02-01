@@ -23,6 +23,10 @@ import { AuthModule } from './modules/auth';
 import { UsersModule } from './modules/users';
 import { ApartmentsModule } from './modules/apartments';
 import { ContractsModule } from './modules/contracts';
+import { InvoicesModule } from './modules/invoices';
+import { PaymentsModule } from './modules/payments';
+import { MaintenanceModule } from './modules/maintenance';
+import { TicketsModule } from './modules/tickets';
 
 // App Core
 import { AppController } from './app.controller';
@@ -37,7 +41,7 @@ import { AppService } from './app.service';
         appConfig,
         databaseConfig,
         jwtConfig,
-        redisConfig,
+        // redisConfig,
         payosConfig,
         tuyaConfig,
       ],
@@ -52,13 +56,10 @@ import { AppService } from './app.service';
     UsersModule,
     ApartmentsModule,
     ContractsModule,
-
-    // TODO: Add more feature modules as they are developed
-    // InvoicesModule,
-    // PaymentsModule,
-    // IotModule,
-    // MaintenanceModule,
-    // TicketsModule,
+    InvoicesModule,
+    PaymentsModule,
+    MaintenanceModule,
+    TicketsModule,
   ],
   controllers: [AppController],
   providers: [
