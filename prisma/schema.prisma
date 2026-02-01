@@ -10,21 +10,1292 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Placeholder model to allow Prisma client generation
-// Real models will be added in the entity implementation phase
-model Placeholder {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+// --- Actor Enums ---
+enum PreferredContactMethod {
+  email
+  phone
+  both
+  whatsapp
 }
 
-// TODO: Add all 26 entity models based on database schema
-// Entities will be added in priority order:
-// 1. Actors: Guest, User, Staff, Operator, Admin, Partner
-// 2. Assets: Apartment, Room
-// 3. Contracts: RentalContract, UserContractMember
-// 4. Requests: ContactRequest, BookingRequest, Appointment, PartnerRequest
-// 5. Operations: Task, MaintenanceRequest, Ticket
-// 6. Financial: Invoice, Payment
-// 7. IoT: IoTDevice, UtilityMeter, UtilityReading
-// 8. Documents: Policy, LegalDocument
-// 9. Audit: ActivityLog, Notification
+enum StaffRole {
+  technician
+  customer_service
+  maintenance
+  general
+}
+
+enum OperatorShift {
+  morning
+  afternoon
+  night
+  flexible
+}
+
+enum AdminRoleLevel {
+  super_admin
+  admin
+  manager
+}
+
+enum ActorType {
+  guest
+  user
+  staff
+  operator
+  admin
+  partner
+  system
+}
+
+// --- Asset Enums ---
+enum FurnishingStatus {
+  unfurnished
+  semi_furnished
+  fully_furnished
+}
+
+enum ApartmentStatus {
+  available
+  occupied
+  maintenance
+  reserved
+  inactive
+}
+
+enum RoomType {
+  bedroom
+  living_room
+  kitchen
+  bathroom
+  storage
+  balcony
+}
+
+enum RoomStatus {
+  available
+  occupied
+  maintenance
+}
+
+// --- Contract Enums ---
+enum ContractStatus {
+  draft
+  pending
+  active
+  expired
+  terminated
+  renewed
+}
+
+enum MemberType {
+  primary
+  co_tenant
+  guarantor
+}
+
+enum AccessLevel {
+  full
+  limited
+  view_only
+}
+
+enum MemberStatus {
+  active
+  moved_out
+  inactive
+}
+
+enum PaymentMethodType {
+  bank_transfer
+  cash
+  e_wallet
+  auto_debit
+  credit_card
+  debit_card
+}
+
+// --- Request Enums ---
+enum ContactRequestStatus {
+  new
+  contacted
+  scheduled
+  converted
+  lost
+  spam
+}
+
+enum ContactSource {
+  website
+  mobile_app
+  social_media
+  referral
+  walk_in
+}
+
+enum BookingStatus {
+  pending
+  approved
+  rejected
+  cancelled
+  expired
+}
+
+enum AppointmentType {
+  physical_viewing
+  virtual_tour
+  consultation
+}
+
+enum AppointmentStatus {
+  scheduled
+  confirmed
+  completed
+  cancelled
+  no_show
+}
+
+enum AppointmentOutcome {
+  interested
+  not_interested
+  needs_followup
+  booked
+}
+
+enum PartnerRequestStatus {
+  submitted
+  under_review
+  approved
+  rejected
+  on_hold
+}
+
+enum PropertyType {
+  apartment
+  house
+  condo
+  studio
+}
+
+enum ContractType {
+  exclusive
+  non_exclusive
+}
+
+// --- Operations Enums ---
+enum TaskType {
+  followup
+  maintenance
+  inspection
+  delivery
+  cleaning
+  general
+}
+
+enum Priority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum TaskStatus {
+  pending
+  assigned
+  in_progress
+  completed
+  cancelled
+}
+
+enum MaintenanceCategory {
+  plumbing
+  electrical
+  hvac
+  appliance
+  structural
+  pest_control
+  other
+}
+
+enum Urgency {
+  low
+  medium
+  high
+  emergency
+}
+
+enum MaintenanceStatus {
+  submitted
+  acknowledged
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum CostCoverage {
+  landlord
+  tenant
+  insurance
+  warranty
+}
+
+enum TicketCategory {
+  billing
+  contract
+  account
+  complaint
+  inquiry
+  documentation
+  other
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  waiting_for_user
+  resolved
+  closed
+  escalated
+}
+
+enum RelatedEntityType {
+  contact_request
+  maintenance_request
+  appointment
+  inspection
+}
+
+// --- Financial Enums ---
+enum InvoiceStatus {
+  draft
+  issued
+  sent
+  partially_paid
+  paid
+  overdue
+  cancelled
+}
+
+enum PaymentStatus {
+  pending
+  processing
+  completed
+  failed
+  refunded
+  cancelled
+}
+
+// --- IoT Enums ---
+enum IoTDeviceType {
+  smart_lock
+  thermostat
+  light
+  camera
+  sensor
+  alarm
+  doorbell
+}
+
+enum IoTStatus {
+  active
+  inactive
+  maintenance
+  error
+}
+
+enum MeterType {
+  electricity
+  water
+  gas
+  internet
+}
+
+enum MeterStatus {
+  active
+  inactive
+  faulty
+  replaced
+}
+
+enum ReadingType {
+  manual
+  automatic
+  estimated
+}
+
+// --- Document Enums ---
+enum PolicyType {
+  terms_of_service
+  privacy_policy
+  rental_rules
+  cancellation_policy
+  community_guidelines
+}
+
+enum DocumentType {
+  contract_template
+  addendum
+  disclosure
+  consent_form
+  inspection_report
+  other
+}
+
+// --- Notification Enums ---
+enum NotificationType {
+  info
+  warning
+  success
+  error
+  reminder
+  promotion
+}
+
+enum NotificationChannel {
+  in_app
+  email
+  sms
+  push
+  webhook
+}
+
+enum DeliveryStatus {
+  pending
+  sent
+  delivered
+  failed
+  bounced
+}
+
+enum ActivityStatus {
+  success
+  failure
+  pending
+}
+
+// ============================================================================
+// ACTOR MODELS
+// ============================================================================
+
+model Guest {
+  id                     String                 @id @default(uuid())
+  email                  String                 @unique
+  phone                  String?
+  fullName               String?
+  preferredContactMethod PreferredContactMethod @default(email)
+  ipAddress              String?
+  sessionToken           String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  // Relations
+  contactRequests  ContactRequest[]
+  bookingRequests  BookingRequest[]
+  appointments     Appointment[]
+
+  @@index([sessionToken])
+  @@map("guests")
+}
+
+model User {
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  phone                 String
+  fullName              String
+  dateOfBirth           DateTime?
+  nationalId            String?   @unique
+  passportNumber        String?
+  profileImageUrl       String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  passwordHash          String
+  isActive              Boolean   @default(true)
+  isVerified            Boolean   @default(false)
+  lastLoginAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  createdByStaffId      String?
+
+  // Relations
+  createdByStaff        Staff?                @relation("UserCreatedByStaff", fields: [createdByStaffId], references: [id])
+  contractMemberships   UserContractMember[]
+  payments              Payment[]
+  tickets               Ticket[]
+  maintenanceRequests   MaintenanceRequest[]
+
+  @@index([phone])
+  @@index([createdByStaffId])
+  @@map("users")
+}
+
+model Staff {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  phone        String
+  fullName     String
+  employeeCode String    @unique
+  role         StaffRole
+  department   String?
+  hireDate     DateTime
+  passwordHash String
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  createdUsers       User[]              @relation("UserCreatedByStaff")
+  assignedTasks      Task[]              @relation("TaskAssignedToStaff")
+  appointments       Appointment[]
+  contracts          RentalContract[]    @relation("ContractCreatedByStaff")
+  processedPayments  Payment[]           @relation("PaymentProcessedByStaff")
+  assignedTickets    Ticket[]            @relation("TicketAssignedToStaff")
+  utilityReadings    UtilityReading[]    @relation("ReadingByStaff")
+  verifiedReadings   UtilityReading[]    @relation("ReadingVerifiedByStaff")
+
+  @@index([role])
+  @@index([isActive])
+  @@map("staff")
+}
+
+model Operator {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  phone        String
+  fullName     String
+  employeeCode String        @unique
+  shift        OperatorShift @default(flexible)
+  passwordHash String
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  contactRequests     ContactRequest[]  @relation("ContactRequestAssignedToOperator")
+  assignedTasks       Task[]            @relation("TaskAssignedByOperator")
+  approvedApartments  Apartment[]       @relation("ApartmentApprovedByOperator")
+  approvedBookings    BookingRequest[]  @relation("BookingApprovedByOperator")
+  reviewedPartnerReqs PartnerRequest[]  @relation("PartnerRequestReviewedByOperator")
+
+  @@index([shift])
+  @@index([isActive])
+  @@map("operators")
+}
+
+model Admin {
+  id          String         @id @default(uuid())
+  email       String         @unique
+  phone       String?
+  fullName    String
+  username    String         @unique
+  passwordHash String
+  roleLevel   AdminRoleLevel @default(admin)
+  permissions Json?
+  lastLoginAt DateTime?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  createdPolicies   Policy[]        @relation("PolicyCreatedByAdmin")
+  approvedPolicies  Policy[]        @relation("PolicyApprovedByAdmin")
+  legalDocuments    LegalDocument[] @relation("DocumentCreatedByAdmin")
+
+  @@index([roleLevel])
+  @@index([isActive])
+  @@map("admins")
+}
+
+model Partner {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  phone             String
+  fullName          String?
+  companyName       String?
+  taxCode           String?   @unique
+  nationalId        String?
+  bankAccountNumber String?
+  bankName          String?
+  address           String?
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
+  commissionRate    Decimal?  @db.Decimal(5, 2)
+  paymentTerms      String?
+  isVerified        Boolean   @default(false)
+  isActive          Boolean   @default(true)
+  passwordHash      String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  apartments      Apartment[]
+  partnerRequests PartnerRequest[]
+
+  @@index([isVerified])
+  @@index([isActive])
+  @@map("partners")
+}
+
+// ============================================================================
+// ASSET MODELS
+// ============================================================================
+
+model Apartment {
+  id                  String           @id @default(uuid())
+  buildingName        String?
+  apartmentNumber     String
+  floorNumber         Int?
+  address             String
+  city                String
+  district            String
+  ward                String?
+  latitude            Decimal?         @db.Decimal(10, 8)
+  longitude           Decimal?         @db.Decimal(11, 8)
+  totalArea           Decimal          @db.Decimal(10, 2)
+  usableArea          Decimal?         @db.Decimal(10, 2)
+  numberOfBedrooms    Int              @default(0)
+  numberOfBathrooms   Int              @default(0)
+  furnishingStatus    FurnishingStatus @default(unfurnished)
+  amenities           Json?
+  baseRentPrice       Decimal          @db.Decimal(12, 2)
+  depositAmount       Decimal?         @db.Decimal(12, 2)
+  status              ApartmentStatus  @default(available)
+  description         String?
+  images              Json?
+  videoTourUrl        String?
+  yearBuilt           Int?
+  partnerId           String?
+  approvedByOperatorId String?
+  approvedAt          DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  // Relations
+  partner           Partner?           @relation(fields: [partnerId], references: [id])
+  approvedByOperator Operator?          @relation("ApartmentApprovedByOperator", fields: [approvedByOperatorId], references: [id])
+  rooms             Room[]
+  rentalContracts   RentalContract[]
+  iotDevices        IoTDevice[]
+  utilityMeters     UtilityMeter[]
+  contactRequests   ContactRequest[]
+  bookingRequests   BookingRequest[]
+  appointments      Appointment[]
+  maintenanceReqs   MaintenanceRequest[]
+  tasks             Task[]
+
+  @@index([status])
+  @@index([city])
+  @@index([district])
+  @@index([partnerId])
+  @@index([baseRentPrice])
+  @@index([numberOfBedrooms])
+  @@map("apartments")
+}
+
+model Room {
+  id                 String     @id @default(uuid())
+  apartmentId        String
+  roomNumber         String
+  roomType           RoomType   @default(bedroom)
+  area               Decimal?   @db.Decimal(10, 2)
+  hasWindow          Boolean    @default(true)
+  hasAirConditioning Boolean    @default(false)
+  hasPrivateBathroom Boolean    @default(false)
+  maxOccupancy       Int        @default(1)
+  rentPrice          Decimal?   @db.Decimal(12, 2)
+  status             RoomStatus @default(available)
+  description        String?
+  images             Json?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  // Relations
+  apartment         Apartment            @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  iotDevices        IoTDevice[]
+  maintenanceReqs   MaintenanceRequest[]
+
+  @@unique([apartmentId, roomNumber])
+  @@index([apartmentId])
+  @@index([status])
+  @@index([roomType])
+  @@map("rooms")
+}
+
+// ============================================================================
+// CONTRACT MODELS
+// ============================================================================
+
+model RentalContract {
+  id                  String         @id @default(uuid())
+  contractNumber      String         @unique
+  apartmentId         String
+  startDate           DateTime
+  endDate             DateTime
+  monthlyRent         Decimal        @db.Decimal(12, 2)
+  depositAmount       Decimal        @db.Decimal(12, 2)
+  paymentDueDay       Int            // 1-31
+  paymentMethod       PaymentMethodType @default(bank_transfer)
+  utilitiesIncluded   Json?
+  utilitiesCharges    Json?
+  contractTerms       String?
+  specialConditions   String?
+  status              ContractStatus @default(draft)
+  signedDate          DateTime?
+  contractDocumentUrl String?
+  terminationDate     DateTime?
+  terminationReason   String?
+  earlyTerminationFee Decimal?       @db.Decimal(12, 2)
+  createdByStaffId    String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  // Relations
+  apartment           Apartment            @relation(fields: [apartmentId], references: [id])
+  createdByStaff      Staff?               @relation("ContractCreatedByStaff", fields: [createdByStaffId], references: [id])
+  members             UserContractMember[]
+  invoices            Invoice[]
+  tickets             Ticket[]
+  maintenanceRequests MaintenanceRequest[]
+  utilityReadings     UtilityReading[]
+
+  @@index([apartmentId])
+  @@index([status])
+  @@index([startDate])
+  @@index([endDate])
+  @@map("rental_contracts")
+}
+
+model UserContractMember {
+  id                  String       @id @default(uuid())
+  userId              String
+  rentalContractId    String
+  memberType          MemberType   @default(co_tenant)
+  isPrimaryContact    Boolean      @default(false)
+  moveInDate          DateTime?
+  moveOutDate         DateTime?
+  notificationEnabled Boolean      @default(true)
+  accessLevel         AccessLevel  @default(full)
+  sharePercentage     Decimal?     @db.Decimal(5, 2)
+  status              MemberStatus @default(active)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, rentalContractId])
+  @@index([userId])
+  @@index([rentalContractId])
+  @@index([status])
+  @@map("user_contract_members")
+}
+
+// ============================================================================
+// REQUEST MODELS
+// ============================================================================
+
+model ContactRequest {
+  id                     String               @id @default(uuid())
+  guestId                String?
+  apartmentId            String?
+  fullName               String
+  email                  String
+  phone                  String
+  preferredMoveInDate    DateTime?
+  message                String?
+  budgetRangeMin         Decimal?             @db.Decimal(12, 2)
+  budgetRangeMax         Decimal?             @db.Decimal(12, 2)
+  numberOfOccupants      Int?
+  preferredContactMethod PreferredContactMethod @default(email)
+  preferredContactTime   String?
+  source                 ContactSource        @default(website)
+  utmSource              String?
+  utmCampaign            String?
+  status                 ContactRequestStatus @default(new)
+  assignedToOperatorId   String?
+  receivedAt             DateTime             @default(now())
+  firstContactedAt       DateTime?
+  notes                  String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  // Relations
+  guest              Guest?           @relation(fields: [guestId], references: [id])
+  apartment          Apartment?       @relation(fields: [apartmentId], references: [id])
+  assignedToOperator Operator?        @relation("ContactRequestAssignedToOperator", fields: [assignedToOperatorId], references: [id])
+  bookingRequests    BookingRequest[]
+  appointments       Appointment[]
+
+  @@index([guestId])
+  @@index([apartmentId])
+  @@index([status])
+  @@index([assignedToOperatorId])
+  @@index([receivedAt])
+  @@index([email])
+  @@index([phone])
+  @@map("contact_requests")
+}
+
+model BookingRequest {
+  id                      String        @id @default(uuid())
+  guestId                 String?
+  apartmentId             String
+  contactRequestId        String?
+  desiredStartDate        DateTime
+  desiredEndDate          DateTime
+  numberOfOccupants       Int
+  totalAmount             Decimal       @db.Decimal(12, 2)
+  depositAmount           Decimal       @db.Decimal(12, 2)
+  specialRequests         String?
+  identificationDocuments Json?
+  employmentVerification  Json?
+  status                  BookingStatus @default(pending)
+  rejectionReason         String?
+  approvedByOperatorId    String?
+  approvedAt              DateTime?
+  createdRentalContractId String?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  // Relations
+  guest              Guest?          @relation(fields: [guestId], references: [id])
+  apartment          Apartment       @relation(fields: [apartmentId], references: [id])
+  contactRequest     ContactRequest? @relation(fields: [contactRequestId], references: [id])
+  approvedByOperator Operator?       @relation("BookingApprovedByOperator", fields: [approvedByOperatorId], references: [id])
+
+  @@index([guestId])
+  @@index([apartmentId])
+  @@index([status])
+  @@index([contactRequestId])
+  @@map("booking_requests")
+}
+
+model Appointment {
+  id                 String            @id @default(uuid())
+  guestId            String?
+  apartmentId        String
+  contactRequestId   String?
+  assignedStaffId    String
+  appointmentDate    DateTime
+  appointmentTime    DateTime
+  durationMinutes    Int               @default(30)
+  meetingLocation    String?
+  type               AppointmentType   @default(physical_viewing)
+  status             AppointmentStatus @default(scheduled)
+  guestNotes         String?
+  staffNotes         String?
+  outcome            AppointmentOutcome?
+  followupRequired   Boolean           @default(false)
+  reminderSentAt     DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  // Relations
+  guest          Guest?          @relation(fields: [guestId], references: [id])
+  apartment      Apartment       @relation(fields: [apartmentId], references: [id])
+  contactRequest ContactRequest? @relation(fields: [contactRequestId], references: [id])
+  assignedStaff  Staff           @relation(fields: [assignedStaffId], references: [id])
+
+  @@index([guestId])
+  @@index([apartmentId])
+  @@index([assignedStaffId])
+  @@index([status])
+  @@index([appointmentDate])
+  @@map("appointments")
+}
+
+model PartnerRequest {
+  id                    String               @id @default(uuid())
+  partnerId             String
+  propertyType          PropertyType         @default(apartment)
+  address               String
+  city                  String
+  district              String
+  totalArea             Decimal?             @db.Decimal(10, 2)
+  numberOfUnits         Int                  @default(1)
+  expectedRentPrice     Decimal?             @db.Decimal(12, 2)
+  propertyImages        Json?
+  propertyDocuments     Json?
+  description           String?
+  amenities             Json?
+  preferredContractType ContractType         @default(exclusive)
+  status                PartnerRequestStatus @default(submitted)
+  reviewedByOperatorId  String?
+  reviewNotes           String?
+  rejectionReason       String?
+  approvedAt            DateTime?
+  createdApartmentIds   Json?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  // Relations
+  partner            Partner   @relation(fields: [partnerId], references: [id])
+  reviewedByOperator Operator? @relation("PartnerRequestReviewedByOperator", fields: [reviewedByOperatorId], references: [id])
+
+  @@index([partnerId])
+  @@index([status])
+  @@index([reviewedByOperatorId])
+  @@index([city])
+  @@index([district])
+  @@map("partner_requests")
+}
+
+// ============================================================================
+// OPERATIONS MODELS
+// ============================================================================
+
+model Task {
+  id                     String            @id @default(uuid())
+  title                  String
+  description            String?
+  taskType               TaskType
+  priority               Priority          @default(medium)
+  status                 TaskStatus        @default(pending)
+  assignedToStaffId      String?
+  assignedByOperatorId   String?
+  apartmentId            String?
+  relatedEntityType      RelatedEntityType?
+  relatedEntityId        String?
+  scheduledDate          DateTime?
+  scheduledTime          DateTime?
+  estimatedDurationMins  Int?
+  actualStartTime        DateTime?
+  actualEndTime          DateTime?
+  completionNotes        String?
+  attachments            Json?
+  requiresFollowup       Boolean           @default(false)
+  followupDate           DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  // Relations
+  assignedToStaff    Staff?               @relation("TaskAssignedToStaff", fields: [assignedToStaffId], references: [id])
+  assignedByOperator Operator?            @relation("TaskAssignedByOperator", fields: [assignedByOperatorId], references: [id])
+  apartment          Apartment?           @relation(fields: [apartmentId], references: [id])
+  maintenanceRequest MaintenanceRequest?
+
+  @@index([assignedToStaffId])
+  @@index([assignedByOperatorId])
+  @@index([status])
+  @@index([taskType])
+  @@index([priority])
+  @@index([scheduledDate])
+  @@index([apartmentId])
+  @@map("tasks")
+}
+
+model MaintenanceRequest {
+  id                     String            @id @default(uuid())
+  userId                 String
+  rentalContractId       String
+  apartmentId            String
+  roomId                 String?
+  category               MaintenanceCategory
+  title                  String
+  description            String
+  urgency                Urgency           @default(medium)
+  images                 Json?
+  preferredDate          DateTime?
+  preferredTimeSlot      String?
+  isTenantPresentRequired Boolean          @default(false)
+  status                 MaintenanceStatus @default(submitted)
+  assignedTaskId         String?           @unique
+  completionImages       Json?
+  completionNotes        String?
+  tenantRating           Int?
+  tenantFeedback         String?
+  costEstimate           Decimal?          @db.Decimal(12, 2)
+  actualCost             Decimal?          @db.Decimal(12, 2)
+  costCoveredBy          CostCoverage?
+  completedAt            DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id])
+  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id])
+  apartment      Apartment      @relation(fields: [apartmentId], references: [id])
+  room           Room?          @relation(fields: [roomId], references: [id])
+  assignedTask   Task?          @relation(fields: [assignedTaskId], references: [id])
+
+  @@index([userId])
+  @@index([rentalContractId])
+  @@index([apartmentId])
+  @@index([status])
+  @@index([category])
+  @@index([urgency])
+  @@index([createdAt])
+  @@map("maintenance_requests")
+}
+
+model Ticket {
+  id                  String       @id @default(uuid())
+  ticketNumber        String       @unique
+  userId              String
+  rentalContractId    String
+  category            TicketCategory
+  subject             String
+  description         String
+  priority            Priority     @default(medium)
+  status              TicketStatus @default(open)
+  assignedToStaffId   String?
+  attachments         Json?
+  resolutionNotes     String?
+  satisfactionRating  Int?
+  satisfactionFeedback String?
+  firstResponseAt     DateTime?
+  resolvedAt          DateTime?
+  closedAt            DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id])
+  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id])
+  assignedToStaff Staff?        @relation("TicketAssignedToStaff", fields: [assignedToStaffId], references: [id])
+
+  @@index([userId])
+  @@index([rentalContractId])
+  @@index([status])
+  @@index([category])
+  @@index([priority])
+  @@index([assignedToStaffId])
+  @@map("tickets")
+}
+
+// ============================================================================
+// FINANCIAL MODELS
+// ============================================================================
+
+model Invoice {
+  id                 String        @id @default(uuid())
+  invoiceNumber      String        @unique
+  rentalContractId   String
+  billingPeriodStart DateTime
+  billingPeriodEnd   DateTime
+  issueDate          DateTime
+  dueDate            DateTime
+  baseRent           Decimal       @db.Decimal(12, 2)
+  utilityCharges     Json?
+  additionalCharges  Json?
+  discounts          Json?
+  taxAmount          Decimal       @default(0) @db.Decimal(12, 2)
+  totalAmount        Decimal       @db.Decimal(12, 2)
+  currency           String        @default("VND")
+  status             InvoiceStatus @default(draft)
+  paymentMethod      PaymentMethodType?
+  invoiceDocumentUrl String?
+  notes              String?
+  sentAt             DateTime?
+  paidAt             DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  // Relations
+  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id])
+  payments       Payment[]
+
+  @@index([rentalContractId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([billingPeriodStart])
+  @@index([billingPeriodEnd])
+  @@map("invoices")
+}
+
+model Payment {
+  id                   String           @id @default(uuid())
+  paymentReference     String           @unique
+  invoiceId            String
+  userId               String
+  amount               Decimal          @db.Decimal(12, 2)
+  currency             String           @default("VND")
+  paymentMethod        PaymentMethodType
+  paymentGateway       String?
+  transactionId        String?
+  paymentDate          DateTime
+  status               PaymentStatus    @default(pending)
+  paymentProofUrl      String?
+  bankName             String?
+  accountNumber        String?
+  notes                String?
+  processedByStaffId   String?
+  refundAmount         Decimal?         @db.Decimal(12, 2)
+  refundDate           DateTime?
+  refundReason         String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  // Relations
+  invoice         Invoice @relation(fields: [invoiceId], references: [id])
+  user            User    @relation(fields: [userId], references: [id])
+  processedByStaff Staff?  @relation("PaymentProcessedByStaff", fields: [processedByStaffId], references: [id])
+
+  @@index([invoiceId])
+  @@index([userId])
+  @@index([status])
+  @@index([paymentDate])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+// ============================================================================
+// IOT MODELS
+// ============================================================================
+
+model IoTDevice {
+  id                     String       @id @default(uuid())
+  deviceName             String
+  deviceType             IoTDeviceType
+  brand                  String?
+  model                  String?
+  serialNumber           String?      @unique
+  macAddress             String?
+  apartmentId            String
+  roomId                 String?
+  locationDescription    String?
+  firmwareVersion        String?
+  status                 IoTStatus    @default(active)
+  isControllableByTenant Boolean      @default(true)
+  lastOnlineAt           DateTime?
+  lastMaintenanceDate    DateTime?
+  nextMaintenanceDate    DateTime?
+  installationDate       DateTime?
+  warrantyExpiryDate     DateTime?
+  configuration          Json?
+  accessLogsEnabled      Boolean      @default(true)
+  notes                  String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  // Relations
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  room      Room?     @relation(fields: [roomId], references: [id])
+
+  @@index([apartmentId])
+  @@index([roomId])
+  @@index([deviceType])
+  @@index([status])
+  @@index([macAddress])
+  @@map("iot_devices")
+}
+
+model UtilityMeter {
+  id                 String      @id @default(uuid())
+  meterNumber        String      @unique
+  meterType          MeterType
+  brand              String?
+  model              String?
+  apartmentId        String
+  installationDate   DateTime
+  lastInspectionDate DateTime?
+  nextInspectionDate DateTime?
+  unitOfMeasurement  String?
+  ratePerUnit        Decimal?    @db.Decimal(10, 2)
+  currentReading     Decimal?    @db.Decimal(12, 2)
+  previousReading    Decimal?    @db.Decimal(12, 2)
+  readingDate        DateTime?
+  status             MeterStatus @default(active)
+  isDigital          Boolean     @default(false)
+  calibrationDate    DateTime?
+  nextCalibrationDate DateTime?
+  notes              String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  // Relations
+  apartment Apartment        @relation(fields: [apartmentId], references: [id])
+  readings  UtilityReading[]
+
+  @@index([apartmentId])
+  @@index([meterType])
+  @@index([status])
+  @@index([readingDate])
+  @@map("utility_meters")
+}
+
+model UtilityReading {
+  id                   String      @id @default(uuid())
+  utilityMeterId       String
+  rentalContractId     String?
+  readingDate          DateTime
+  readingValue         Decimal     @db.Decimal(12, 2)
+  previousReadingValue Decimal?    @db.Decimal(12, 2)
+  consumption          Decimal?    @db.Decimal(12, 2)
+  readingType          ReadingType @default(manual)
+  readByStaffId        String?
+  images               Json?
+  notes                String?
+  isVerified           Boolean     @default(false)
+  verifiedByStaffId    String?
+  verifiedAt           DateTime?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  // Relations
+  utilityMeter   UtilityMeter    @relation(fields: [utilityMeterId], references: [id])
+  rentalContract RentalContract? @relation(fields: [rentalContractId], references: [id])
+  readByStaff    Staff?          @relation("ReadingByStaff", fields: [readByStaffId], references: [id])
+  verifiedByStaff Staff?         @relation("ReadingVerifiedByStaff", fields: [verifiedByStaffId], references: [id])
+
+  @@index([utilityMeterId])
+  @@index([rentalContractId])
+  @@index([readingDate])
+  @@index([readByStaffId])
+  @@map("utility_readings")
+}
+
+// ============================================================================
+// DOCUMENT MODELS
+// ============================================================================
+
+model Policy {
+  id                 String     @id @default(uuid())
+  policyType         PolicyType
+  title              String
+  content            String
+  version            String
+  language           String     @default("vi")
+  effectiveDate      DateTime
+  expiryDate         DateTime?
+  isActive           Boolean    @default(true)
+  requiresAcceptance Boolean    @default(false)
+  displayOrder       Int        @default(0)
+  createdByAdminId   String?
+  approvedByAdminId  String?
+  approvedAt         DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  // Relations
+  createdByAdmin  Admin? @relation("PolicyCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  approvedByAdmin Admin? @relation("PolicyApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+
+  @@index([policyType])
+  @@index([isActive])
+  @@index([effectiveDate])
+  @@index([version])
+  @@index([language])
+  @@map("policies")
+}
+
+model LegalDocument {
+  id                 String       @id @default(uuid())
+  documentType       DocumentType
+  title              String
+  description        String?
+  fileUrl            String
+  fileType           String?
+  fileSizeBytes      BigInt?
+  category           String?
+  language           String       @default("vi")
+  version            String?
+  isTemplate         Boolean      @default(false)
+  requiresSignature  Boolean      @default(false)
+  isPublic           Boolean      @default(false)
+  tags               Json?
+  effectiveDate      DateTime?
+  createdByAdminId   String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  // Relations
+  createdByAdmin Admin? @relation("DocumentCreatedByAdmin", fields: [createdByAdminId], references: [id])
+
+  @@index([documentType])
+  @@index([category])
+  @@index([isPublic])
+  @@index([isTemplate])
+  @@index([language])
+  @@map("legal_documents")
+}
+
+// ============================================================================
+// AUDIT MODELS
+// ============================================================================
+
+model ActivityLog {
+  id           String         @id @default(uuid())
+  actorType    ActorType
+  actorId      String
+  action       String
+  entityType   String?
+  entityId     String?
+  description  String?
+  changes      Json?
+  ipAddress    String?
+  userAgent    String?
+  requestId    String?
+  status       ActivityStatus @default(success)
+  errorMessage String?
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+
+  @@index([actorType, actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([status])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model Notification {
+  id                String              @id @default(uuid())
+  recipientType     ActorType
+  recipientId       String
+  notificationType  NotificationType    @default(info)
+  channel           NotificationChannel
+  title             String
+  message           String
+  actionUrl         String?
+  actionLabel       String?
+  priority          Priority            @default(medium)
+  relatedEntityType String?
+  relatedEntityId   String?
+  isRead            Boolean             @default(false)
+  readAt            DateTime?
+  sentAt            DateTime?
+  deliveryStatus    DeliveryStatus      @default(pending)
+  failureReason     String?
+  retryCount        Int                 @default(0)
+  metadata          Json?
+  expiresAt         DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([recipientType, recipientId])
+  @@index([isRead])
+  @@index([notificationType])
+  @@index([channel])
+  @@index([sentAt])
+  @@index([deliveryStatus])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// AUTH MODELS
+// ============================================================================
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  actorId   String
+  actorType ActorType
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@index([actorId, actorType])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
