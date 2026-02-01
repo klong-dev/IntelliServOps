@@ -40,7 +40,6 @@ interface ActorRecord {
   roleLevel?: string;
 }
 
-
 @Injectable()
 export class AuthService {
   private readonly SALT_ROUNDS = 12;
