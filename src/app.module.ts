@@ -20,6 +20,7 @@ import { JwtAuthGuard, RolesGuard } from './common/guards';
 
 // Feature Modules
 import { AuthModule } from './modules/auth';
+import { UsersModule } from './modules/users';
 
 // App Core
 import { AppController } from './app.controller';
@@ -46,9 +47,9 @@ import { AppService } from './app.service';
 
     // Feature Modules
     AuthModule,
+    UsersModule,
 
     // TODO: Add more feature modules as they are developed
-    // UsersModule,
     // ApartmentsModule,
     // ContractsModule,
     // InvoicesModule,
