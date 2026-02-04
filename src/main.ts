@@ -1,8 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { SwaggerModule, DocumentBuilder, OpenAPIObject } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import * as yaml from 'js-yaml';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -66,6 +67,19 @@ async function bootstrap() {
     swaggerOptions: {
       persistAuthorization: true,
     },
+  });
+
+  // Expose OpenAPI spec as JSON and YAML for frontend code generation
+  const expressApp = app.getHttpAdapter().getInstance();
+
+  expressApp.get('/openapi/v1.json', (req: any, res: any) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(document);
+  });
+
+  expressApp.get('/openapi/v1.yaml', (req: any, res: any) => {
+    res.setHeader('Content-Type', 'text/yaml');
+    res.send(yaml.dump(document));
   });
 
   // Start server
