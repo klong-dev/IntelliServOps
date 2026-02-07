@@ -29,6 +29,12 @@ import { PaymentsModule } from './modules/payments';
 import { MaintenanceModule } from './modules/maintenance';
 import { TicketsModule } from './modules/tickets';
 import { ViewingRequestsModule } from './modules/viewing-requests';
+import { IoTModule } from './modules/iot';
+import { TasksModule } from './modules/tasks';
+import { PartnersModule } from './modules/partners';
+import { NotificationsModule } from './modules/notifications';
+import { PoliciesModule } from './modules/policies';
+import { ActivityLogsModule } from './modules/activity-logs';
 
 // App Core
 import { AppController } from './app.controller';
@@ -64,6 +70,12 @@ import { AppService } from './app.service';
     MaintenanceModule,
     TicketsModule,
     ViewingRequestsModule,
+    IoTModule,
+    TasksModule,
+    PartnersModule,
+    NotificationsModule,
+    PoliciesModule,
+    ActivityLogsModule,
   ],
   controllers: [AppController],
   providers: [
