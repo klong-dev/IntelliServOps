@@ -29,11 +29,13 @@ src/
 │   ├── database.config.ts    # PostgreSQL settings
 │   ├── jwt.config.ts         # JWT authentication
 │   ├── redis.config.ts       # Redis caching & queue
+│   ├── supabase.config.ts    # Supabase Auth (OTP SMS)
 │   ├── payos.config.ts       # PayOS payment gateway
 │   └── tuya.config.ts        # Tuya IoT API
 │
 ├── modules/                   # Feature modules (business logic)
 │   ├── auth/                 # Authentication module
+│   ├── sms/                  # SMS module (Supabase OTP + BullMQ)
 │   ├── users/                # User management (TODO)
 │   ├── apartments/           # Apartment listings (TODO)
 │   ├── contracts/            # Rental contracts (TODO)
