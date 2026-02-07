@@ -1,8 +1,3 @@
-// SMS Processor is disabled - no Redis/BullMQ in current setup
-// Supabase Auth handles OTP sending directly
-// This file is kept for future reference if queue-based SMS is needed
-
-/*
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -31,4 +26,3 @@ export class SmsProcessor extends WorkerHost {
     }
   }
 }
-*/
