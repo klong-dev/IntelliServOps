@@ -12,7 +12,7 @@ import { QueueModule } from '../queue';
  */
 @Global()
 @Module({
-  imports: [PrismaModule, /*RedisModule,*/ /*QueueModule*/],
-  exports: [PrismaModule, /*RedisModule,*/ /*QueueModule*/],
+  imports: [PrismaModule, RedisModule, QueueModule],
+  exports: [PrismaModule, RedisModule, QueueModule],
 })
 export class SharedModule {}
