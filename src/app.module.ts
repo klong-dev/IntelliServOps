@@ -43,7 +43,7 @@ import { AppService } from './app.service';
         appConfig,
         databaseConfig,
         jwtConfig,
-        // redisConfig,
+        redisConfig,
         payosConfig,
         tuyaConfig,
         supabaseConfig,

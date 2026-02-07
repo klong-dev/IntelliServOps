@@ -91,6 +91,7 @@ async function bootstrap() {
     📍 Application: http://localhost:${port}/${apiPrefix}/${apiVersion}
     📚 Swagger Docs: http://localhost:${port}/docs
     🔧 Environment: ${configService.get('app.nodeEnv')}
+    💾 Redis: ${'🟢 Connected'} (${configService.get('redis.host')}:${configService.get('redis.port')})
   `);
 }
 bootstrap();
