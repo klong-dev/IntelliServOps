@@ -8,6 +8,7 @@ export const QUEUE_NAMES = {
   PAYMENT: 'payment-queue',
   IOT: 'iot-queue',
   INVOICE: 'invoice-queue',
+  SMS: 'sms-queue',
 } as const;
 
 @Module({
@@ -30,6 +31,7 @@ export const QUEUE_NAMES = {
       { name: QUEUE_NAMES.PAYMENT },
       { name: QUEUE_NAMES.IOT },
       { name: QUEUE_NAMES.INVOICE },
+      { name: QUEUE_NAMES.SMS },
     ),
   ],
   exports: [BullModule],
