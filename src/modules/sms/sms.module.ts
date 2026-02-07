@@ -1,12 +1,18 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
+// import { BullModule } from '@nestjs/bullmq';
 import { SmsService } from './sms.service';
-import { SmsProcessor } from './sms.processor';
-import { QUEUE_NAMES } from '../../queue/queue.module';
+// import { SmsProcessor } from './sms.processor';
+// import { QUEUE_NAMES } from '../../queue/queue.module';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: QUEUE_NAMES.SMS })],
-  providers: [SmsService, SmsProcessor],
+  imports: [
+    // Temporarily disabled for development without Redis
+    // BullModule.registerQueue({ name: QUEUE_NAMES.SMS })
+  ],
+  providers: [
+    SmsService,
+    // SmsProcessor, // Disabled without queue
+  ],
   exports: [SmsService],
 })
 export class SmsModule {}
