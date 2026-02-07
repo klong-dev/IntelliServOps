@@ -497,7 +497,7 @@ export class AuthService {
    */
   async requestOtp(
     requestOtpDto: RequestOtpDto,
-  ): Promise<{ message: string; expiresIn: number }> {
+  ): Promise<{ message: string; expiresIn: number; devOtpCode?: string }> {
     const { phone } = requestOtpDto;
 
     // Check if there's a pending registration for this phone
@@ -540,17 +540,19 @@ export class AuthService {
       );
     }
 
-    // Generate OTP
-    const otpCode = this.smsService.generateOtpCode();
+    // Send OTP via Supabase Auth (Supabase generates and sends the OTP)
+    const result = await this.smsService.sendOtp(phone);
+
+    // Save OTP record for tracking (code is managed by Supabase in production)
+    const trackingCode = result.devOtpCode || 'SUPABASE_MANAGED';
     const expiresAt = new Date(
       Date.now() + this.OTP_EXPIRY_MINUTES * 60 * 1000,
     );
 
-    // Save OTP to database
     await this.prisma.otpVerification.create({
       data: {
         phone,
-        code: otpCode,
+        code: trackingCode,
         purpose: 'registration',
         expiresAt,
       },
@@ -562,13 +564,21 @@ export class AuthService {
       data: { status: PendingRegistrationStatus.otp_sent },
     });
 
-    // Send OTP via SMS
-    await this.smsService.sendOtpSms({ phone, otpCode });
-
-    return {
+    const response: {
+      message: string;
+      expiresIn: number;
+      devOtpCode?: string;
+    } = {
       message: 'OTP has been sent to your phone number.',
       expiresIn: this.OTP_EXPIRY_MINUTES * 60, // in seconds
     };
+
+    // Include dev OTP code in response for dev mode testing
+    if (result.devOtpCode) {
+      response.devOtpCode = result.devOtpCode;
+    }
+
+    return response;
   }
 
   /**
@@ -604,20 +614,11 @@ export class AuthService {
       );
     }
 
-    // Find valid OTP
-    const otpRecord = await this.prisma.otpVerification.findFirst({
-      where: {
-        phone,
-        code: otpCode,
-        purpose: 'registration',
-        isUsed: false,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!otpRecord) {
-      // Increment attempts on the most recent OTP
+    // Verify OTP via Supabase Auth (or dev mode)
+    try {
+      await this.smsService.verifyOtp(phone, otpCode);
+    } catch {
+      // Check attempts limit on our tracking record
       const latestOtp = await this.prisma.otpVerification.findFirst({
         where: { phone, purpose: 'registration', isUsed: false },
         orderBy: { createdAt: 'desc' },
@@ -639,23 +640,23 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired OTP code.');
     }
 
-    // Check max attempts
-    if (otpRecord.attempts >= this.MAX_OTP_ATTEMPTS) {
-      throw new BadRequestException(
-        'Too many failed attempts. Please request a new OTP.',
-      );
-    }
-
     // Hash password
     const passwordHash = await this.hashPassword(password);
 
     // Create User and mark OTP as used in a transaction
     const user = await this.prisma.$transaction(async (tx) => {
-      // Mark OTP as used
-      await tx.otpVerification.update({
-        where: { id: otpRecord.id },
-        data: { isUsed: true, usedAt: new Date() },
+      // Mark tracking OTP record as used
+      const latestOtp = await tx.otpVerification.findFirst({
+        where: { phone, purpose: 'registration', isUsed: false },
+        orderBy: { createdAt: 'desc' },
       });
+
+      if (latestOtp) {
+        await tx.otpVerification.update({
+          where: { id: latestOtp.id },
+          data: { isUsed: true, usedAt: new Date() },
+        });
+      }
 
       // Update pending registration status
       await tx.pendingGuestRegistration.update({
@@ -726,5 +727,72 @@ export class AuthService {
 
     // Request new OTP
     return this.requestOtp({ phone });
+  }
+
+  /**
+   * Send OTP directly to any phone number (bypass pending registration)
+   * For testing or simplified registration flow
+   */
+  async sendDirectOtp(
+    phone: string,
+  ): Promise<{ message: string; devOtpCode?: string; expiresIn: number }> {
+    // Format phone number
+    const formattedPhone = this.smsService.formatPhoneNumber(phone);
+
+    // Check rate limit (1 OTP per minute)
+    const recentOtp = await this.prisma.otpVerification.findFirst({
+      where: {
+        phone: formattedPhone,
+        purpose: 'registration',
+        createdAt: { gte: new Date(Date.now() - 60 * 1000) },
+      },
+    });
+
+    if (recentOtp) {
+      throw new BadRequestException(
+        'Please wait 1 minute before requesting another OTP',
+      );
+    }
+
+    // Invalidate old OTPs
+    await this.prisma.otpVerification.updateMany({
+      where: {
+        phone: formattedPhone,
+        purpose: 'registration',
+        isUsed: false,
+      },
+      data: { isUsed: true },
+    });
+
+    // Send OTP via Supabase Auth
+    const result = await this.smsService.sendOtp(formattedPhone);
+
+    // Save tracking record
+    const trackingCode = result.devOtpCode || 'SUPABASE_MANAGED';
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    await this.prisma.otpVerification.create({
+      data: {
+        phone: formattedPhone,
+        code: trackingCode,
+        purpose: 'registration',
+        expiresAt,
+      },
+    });
+
+    const response: {
+      message: string;
+      devOtpCode?: string;
+      expiresIn: number;
+    } = {
+      message: 'OTP has been sent to your phone number.',
+      expiresIn: 300, // 5 minutes in seconds
+    };
+
+    if (result.devOtpCode) {
+      response.devOtpCode = result.devOtpCode;
+    }
+
+    return response;
   }
 }

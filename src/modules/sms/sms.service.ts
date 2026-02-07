@@ -1,138 +1,111 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
-import { QUEUE_NAMES } from '../../queue/queue.module';
-import { Twilio } from 'twilio';
-
-export interface SendSmsPayload {
-  phone: string;
-  message: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface OtpSmsPayload {
-  phone: string;
-  otpCode: string;
-}
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);
-  private twilioClient: Twilio | null = null;
+  private supabase: SupabaseClient | null = null;
+  private supabaseEnabled: boolean;
 
-  constructor(
-    @InjectQueue(QUEUE_NAMES.SMS) private readonly smsQueue: Queue,
-    private readonly configService: ConfigService,
-  ) {
-    // Initialize Twilio client if credentials are provided
-    const accountSid = this.configService.get<string>('twilio.accountSid');
-    const authToken = this.configService.get<string>('twilio.authToken');
-    const enabled = this.configService.get<boolean>('twilio.enabled');
+  constructor(private readonly configService: ConfigService) {
+    // Initialize Supabase client
+    const supabaseUrl = this.configService.get<string>('supabase.url');
+    const supabaseAnonKey = this.configService.get<string>('supabase.anonKey');
+    this.supabaseEnabled =
+      this.configService.get<boolean>('supabase.enabled') || false;
 
-    if (enabled && accountSid && authToken) {
-      this.twilioClient = new Twilio(accountSid, authToken);
-      this.logger.log('Twilio client initialized successfully');
+    if (this.supabaseEnabled && supabaseUrl && supabaseAnonKey) {
+      this.supabase = createClient(supabaseUrl, supabaseAnonKey);
+      this.logger.log('Supabase Auth OTP configured successfully');
     } else {
       this.logger.warn(
-        'Twilio credentials not configured. SMS will be logged only (dev mode).',
+        'Supabase not configured. OTP will be logged only (dev mode).',
       );
     }
   }
 
   /**
-   * Generate a random 6-digit OTP code
+   * Generate a random 6-digit OTP code (used in dev mode only)
    */
   generateOtpCode(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
   /**
-   * Send OTP via SMS
+   * Send OTP via Supabase Auth signInWithOtp
+   * Supabase handles OTP generation, sending SMS, and rate limiting
    */
-  async sendOtpSms(payload: OtpSmsPayload): Promise<void> {
-    const message = `[IntelliRentOps] Ma xac thuc OTP cua ban la: ${payload.otpCode}. Ma co hieu luc trong 5 phut. Vui long khong chia se ma nay voi bat ky ai.`;
+  async sendOtp(
+    phone: string,
+  ): Promise<{ success: boolean; devOtpCode?: string }> {
+    const formattedPhone = this.formatPhoneNumber(phone);
+    const maskedPhone = this.maskPhone(formattedPhone);
 
-    await this.queueSms({
-      phone: payload.phone,
-      message,
-      metadata: {
-        type: 'otp',
-        otpCode: payload.otpCode,
-      },
-    });
+    if (this.supabaseEnabled && this.supabase) {
+      this.logger.log(`Sending OTP to ${maskedPhone} via Supabase Auth...`);
 
-    const maskedPhone = this.maskPhone(payload.phone);
-    this.logger.log(`OTP SMS queued for phone: ${maskedPhone}`);
+      const { data, error } = await this.supabase.auth.signInWithOtp({
+        phone: formattedPhone,
+      });
+
+      if (error) {
+        this.logger.error(`Supabase OTP error: ${error.message}`);
+        throw new Error(`Failed to send OTP: ${error.message}`);
+      }
+
+      this.logger.log(`✓ OTP sent via Supabase to ${maskedPhone}`);
+      return { success: true };
+    }
+
+    // Dev mode: generate and log OTP (not actually sent)
+    const devOtpCode = this.generateOtpCode();
+    this.logger.log(`[DEV MODE] OTP for ${maskedPhone}: ${devOtpCode}`);
+    return { success: true, devOtpCode };
   }
 
   /**
-   * Queue SMS for sending
+   * Verify OTP via Supabase Auth verifyOtp
    */
-  async queueSms(payload: SendSmsPayload): Promise<void> {
-    await this.smsQueue.add('send-sms', payload, {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 2000,
-      },
-      removeOnComplete: true,
-      removeOnFail: false,
-    });
+  async verifyOtp(
+    phone: string,
+    otpCode: string,
+  ): Promise<{ success: boolean; supabaseUserId?: string }> {
+    const formattedPhone = this.formatPhoneNumber(phone);
+    const maskedPhone = this.maskPhone(formattedPhone);
+
+    if (this.supabaseEnabled && this.supabase) {
+      this.logger.log(`Verifying OTP for ${maskedPhone} via Supabase Auth...`);
+
+      const { data, error } = await this.supabase.auth.verifyOtp({
+        phone: formattedPhone,
+        token: otpCode,
+        type: 'sms',
+      });
+
+      if (error) {
+        this.logger.error(`Supabase OTP verification error: ${error.message}`);
+        throw new Error(`OTP verification failed: ${error.message}`);
+      }
+
+      this.logger.log(`✓ OTP verified for ${maskedPhone}`);
+      return {
+        success: true,
+        supabaseUserId: data.user?.id,
+      };
+    }
+
+    // Dev mode: always return success (OTP was logged to console)
+    this.logger.log(`[DEV MODE] OTP verified for ${maskedPhone}`);
+    return { success: true };
   }
 
   /**
-   * Mask phone number for logging (e.g., 0901234567 -> 090***4567)
+   * Mask phone number for logging (e.g., +84901234567 -> +849***4567)
    */
   private maskPhone(phone: string): string {
     if (phone.length <= 6) return '***';
-    return phone.slice(0, 3) + '***' + phone.slice(-4);
-  }
-
-  /**
-   * Send SMS directly via Twilio (for processor)
-   */
-  async sendSmsDirectly(payload: SendSmsPayload): Promise<boolean> {
-    const maskedPhone = this.maskPhone(payload.phone);
-
-    try {
-      // If Twilio is configured, use it
-      if (this.twilioClient) {
-        const fromNumber = this.configService.get<string>('twilio.phoneNumber');
-
-        if (!fromNumber) {
-          throw new Error('Twilio phone number not configured');
-        }
-
-        // Format phone number for international format (add +84 for Vietnam)
-        const formattedPhone = this.formatPhoneNumber(payload.phone);
-
-        const message = await this.twilioClient.messages.create({
-          body: payload.message,
-          from: fromNumber,
-          to: formattedPhone,
-        });
-
-        this.logger.log(
-          `SMS sent via Twilio to ${maskedPhone}. SID: ${message.sid}, Status: ${message.status}`,
-        );
-
-        return true;
-      }
-
-      // Fallback: Development mode - just log
-      const truncatedMessage = payload.message.substring(0, 50);
-      this.logger.log(`[DEV MODE] SMS to ${maskedPhone}: ${truncatedMessage}...`);
-
-      if (this.configService.get('app.nodeEnv') === 'development') {
-        this.logger.debug(`[DEV] Full SMS Content: ${payload.message}`);
-      }
-
-      return true;
-    } catch (error) {
-      this.logger.error(`Failed to send SMS to ${maskedPhone}:`, error);
-      throw error;
-    }
+    return phone.slice(0, 4) + '***' + phone.slice(-4);
   }
 
   /**
@@ -140,7 +113,10 @@ export class SmsService {
    * @param phone - Phone number (e.g., 0901234567)
    * @returns International format (e.g., +84901234567)
    */
-  private formatPhoneNumber(phone: string): string {
+  formatPhoneNumber(phone: string): string {
+    // Remove all spaces and special characters
+    phone = phone.replace(/[\s\-\(\)]/g, '');
+
     // Remove leading 0 if exists and add Vietnam country code
     if (phone.startsWith('0')) {
       return '+84' + phone.substring(1);

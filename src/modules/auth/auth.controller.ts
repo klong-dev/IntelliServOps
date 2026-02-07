@@ -173,4 +173,24 @@ export class AuthController {
   async resendOtp(@Body() requestOtpDto: RequestOtpDto) {
     return this.authService.resendOtp(requestOtpDto.phone);
   }
+
+  @Post('send-direct-otp')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '[DEV] Send OTP Directly',
+    description:
+      'Send OTP to any phone number without pending registration. For testing purposes.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OTP sent successfully with code included',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Rate limit exceeded',
+  })
+  async sendDirectOtp(@Body() requestOtpDto: RequestOtpDto) {
+    return this.authService.sendDirectOtp(requestOtpDto.phone);
+  }
 }
