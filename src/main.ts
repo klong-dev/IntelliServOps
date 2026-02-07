@@ -51,7 +51,7 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag('Auth', 'Authentication endpoints')
+    .addTag('Authentication', 'Authentication endpoints')
     .addTag('Users', 'User management endpoints')
     .addTag('Apartments', 'Apartment listing endpoints')
     .addTag('Contracts', 'Rental contract endpoints')
