@@ -265,6 +265,58 @@ Implement flow cho Guest đăng ký trở thành User thông qua xác thực OTP
 - `src/modules/auth/auth.module.ts` - Import SmsModule
 - `src/modules/index.ts` - Export SMS module
 
+**Update (2026-02-07): Migrated to Supabase Auth OTP**
+- ❌ Removed SpeedSMS and Twilio dependencies
+- ✅ Migrated to Supabase Auth for OTP SMS sending
+- ✅ `src/config/supabase.config.ts` - New Supabase configuration
+- ✅ `src/modules/sms/sms.service.ts` - Rewritten to use `supabase.auth.signInWithOtp()` and `verifyOtp()`
+- ✅ Dev mode: OTP logged to console when `SUPABASE_ENABLED=false`
+- ✅ Production: Real SMS via Supabase when enabled
+- ✅ BullMQ SMS processor re-enabled with Redis connection
+- ✅ Deleted `speedsms.config.ts` and `twilio.config.ts`
+
+### Task 7: Redis Connection Status & DevOps Improvements
+**Ngày:** 2026-02-07  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Thêm Redis connection health check và hiển thị trạng thái trong startup banner.
+
+**Thay đổi:**
+1. **Startup Banner Enhancement (`src/main.ts`):**
+   - Added Redis connection health check using CacheManager
+   - Display connection status: 🟢 Connected / 🔴 Disconnected
+   - Show Redis host and port in banner
+   - Added debug logging for troubleshooting
+
+2. **Redis Module Fix (`src/redis/redis.module.ts`):**
+   - Fixed password handling: empty string → undefined for no-auth Redis
+   - Proper Redis client configuration
+
+3. **BullMQ SMS Queue:**
+   - Re-enabled `sms.processor.ts` (was commented out)
+   - Re-enabled BullMQ imports in `sms.module.ts`
+   - SMS queue now functional with Redis connection
+
+4. **App Module:**
+   - Uncommented `redisConfig` in ConfigModule load array
+
+**Startup Banner Example:**
+```
+🏠 IntelliRentOps API is running!
+📍 Application: http://localhost:3006/api/v1
+📚 Swagger Docs: http://localhost:3006/docs
+🔧 Environment: development
+💾 Redis: 🟢 Connected (nong-vps:6379)
+```
+
+**Files thay đổi:**
+- `src/main.ts` - Added Redis health check and status display
+- `src/redis/redis.module.ts` - Fixed password handling
+- `src/app.module.ts` - Uncommented redisConfig
+- `src/modules/sms/sms.processor.ts` - Uncommented (enabled)
+- `src/modules/sms/sms.module.ts` - Re-enabled BullMQ imports
+
 ---
 
 ## 📝 Backlog / TODO
