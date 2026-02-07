@@ -199,6 +199,74 @@ Tạo thư mục `documents/` với dev-note.md và task-note.md.
 
 ---
 
+## ✅ Recently Completed
+
+### Task 6: Guest to User Registration Flow with OTP
+**Ngày:** 2026-02-07  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Implement flow cho Guest đăng ký trở thành User thông qua xác thực OTP SMS.
+
+**Flow:**
+1. Guest và Staff thỏa thuận thuê nhà xong
+2. Staff submit thông tin Guest lên hệ thống (POST `/auth/submit-guest`)
+3. Guest tải app mobile và dùng số điện thoại đã cung cấp để request OTP (POST `/auth/request-otp`)
+4. Hệ thống gửi OTP 6 số qua SMS
+5. Guest verify OTP và tạo password để hoàn tất đăng ký (POST `/auth/verify-otp`)
+6. Sau khi thành công, Guest trở thành User và nhận tokens
+
+**Chi tiết kỹ thuật:**
+
+**1. Prisma Schema Updates:**
+- Thêm `OtpVerification` model - lưu trữ OTP codes
+- Thêm `PendingGuestRegistration` model - lưu thông tin guest chờ đăng ký
+- Thêm enums: `OtpPurpose`, `PendingRegistrationStatus`
+- Thêm relation `pendingGuestRegistrations` cho Staff model
+
+**2. SMS Module (`src/modules/sms/`):**
+- `SmsService` - generate OTP 6 số, queue SMS gửi đi
+- `SmsProcessor` - xử lý background job gửi SMS (BullMQ)
+- `SmsModule` - đăng ký queue và export service
+- Thêm `SMS` queue vào `QueueModule`
+
+**3. Auth DTOs (`src/modules/auth/dto/`):**
+- `SubmitGuestInfoDto` - Staff submit thông tin guest
+- `RequestOtpDto` - Guest request OTP
+- `VerifyOtpDto` - Guest verify OTP và tạo password
+
+**4. Auth Service Methods:**
+- `submitGuestInfo()` - Staff submit thông tin, tạo pending registration
+- `requestOtp()` - Validate pending, generate & send OTP
+- `verifyOtpAndRegister()` - Verify OTP, create User, return tokens
+- `resendOtp()` - Invalidate old OTP, send new one
+
+**5. Auth Controller Endpoints:**
+- `POST /auth/submit-guest` - Staff only (protected)
+- `POST /auth/request-otp` - Public
+- `POST /auth/verify-otp` - Public
+- `POST /auth/resend-otp` - Public
+
+**6. Security Features:**
+- OTP expires in 5 minutes
+- Max 5 failed OTP attempts
+- Rate limit: 1 OTP request per minute
+- Pending registration expires in 30 days
+- Phone number masking in logs
+
+**Files thay đổi:**
+- `prisma/schema.prisma` - Added OtpVerification, PendingGuestRegistration models
+- `prisma/migrations/20260207054402_add_otp_and_pending_registration/` - Migration
+- `src/queue/queue.module.ts` - Added SMS queue
+- `src/modules/sms/` - New SMS module (service, processor, module, index)
+- `src/modules/auth/dto/` - New DTOs (submit-guest-info, request-otp, verify-otp)
+- `src/modules/auth/auth.service.ts` - Added registration flow methods
+- `src/modules/auth/auth.controller.ts` - Added new endpoints
+- `src/modules/auth/auth.module.ts` - Import SmsModule
+- `src/modules/index.ts` - Export SMS module
+
+---
+
 ## 📝 Backlog / TODO
 
 ### Feature Modules
@@ -212,8 +280,8 @@ Tạo thư mục `documents/` với dev-note.md và task-note.md.
 - [ ] TicketsModule - Support tickets
 
 ### Prisma Schema
-- [ ] Define all 26 entity models in Prisma schema
-- [ ] Create initial migration
+- [x] Define OTP and PendingGuestRegistration models
+- [ ] Define remaining entity models in Prisma schema
 - [ ] Seed database with sample data
 
 ### Common Components

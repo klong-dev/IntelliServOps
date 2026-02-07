@@ -10,6 +10,7 @@ import {
   redisConfig,
   payosConfig,
   tuyaConfig,
+  twilioConfig,
 } from './config';
 
 // Shared Infrastructure
@@ -45,6 +46,7 @@ import { AppService } from './app.service';
         // redisConfig,
         payosConfig,
         tuyaConfig,
+        twilioConfig,
       ],
       envFilePath: ['.env'],
     }),
