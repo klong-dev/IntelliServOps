@@ -67,7 +67,24 @@ async function bootstrap() {
     swaggerOptions: {
       persistAuthorization: true,
     },
+    customSiteTitle: 'IntelliRentOps API Docs',
+    customCssUrl: undefined,
   });
+
+  // Disable caching for Swagger UI & API spec (fixes Cloudflare tunnel serving stale docs)
+  const expressApp_noCacheMiddleware = (req: any, res: any, next: any) => {
+    if (
+      req.path.startsWith('/docs') ||
+      req.path.startsWith('/openapi')
+    ) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surrogate-Control', 'no-store');
+    }
+    next();
+  };
+  app.use(expressApp_noCacheMiddleware);
 
   // Expose OpenAPI spec as JSON and YAML for frontend code generation
   const expressApp = app.getHttpAdapter().getInstance();
