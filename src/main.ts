@@ -60,6 +60,12 @@ async function bootstrap() {
     .addTag('IoT', 'IoT device control endpoints')
     .addTag('Maintenance', 'Maintenance request endpoints')
     .addTag('Tickets', 'Support ticket endpoints')
+    .addTag('Tasks', 'Task management endpoints')
+    .addTag('Partners', 'Partner & property request endpoints')
+    .addTag('Notifications', 'Notification endpoints')
+    .addTag('Policies', 'Policy & legal document endpoints')
+    .addTag('Activity Logs', 'Audit trail endpoints')
+    .addTag('Viewing Requests', 'Property viewing & appointment endpoints')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
