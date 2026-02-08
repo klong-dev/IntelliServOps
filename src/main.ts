@@ -51,7 +51,7 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag('Auth', 'Authentication endpoints')
+    .addTag('Authentication', 'Authentication endpoints')
     .addTag('Users', 'User management endpoints')
     .addTag('Apartments', 'Apartment listing endpoints')
     .addTag('Contracts', 'Rental contract endpoints')
@@ -60,6 +60,12 @@ async function bootstrap() {
     .addTag('IoT', 'IoT device control endpoints')
     .addTag('Maintenance', 'Maintenance request endpoints')
     .addTag('Tickets', 'Support ticket endpoints')
+    .addTag('Tasks', 'Task management endpoints')
+    .addTag('Partners', 'Partner & property request endpoints')
+    .addTag('Notifications', 'Notification endpoints')
+    .addTag('Policies', 'Policy & legal document endpoints')
+    .addTag('Activity Logs', 'Audit trail endpoints')
+    .addTag('Viewing Requests', 'Property viewing & appointment endpoints')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -67,7 +73,24 @@ async function bootstrap() {
     swaggerOptions: {
       persistAuthorization: true,
     },
+    customSiteTitle: 'IntelliRentOps API Docs',
+    customCssUrl: undefined,
   });
+
+  // Disable caching for Swagger UI & API spec (fixes Cloudflare tunnel serving stale docs)
+  const expressApp_noCacheMiddleware = (req: any, res: any, next: any) => {
+    if (
+      req.path.startsWith('/docs') ||
+      req.path.startsWith('/openapi')
+    ) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surrogate-Control', 'no-store');
+    }
+    next();
+  };
+  app.use(expressApp_noCacheMiddleware);
 
   // Expose OpenAPI spec as JSON and YAML for frontend code generation
   const expressApp = app.getHttpAdapter().getInstance();
@@ -91,6 +114,7 @@ async function bootstrap() {
     📍 Application: http://localhost:${port}/${apiPrefix}/${apiVersion}
     📚 Swagger Docs: http://localhost:${port}/docs
     🔧 Environment: ${configService.get('app.nodeEnv')}
+    💾 Redis: ${'🟢 Connected'} (${configService.get('redis.host')}:${configService.get('redis.port')})
   `);
 }
 bootstrap();

@@ -1,98 +1,160 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# IntelliRentOps
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+> Hệ thống quản lý cho thuê căn hộ thông minh với tích hợp IoT và thanh toán trực tuyến.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🚀 Tech Stack
 
-## Description
+| Layer | Technology |
+|-------|------------|
+| **Framework** | NestJS (TypeScript) |
+| **Database** | PostgreSQL + Prisma ORM |
+| **Auth** | JWT (Access + Refresh Token) |
+| **Queue** | BullMQ + Redis |
+| **IoT** | Tuya Cloud API |
+| **Payments** | PayOS |
+| **SMS** | Twilio |
+| **Storage** | Supabase |
+| **Docs** | Swagger/OpenAPI |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## 📦 Modules
 
-```bash
-$ npm install
-```
+| Module | Description |
+|--------|-------------|
+| `auth` | JWT authentication, OTP verification, multi-actor login (User/Staff/Operator/Admin/Partner) |
+| `users` | User management và profiles |
+| `apartments` | Apartment listings, search, filters |
+| `contracts` | Rental contracts lifecycle (draft → pending → active → terminated) |
+| `invoices` | Invoice generation và billing |
+| `payments` | Payment processing (PayOS integration) |
+| `maintenance` | Maintenance request tracking |
+| `tickets` | Support ticket system |
+| `tasks` | Staff task assignment |
+| `iot` | Smart device control, utility meter readings |
+| `notifications` | Multi-channel notifications (in-app, email, SMS, push) |
+| `viewing-requests` | Guest apartment viewing flow |
+| `partners` | Property partner management |
+| `policies` | Legal documents và policies |
+| `activity-logs` | Audit logging |
+| `sms` | SMS messaging via Twilio |
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
+## ⚡ Quick Start
 
 ```bash
-# unit tests
-$ npm run test
+# Install dependencies
+npm install
 
-# e2e tests
-$ npm run test:e2e
+# Setup environment
+cp .env.example .env
+# Edit .env with your database and API keys
 
-# test coverage
-$ npm run test:cov
+# Generate Prisma client
+npx prisma generate
+
+# Run migrations
+npx prisma migrate dev
+
+# Start development server
+npm run start:dev
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## 🧪 Testing
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Coverage report
+npm run test:cov
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+**Test Stats:** 287 tests across 22 suites ✅
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## 📝 API Documentation
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Swagger UI available at: `http://localhost:3000/api/docs`
 
-## Support
+---
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## 🔐 Authentication
 
-## Stay in touch
+Multi-actor JWT authentication với 6 actor types:
+- `user` - Tenants
+- `staff` - Field staff
+- `operator` - Customer service
+- `admin` - System administrators
+- `partner` - Property owners
+- `guest` - Unauthenticated visitors
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+**Token Flow:**
+1. Login → Access Token (15min) + Refresh Token (7d)
+2. Access Token expired → Use Refresh Token to get new pair
+3. Refresh Token expired → Re-login required
+
+---
+
+## 📁 Project Structure
+
+```
+src/
+├── common/           # Guards, decorators, enums, filters
+├── config/           # App configuration
+├── modules/          # Feature modules
+│   ├── auth/
+│   ├── users/
+│   ├── apartments/
+│   ├── contracts/
+│   ├── invoices/
+│   ├── payments/
+│   ├── maintenance/
+│   ├── tickets/
+│   ├── tasks/
+│   ├── iot/
+│   ├── notifications/
+│   ├── viewing-requests/
+│   ├── partners/
+│   ├── policies/
+│   ├── activity-logs/
+│   └── sms/
+├── prisma/           # Database service
+└── test-utils/       # Testing utilities
+```
+
+---
+
+## 🛠 Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run start:dev` | Development với hot reload |
+| `npm run build` | Production build |
+| `npm run start:prod` | Run production |
+| `npm test` | Run unit tests |
+| `npm run lint` | ESLint check |
+| `npm run format` | Prettier format |
+
+---
+
+## 📄 Documentation
+
+Xem thêm tài liệu chi tiết trong thư mục `/documents`:
+- `dev-note.md` - Developer guidelines
+- `flows.md` - Business flows
+- `main-flow.md` - Core user journeys
+- `testing.md` - Testing guidelines
+
+---
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+MIT
