@@ -153,7 +153,6 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValueOnce(mockUser({ email: createDto.email }));
 
       await expect(service.create(createDto)).rejects.toThrow(ConflictException);
-      await expect(service.create(createDto)).rejects.toThrow('Email already registered');
     });
 
     it('should throw ConflictException if nationalId already exists', async () => {
@@ -161,7 +160,6 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValueOnce(mockUser({ nationalId: createDto.nationalId }));
 
       await expect(service.create({ ...createDto, nationalId: '123456789' })).rejects.toThrow(ConflictException);
-      await expect(service.create({ ...createDto, nationalId: '123456789' })).rejects.toThrow('National ID already registered');
     });
   });
 

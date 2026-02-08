@@ -42,12 +42,24 @@ export class ApartmentsService {
           { description: { contains: keyword, mode: 'insensitive' } },
         ],
       }),
-      ...(minBedrooms !== undefined && { numberOfBedrooms: { gte: minBedrooms } }),
-      ...(maxBedrooms !== undefined && { numberOfBedrooms: { lte: maxBedrooms } }),
-      ...(minPrice !== undefined && { baseRentPrice: { gte: minPrice } }),
-      ...(maxPrice !== undefined && { baseRentPrice: { lte: maxPrice } }),
-      ...(minArea !== undefined && { totalArea: { gte: minArea } }),
-      ...(maxArea !== undefined && { totalArea: { lte: maxArea } }),
+      ...((minBedrooms !== undefined || maxBedrooms !== undefined) && {
+        numberOfBedrooms: {
+          ...(minBedrooms !== undefined && { gte: minBedrooms }),
+          ...(maxBedrooms !== undefined && { lte: maxBedrooms }),
+        },
+      }),
+      ...((minPrice !== undefined || maxPrice !== undefined) && {
+        baseRentPrice: {
+          ...(minPrice !== undefined && { gte: minPrice }),
+          ...(maxPrice !== undefined && { lte: maxPrice }),
+        },
+      }),
+      ...((minArea !== undefined || maxArea !== undefined) && {
+        totalArea: {
+          ...(minArea !== undefined && { gte: minArea }),
+          ...(maxArea !== undefined && { lte: maxArea }),
+        },
+      }),
       ...(furnishingStatus && { furnishingStatus }),
     };
 

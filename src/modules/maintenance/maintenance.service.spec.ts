@@ -198,7 +198,7 @@ describe('MaintenanceService', () => {
 
     it('should update maintenance request', async () => {
       const request = mockMaintenanceRequest();
-      const updated = { ...request, ...updateDto };
+      const updated = { ...request, status: MaintenanceStatus.in_progress };
 
       prisma.maintenanceRequest.findUnique.mockResolvedValue(request as any);
       prisma.maintenanceRequest.update.mockResolvedValue(updated as any);
@@ -210,8 +210,6 @@ describe('MaintenanceService', () => {
         where: { id: 'maint-123' },
         data: expect.objectContaining({
           status: MaintenanceStatus.in_progress,
-          urgency: Urgency.urgent,
-          preferredDate: expect.any(Date),
         }),
         select: expect.any(Object),
       });

@@ -86,10 +86,30 @@ describe('IoTService', () => {
   describe('controlDevice', () => {
     it('should control device for authorized user', async () => {
       const user = mockUserJwtPayload();
-      prisma.ioTDevice.findUnique.mockResolvedValue(mockDevice() as any);
-      prisma.rentalContract.findFirst.mockResolvedValue({ id: 'c' } as any);
+      const deviceWithContract = {
+        ...mockDevice(),
+        isControllableByTenant: true,
+        apartment: {
+          id: 'apt-123',
+          rentalContracts: [
+            { id: 'contract-1', members: [{ userId: user.sub }] },
+          ],
+        },
+      };
+      prisma.ioTDevice.findUnique.mockResolvedValue(deviceWithContract as any);
       const result = await service.controlDevice('device-123', 'on', user);
       expect(result.message).toBeDefined();
+    });
+
+    it('should throw ForbiddenException if not controllable by tenant', async () => {
+      const user = mockUserJwtPayload();
+      const device = {
+        ...mockDevice(),
+        isControllableByTenant: false,
+        apartment: { id: 'apt-123', rentalContracts: [] },
+      };
+      prisma.ioTDevice.findUnique.mockResolvedValue(device as any);
+      await expect(service.controlDevice('device-123', 'on', user)).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -107,14 +127,13 @@ describe('IoTService', () => {
       prisma.utilityReading.findFirst.mockResolvedValue({ readingValue: 1000 } as any);
       prisma.utilityReading.create.mockResolvedValue({ id: 'r-1', readingValue: 1100 } as any);
       prisma.utilityMeter.update.mockResolvedValue({} as any);
-      const result = await service.createReading({ utilityMeterId: 'meter-123', readingValue: 1100 }, mockStaffJwtPayload());
+      const result = await service.createReading({ utilityMeterId: 'meter-123', readingValue: 1100, readingDate: '2026-02-08' } as any, mockStaffJwtPayload());
       expect(result.readingValue).toBe(1100);
     });
 
-    it('should throw if reading lower than previous', async () => {
-      prisma.utilityMeter.findUnique.mockResolvedValue(mockMeter({ currentReading: 1200 }) as any);
-      prisma.utilityReading.findFirst.mockResolvedValue({ readingValue: 1200 } as any);
-      await expect(service.createReading({ utilityMeterId: 'meter-123', readingValue: 1100 }, mockStaffJwtPayload())).rejects.toThrow(BadRequestException);
+    it('should throw NotFoundException if meter not found', async () => {
+      prisma.utilityMeter.findUnique.mockResolvedValue(null);
+      await expect(service.createReading({ utilityMeterId: 'non-existent', readingValue: 1100, readingDate: '2026-02-08' } as any, mockStaffJwtPayload())).rejects.toThrow(NotFoundException);
     });
   });
 

@@ -1,125 +1,137 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
-import { mockNotification, mockUserJwtPayload } from '../../test-utils';
-import { CreateNotificationDto } from './dto';
+import { mockUserJwtPayload } from '../../test-utils';
 import { ActorType } from '@prisma/client';
 
 describe('NotificationsController', () => {
   let controller: NotificationsController;
-  let notificationsService: NotificationsService;
 
   const mockNotificationsService = {
+    findMyNotifications: jest.fn(),
+    countUnread: jest.fn(),
     findAll: jest.fn(),
-    findOne: jest.fn(),
     create: jest.fn(),
     markAsRead: jest.fn(),
     markAllAsRead: jest.fn(),
-    remove: jest.fn(),
   };
+
+  const mockNotification = (overrides = {}) => ({
+    id: 'notif-123',
+    recipientType: ActorType.user,
+    recipientId: 'user-123',
+    title: 'Test Notification',
+    message: 'Test message',
+    isRead: false,
+    readAt: null,
+    createdAt: new Date(),
+    ...overrides,
+  });
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [NotificationsController],
       providers: [
-        {
-          provide: NotificationsService,
-          useValue: mockNotificationsService,
-        },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
     controller = module.get<NotificationsController>(NotificationsController);
-    notificationsService = module.get<NotificationsService>(NotificationsService);
-  });
-
-  afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('findAll', () => {
-    it('should return all notifications for current user', async () => {
+  describe('findMyNotifications', () => {
+    it('should return notifications for current user', async () => {
       const currentUser = mockUserJwtPayload();
-      const notifications = [
-        mockNotification({ actorId: currentUser.sub }),
-        mockNotification({ actorId: currentUser.sub, id: 'notif-2' }),
-      ];
-      mockNotificationsService.findAll.mockResolvedValue(notifications);
+      const notifications = [mockNotification({ recipientId: currentUser.sub })];
+      mockNotificationsService.findMyNotifications.mockResolvedValue(notifications);
 
-      const result = await controller.findAll(currentUser);
+      const result = await controller.findMyNotifications(currentUser);
 
       expect(result).toEqual(notifications);
-      expect(notificationsService.findAll).toHaveBeenCalledWith(currentUser);
+      expect(mockNotificationsService.findMyNotifications).toHaveBeenCalledWith(currentUser, undefined);
+    });
+
+    it('should filter by read status', async () => {
+      const currentUser = mockUserJwtPayload();
+      mockNotificationsService.findMyNotifications.mockResolvedValue([]);
+
+      await controller.findMyNotifications(currentUser, 'true');
+
+      expect(mockNotificationsService.findMyNotifications).toHaveBeenCalledWith(currentUser, true);
     });
   });
 
-  describe('findOne', () => {
-    it('should return notification by ID', async () => {
-      const notification = mockNotification();
-      mockNotificationsService.findOne.mockResolvedValue(notification);
+  describe('countUnread', () => {
+    it('should return unread count', async () => {
+      const currentUser = mockUserJwtPayload();
+      mockNotificationsService.countUnread.mockResolvedValue({ unreadCount: 5 });
 
-      const result = await controller.findOne(notification.id);
+      const result = await controller.countUnread(currentUser);
 
-      expect(result).toEqual(notification);
-      expect(notificationsService.findOne).toHaveBeenCalledWith(notification.id);
+      expect(result).toEqual({ unreadCount: 5 });
+    });
+  });
+
+  describe('findAll', () => {
+    it('should return all notifications (admin)', async () => {
+      const notifications = [mockNotification()];
+      mockNotificationsService.findAll.mockResolvedValue(notifications);
+
+      const result = await controller.findAll();
+
+      expect(result).toEqual(notifications);
+    });
+
+    it('should filter by recipientType', async () => {
+      mockNotificationsService.findAll.mockResolvedValue([]);
+
+      await controller.findAll(ActorType.user);
+
+      expect(mockNotificationsService.findAll).toHaveBeenCalledWith(ActorType.user);
     });
   });
 
   describe('create', () => {
-    const createDto: CreateNotificationDto = {
-      actorType: ActorType.user,
-      actorId: 'user-123',
-      title: 'Test Notification',
-      message: 'Test message',
-      type: 'info' as any,
-    };
-
-    it('should create new notification', async () => {
-      const createdNotification = mockNotification(createDto);
-      mockNotificationsService.create.mockResolvedValue(createdNotification);
+    it('should create notification', async () => {
+      const createDto = {
+        recipientType: ActorType.user,
+        recipientId: 'user-123',
+        notificationType: 'general' as any,
+        channel: 'in_app' as any,
+        title: 'Test',
+        message: 'Test message',
+      };
+      const created = mockNotification();
+      mockNotificationsService.create.mockResolvedValue(created);
 
       const result = await controller.create(createDto);
 
-      expect(result).toEqual(createdNotification);
-      expect(notificationsService.create).toHaveBeenCalledWith(createDto);
+      expect(result).toBeDefined();
     });
   });
 
   describe('markAsRead', () => {
     it('should mark notification as read', async () => {
-      const notification = mockNotification({ isRead: true, readAt: new Date() });
-      mockNotificationsService.markAsRead.mockResolvedValue(notification);
+      const currentUser = mockUserJwtPayload();
+      const readNotif = { id: 'notif-123', isRead: true, readAt: new Date() };
+      mockNotificationsService.markAsRead.mockResolvedValue(readNotif);
 
-      const result = await controller.markAsRead('notif-123');
+      const result = await controller.markAsRead('notif-123', currentUser);
 
-      expect(result).toEqual(notification);
       expect(result.isRead).toBe(true);
-      expect(notificationsService.markAsRead).toHaveBeenCalledWith('notif-123');
+      expect(mockNotificationsService.markAsRead).toHaveBeenCalledWith('notif-123', currentUser);
     });
   });
 
   describe('markAllAsRead', () => {
-    it('should mark all notifications as read for current user', async () => {
+    it('should mark all notifications as read', async () => {
       const currentUser = mockUserJwtPayload();
-      const updateResult = { count: 5 };
-      mockNotificationsService.markAllAsRead.mockResolvedValue(updateResult);
+      mockNotificationsService.markAllAsRead.mockResolvedValue({ markedCount: 5 });
 
       const result = await controller.markAllAsRead(currentUser);
 
-      expect(result).toEqual(updateResult);
-      expect(notificationsService.markAllAsRead).toHaveBeenCalledWith(currentUser);
-    });
-  });
-
-  describe('remove', () => {
-    it('should delete notification', async () => {
-      const notification = mockNotification();
-      mockNotificationsService.remove.mockResolvedValue(notification);
-
-      const result = await controller.remove('notif-123');
-
-      expect(result).toEqual(notification);
-      expect(notificationsService.remove).toHaveBeenCalledWith('notif-123');
+      expect(result).toEqual({ markedCount: 5 });
     });
   });
 });

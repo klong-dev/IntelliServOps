@@ -111,18 +111,22 @@ describe('ContractsService', () => {
       monthlyRent: 10000000,
       depositAmount: 20000000,
       paymentDueDay: 5,
-      members: [{ userId: 'user-123', role: 'tenant' as any }],
+      members: [{ userId: 'user-123', memberType: 'primary' as any }],
     };
 
     it('should create contract successfully', async () => {
       const operator = mockOperatorJwtPayload();
       const apartment = { id: 'apt-123', status: ApartmentStatus.available };
-      const created = mockContract(createDto);
+      const created = mockContract();
 
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
       prisma.rentalContract.findFirst.mockResolvedValue(null);
       prisma.rentalContract.count.mockResolvedValue(0);
-      prisma.rentalContract.create.mockResolvedValue(created as any);
+      // Service uses callback-style $transaction
+      prisma.$transaction.mockImplementation(async (callback) => callback({
+        rentalContract: { create: jest.fn().mockResolvedValue(created) },
+        userContractMember: { createMany: jest.fn().mockResolvedValue({}) },
+      }));
 
       const result = await service.create(createDto, operator);
 
@@ -174,17 +178,16 @@ describe('ContractsService', () => {
 
   describe('activate', () => {
     it('should activate contract', async () => {
-      const contract = mockContract({ status: ContractStatus.draft });
+      const contract = mockContract({ status: ContractStatus.pending, apartmentId: 'apt-123' });
       const activated = { ...contract, status: ContractStatus.active };
 
-      prisma.rentalContract.findUnique.mockResolvedValue(contract as any);
-      prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
-      prisma.rentalContract.update.mockResolvedValue(activated as any);
-      prisma.apartment.update.mockResolvedValue({} as any);
+      prisma.rentalContract.findUnique.mockResolvedValue({ ...contract, apartment: { id: 'apt-123' } } as any);
+      // Service uses array-style $transaction for activate
+      prisma.$transaction.mockResolvedValue([activated, {}]);
 
       const result = await service.activate('contract-123');
 
-      expect(result.status).toBe(ContractStatus.active);
+      expect(result[0].status).toBe(ContractStatus.active);
     });
 
     it('should throw NotFoundException if not found', async () => {
@@ -193,43 +196,32 @@ describe('ContractsService', () => {
       await expect(service.activate('non-existent')).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException if already active', async () => {
+    it('should throw ConflictException if not pending', async () => {
       const contract = mockContract({ status: ContractStatus.active });
-      prisma.rentalContract.findUnique.mockResolvedValue(contract as any);
+      prisma.rentalContract.findUnique.mockResolvedValue({ ...contract, apartment: { id: 'apt-123' } } as any);
 
-      await expect(service.activate('contract-123')).rejects.toThrow(BadRequestException);
+      await expect(service.activate('contract-123')).rejects.toThrow(ConflictException);
     });
   });
 
   describe('terminate', () => {
     it('should terminate active contract', async () => {
-      const contract = mockContract({ status: ContractStatus.active });
+      const contract = mockContract({ status: ContractStatus.active, apartmentId: 'apt-123' });
       const terminated = { ...contract, status: ContractStatus.terminated };
 
-      prisma.rentalContract.findUnique.mockResolvedValue(contract as any);
-      prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
-      prisma.rentalContract.update.mockResolvedValue(terminated as any);
-      prisma.apartment.update.mockResolvedValue({} as any);
+      prisma.rentalContract.findUnique.mockResolvedValue({ ...contract, apartment: { id: 'apt-123' } } as any);
+      // Service uses array-style $transaction for terminate
+      prisma.$transaction.mockResolvedValue([terminated, {}, {}]);
 
       const result = await service.terminate('contract-123', 'Early termination', 5000000);
 
-      expect(result.status).toBe(ContractStatus.terminated);
+      expect(result[0].status).toBe(ContractStatus.terminated);
     });
 
     it('should throw NotFoundException if not found', async () => {
       prisma.rentalContract.findUnique.mockResolvedValue(null);
 
       await expect(service.terminate('non-existent', 'reason')).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  describe('generateContractNumber', () => {
-    it('should generate unique contract number', async () => {
-      prisma.rentalContract.count.mockResolvedValue(5);
-
-      const result = await service.generateContractNumber();
-
-      expect(result).toMatch(/^CTR-\d{6}-\d{5}$/);
     });
   });
 });

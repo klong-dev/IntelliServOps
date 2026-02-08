@@ -119,10 +119,11 @@ describe('SmsService', () => {
       expect(formatted).toBe('+84901234567');
     });
 
-    it('should add + prefix if missing', () => {
+    it('should add + prefix if phone starts with 84', () => {
       const phone = '84901234567';
       const formatted = service.formatPhoneNumber(phone);
       
+      // Service now correctly adds just + when phone already starts with 84
       expect(formatted).toBe('+84901234567');
     });
 

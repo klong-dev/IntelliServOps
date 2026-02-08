@@ -125,6 +125,10 @@ export class SmsService {
     if (phone.startsWith('+')) {
       return phone;
     }
+    // If starts with 84 (country code without +), just add +
+    if (phone.startsWith('84') && phone.length >= 11) {
+      return '+' + phone;
+    }
     // Otherwise add +84
     return '+84' + phone;
   }

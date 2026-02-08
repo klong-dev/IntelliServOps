@@ -46,7 +46,7 @@ describe('AuthController', () => {
         password: 'password123',
       };
 
-      const expected Response: AuthResponse = {
+      const expectedResponse: AuthResponse = {
         user: {
           id: 'user-123',
           email: loginDto.email,

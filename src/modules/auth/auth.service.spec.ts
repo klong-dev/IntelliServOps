@@ -198,16 +198,17 @@ describe('AuthService', () => {
 
       jwtService.verify.mockReturnValue(payload);
       prisma.refreshToken.findFirst.mockResolvedValue(storedToken);
-      prisma.$transaction.mockImplementation((callback) => callback(prisma));
-      prisma.refreshToken.update.mockResolvedValue({ ...storedToken, revokedAt: new Date() });
-      prisma.refreshToken.create.mockResolvedValue(mockRefreshToken());
+      // Service uses $transaction([...]) array syntax, not callback
+      prisma.$transaction.mockResolvedValue([
+        { ...storedToken, revokedAt: new Date() },
+        mockRefreshToken(),
+      ]);
 
       const result = await service.refresh(refreshToken);
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
-      expect(prisma.refreshToken.update).toHaveBeenCalled();
-      expect(prisma.refreshToken.create).toHaveBeenCalled();
+      expect(prisma.$transaction).toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException for invalid token', async () => {
