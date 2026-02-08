@@ -52,22 +52,6 @@ enum ActorType {
   system
 }
 
-// --- OTP & Registration Enums ---
-enum OtpPurpose {
-  registration
-  password_reset
-  phone_verification
-}
-
-enum PendingRegistrationStatus {
-  pending
-  otp_sent
-  verified
-  completed
-  expired
-  cancelled
-}
-
 // --- Asset Enums ---
 enum FurnishingStatus {
   unfurnished
@@ -468,15 +452,14 @@ model Staff {
   updatedAt       DateTime  @updatedAt
 
   // Relations
-  createdUsers               User[]                     @relation("UserCreatedByStaff")
-  assignedTasks              Task[]                     @relation("TaskAssignedToStaff")
-  appointments               Appointment[]
-  contracts                  RentalContract[]           @relation("ContractCreatedByStaff")
-  processedPayments          Payment[]                  @relation("PaymentProcessedByStaff")
-  assignedTickets            Ticket[]                   @relation("TicketAssignedToStaff")
-  utilityReadings            UtilityReading[]           @relation("ReadingByStaff")
-  verifiedReadings           UtilityReading[]           @relation("ReadingVerifiedByStaff")
-  pendingGuestRegistrations  PendingGuestRegistration[] @relation("PendingRegistrationByStaff")
+  createdUsers       User[]              @relation("UserCreatedByStaff")
+  assignedTasks      Task[]              @relation("TaskAssignedToStaff")
+  appointments       Appointment[]
+  contracts          RentalContract[]    @relation("ContractCreatedByStaff")
+  processedPayments  Payment[]           @relation("PaymentProcessedByStaff")
+  assignedTickets    Ticket[]            @relation("TicketAssignedToStaff")
+  utilityReadings    UtilityReading[]    @relation("ReadingByStaff")
+  verifiedReadings   UtilityReading[]    @relation("ReadingVerifiedByStaff")
 
   @@index([role])
   @@index([isActive])
@@ -1321,48 +1304,4 @@ model RefreshToken {
   @@index([actorId, actorType])
   @@index([expiresAt])
   @@map("refresh_tokens")
-}
-
-model OtpVerification {
-  id        String    @id @default(uuid())
-  phone     String
-  code      String
-  purpose   OtpPurpose @default(registration)
-  isUsed    Boolean   @default(false)
-  attempts  Int       @default(0)
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
-  usedAt    DateTime?
-
-  @@index([phone])
-  @@index([phone, code])
-  @@index([expiresAt])
-  @@map("otp_verifications")
-}
-
-model PendingGuestRegistration {
-  id                    String                 @id @default(uuid())
-  phone                 String                 @unique
-  email                 String?
-  fullName              String
-  dateOfBirth           DateTime?
-  nationalId            String?
-  passportNumber        String?
-  emergencyContactName  String?
-  emergencyContactPhone String?
-  notes                 String?
-  submittedByStaffId    String
-  status                PendingRegistrationStatus @default(pending)
-  expiresAt             DateTime
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-
-  // Relations
-  submittedByStaff Staff @relation("PendingRegistrationByStaff", fields: [submittedByStaffId], references: [id])
-
-  @@index([phone])
-  @@index([status])
-  @@index([submittedByStaffId])
-  @@index([expiresAt])
-  @@map("pending_guest_registrations")
 }
