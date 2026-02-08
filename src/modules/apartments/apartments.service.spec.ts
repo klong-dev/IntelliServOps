@@ -155,7 +155,7 @@ describe('ApartmentsService', () => {
     });
 
     it('should filter by bedrooms', async () => {
-      const dtoWithBedrooms = { ...searchDto, minBedrooms: 2, maxBedrooms: 3 };
+      const dtoWithBedrooms = { ...searchDto, minBedrooms: 1, maxBedrooms: 3 };
       prisma.apartment.findMany.mockResolvedValue([]);
       prisma.apartment.count.mockResolvedValue(0);
 
@@ -164,7 +164,7 @@ describe('ApartmentsService', () => {
       expect(prisma.apartment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            numberOfBedrooms: { gte: 2, lte: 3 },
+            numberOfBedrooms: { gte: 1, lte: 3 },
           }),
         })
       );

@@ -66,11 +66,13 @@ export const mockRefreshJwtPayload = (actorType: ActorType, actorId: string, ema
 // Helper function to determine role from actor type
 function determineRoleFromActorType(actorType: ActorType): string {
   const roleMap: Record<ActorType, string> = {
+    guest: 'guest',
     user: 'user',
     staff: 'staff',
     operator: 'operator',
     admin: 'admin',
     partner: 'partner',
+    system: 'system',
   };
   return roleMap[actorType] || 'user';
 }
