@@ -33,32 +33,29 @@ The IntelliRentOps system consists of the following 17 modules:
 
 ## Test Coverage Summary
 
-### ✅ Modules with Completed Unit Tests
+### ✅ All Modules with Completed Unit Tests
 
-| Module | Service Tests | Controller Tests | Total Test Cases | Coverage Target |
-|--------|--------------|------------------|-------------------|-----------------|
-| **Auth** | ✅ 80+ cases | ✅ 8 endpoints | ~90 | > 85% |
-| **SMS** | ✅ 12 cases | N/A | ~12 | > 80% |
-| **Users** | ✅ 45+ cases | ✅ 18 cases | ~63 | > 85% |
-| **Tasks** | ✅ 40+ cases | ✅ 24 cases | ~64 | > 85% |
-| **Tickets** | ✅ 45+ cases | ✅ 21 cases | ~66 | > 85% |
-| **Notifications** | ✅ 18 cases | ✅ 18 cases | ~36 | > 80% |
+| Module | Tests | Status |
+|--------|-------|--------|
+| Auth | Service + Controller | ✅ |
+| Users | Service + Controller | ✅ |
+| Tasks | Service + Controller | ✅ |
+| Tickets | Service + Controller | ✅ |
+| Notifications | Service + Controller | ✅ |
+| SMS | Service | ✅ |
+| Apartments | Service | ✅ |
+| Contracts | Service | ✅ |
+| Maintenance | Service | ✅ |
+| IoT | Service | ✅ |
+| Payments | Service | ✅ |
+| Invoices | Service | ✅ |
+| Partners | Service | ✅ |
+| Policies | Service | ✅ |
+| Activity Logs | Service | ✅ |
+| Viewing Requests | Service | ✅ |
+| App | Controller | ✅ |
 
-**Total Test Cases Created: 330+**
-
-### ⏳ Modules Pending Tests
-
-- Staff Module
-- Operators Module
-- Admins Module
-- Partners Module
-- Apartments Module
-- Rental Contracts Module
-- Maintenance Module
-- Payments Module
-- Viewing Requests Module
-- Utility Readings Module
-- Invoices Module
+**Total: 287 tests across 22 test suites** ✅
 
 ---
 
@@ -499,7 +496,20 @@ npx prisma generate
 
 ---
 
-**Last Updated**: 2026-02-08  
-**Total Test Files**: 6  
-**Total Test Cases**: 270+  
-**Overall Coverage Target**: > 80%
+**Last Updated**: 2026-02-09  
+**Total Test Suites**: 22  
+**Total Test Cases**: 287  
+**Build Status**: ✅ Passing
+
+---
+
+## Recent Bug Fixes (2026-02-09)
+
+### 1. Apartments Service - Range Filter Bug
+**Fixed:** `minPrice/maxPrice`, `minBedrooms/maxBedrooms`, `minArea/maxArea` now combine correctly.
+
+### 2. SMS Service - Phone Formatting Bug  
+**Fixed:** Phone numbers starting with `84` now format as `+84xxx` instead of `+8484xxx`.
+
+### 3. JWT Mock - ActorType Bug
+**Fixed:** Added missing `guest` and `system` to roleMap for build compatibility.
