@@ -265,6 +265,202 @@ Implement flow cho Guest đăng ký trở thành User thông qua xác thực OTP
 - `src/modules/auth/auth.module.ts` - Import SmsModule
 - `src/modules/index.ts` - Export SMS module
 
+**Update (2026-02-07): Migrated to Supabase Auth OTP**
+- ❌ Removed SpeedSMS and Twilio dependencies
+- ✅ Migrated to Supabase Auth for OTP SMS sending
+- ✅ `src/config/supabase.config.ts` - New Supabase configuration
+- ✅ `src/modules/sms/sms.service.ts` - Rewritten to use `supabase.auth.signInWithOtp()` and `verifyOtp()`
+- ✅ Dev mode: OTP logged to console when `SUPABASE_ENABLED=false`
+- ✅ Production: Real SMS via Supabase when enabled
+- ✅ BullMQ SMS processor re-enabled with Redis connection
+- ✅ Deleted `speedsms.config.ts` and `twilio.config.ts`
+
+### Task 7: Redis Connection Status & DevOps Improvements
+**Ngày:** 2026-02-07  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Thêm Redis connection health check và hiển thị trạng thái trong startup banner.
+
+**Thay đổi:**
+1. **Startup Banner Enhancement (`src/main.ts`):**
+   - Added Redis connection health check using CacheManager
+   - Display connection status: 🟢 Connected / 🔴 Disconnected
+   - Show Redis host and port in banner
+   - Added debug logging for troubleshooting
+
+2. **Redis Module Fix (`src/redis/redis.module.ts`):**
+   - Fixed password handling: empty string → undefined for no-auth Redis
+   - Proper Redis client configuration
+
+3. **BullMQ SMS Queue:**
+   - Re-enabled `sms.processor.ts` (was commented out)
+   - Re-enabled BullMQ imports in `sms.module.ts`
+   - SMS queue now functional with Redis connection
+
+4. **App Module:**
+   - Uncommented `redisConfig` in ConfigModule load array
+
+**Startup Banner Example:**
+```
+🏠 IntelliRentOps API is running!
+📍 Application: http://localhost:3006/api/v1
+📚 Swagger Docs: http://localhost:3006/docs
+🔧 Environment: development
+💾 Redis: 🟢 Connected (nong-vps:6379)
+```
+
+**Files thay đổi:**
+- `src/main.ts` - Added Redis health check and status display
+- `src/redis/redis.module.ts` - Fixed password handling
+- `src/app.module.ts` - Uncommented redisConfig
+- `src/modules/sms/sms.processor.ts` - Uncommented (enabled)
+- `src/modules/sms/sms.module.ts` - Re-enabled BullMQ imports
+
+---
+
+### Task 7: Comprehensive Unit Testing
+**Ngày:** 2026-02-08  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Viết unit tests cho toàn bộ 16 modules, đạt 287 tests across 22 test suites.
+
+**Chi tiết:**
+- Tạo test utilities: `prisma-mock.ts`, `jwt-mock.ts`
+- Unit tests cho tất cả services và controllers
+- Fix các test failures do mock không đúng syntax
+- Tests cover: CRUD operations, RBAC, error handling, edge cases
+
+**Modules đã test:**
+Auth, Users, Tasks, Tickets, Notifications, SMS, Apartments, Contracts, Maintenance, IoT, Payments, Invoices, Partners, Policies, Activity Logs, Viewing Requests
+
+**Files thay đổi:**
+- `src/test-utils/` - Test utilities
+- `src/modules/*/*.spec.ts` - All test files
+- `documents/testing.md` - Test documentation
+
+---
+
+### Task 8: API Bug Fixes
+**Ngày:** 2026-02-09  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Review và sửa bugs trong API services.
+
+**Bugs đã sửa:**
+
+1. **Apartments Service - Range Filter Overwrite:**
+   - Problem: `minPrice` và `maxPrice` bị overwrite khi cả 2 được set
+   - Fix: Combine thành `{ gte: min, lte: max }` object
+
+2. **SMS Service - Phone Formatting:**
+   - Problem: `84xxx` → `+8484xxx` (double prefix)
+   - Fix: Check `startsWith('84')` trước khi add prefix
+
+3. **JWT Mock - ActorType Missing:**
+   - Problem: Build fail do roleMap thiếu `guest` và `system`
+   - Fix: Add missing enum values
+
+**Files thay đổi:**
+- `src/modules/apartments/apartments.service.ts`
+- `src/modules/sms/sms.service.ts`
+- `src/test-utils/jwt-mock.ts`
+- Related test files
+
+---
+
+### Task 9: README Rewrite
+**Ngày:** 2026-02-09  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Viết lại README.md với documentation đầy đủ cho project.
+
+**Chi tiết:**
+- Tech Stack overview
+- 16 Modules description
+- Quick Start guide
+- Testing instructions
+- Authentication flow
+- Project structure
+
+**Files thay đổi:**
+- `README.md`
+
+---
+
+### Task 7: Comprehensive Unit Testing
+**Ngày:** 2026-02-08  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Viết unit tests cho toàn bộ 16 modules, đạt 287 tests across 22 test suites.
+
+**Chi tiết:**
+- Tạo test utilities: `prisma-mock.ts`, `jwt-mock.ts`
+- Unit tests cho tất cả services và controllers
+- Fix các test failures do mock không đúng syntax
+- Tests cover: CRUD operations, RBAC, error handling, edge cases
+
+**Modules đã test:**
+Auth, Users, Tasks, Tickets, Notifications, SMS, Apartments, Contracts, Maintenance, IoT, Payments, Invoices, Partners, Policies, Activity Logs, Viewing Requests
+
+**Files thay đổi:**
+- `src/test-utils/` - Test utilities
+- `src/modules/*/*.spec.ts` - All test files
+- `documents/testing.md` - Test documentation
+
+---
+
+### Task 8: API Bug Fixes
+**Ngày:** 2026-02-09  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Review và sửa bugs trong API services.
+
+**Bugs đã sửa:**
+
+1. **Apartments Service - Range Filter Overwrite:**
+   - Problem: `minPrice` và `maxPrice` bị overwrite khi cả 2 được set
+   - Fix: Combine thành `{ gte: min, lte: max }` object
+
+2. **SMS Service - Phone Formatting:**
+   - Problem: `84xxx` → `+8484xxx` (double prefix)
+   - Fix: Check `startsWith('84')` trước khi add prefix
+
+3. **JWT Mock - ActorType Missing:**
+   - Problem: Build fail do roleMap thiếu `guest` và `system`
+   - Fix: Add missing enum values
+
+**Files thay đổi:**
+- `src/modules/apartments/apartments.service.ts`
+- `src/modules/sms/sms.service.ts`
+- `src/test-utils/jwt-mock.ts`
+- Related test files
+
+---
+
+### Task 9: README Rewrite
+**Ngày:** 2026-02-09  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Viết lại README.md với documentation đầy đủ cho project.
+
+**Chi tiết:**
+- Tech Stack overview
+- 16 Modules description
+- Quick Start guide
+- Testing instructions
+- Authentication flow
+- Project structure
+
+**Files thay đổi:**
+- `README.md`
+
 ---
 
 ### Task 7: Comprehensive Unit Testing
