@@ -267,31 +267,105 @@ Implement flow cho Guest đăng ký trở thành User thông qua xác thực OTP
 
 ---
 
+### Task 7: Comprehensive Unit Testing
+**Ngày:** 2026-02-08  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Viết unit tests cho toàn bộ 16 modules, đạt 287 tests across 22 test suites.
+
+**Chi tiết:**
+- Tạo test utilities: `prisma-mock.ts`, `jwt-mock.ts`
+- Unit tests cho tất cả services và controllers
+- Fix các test failures do mock không đúng syntax
+- Tests cover: CRUD operations, RBAC, error handling, edge cases
+
+**Modules đã test:**
+Auth, Users, Tasks, Tickets, Notifications, SMS, Apartments, Contracts, Maintenance, IoT, Payments, Invoices, Partners, Policies, Activity Logs, Viewing Requests
+
+**Files thay đổi:**
+- `src/test-utils/` - Test utilities
+- `src/modules/*/*.spec.ts` - All test files
+- `documents/testing.md` - Test documentation
+
+---
+
+### Task 8: API Bug Fixes
+**Ngày:** 2026-02-09  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Review và sửa bugs trong API services.
+
+**Bugs đã sửa:**
+
+1. **Apartments Service - Range Filter Overwrite:**
+   - Problem: `minPrice` và `maxPrice` bị overwrite khi cả 2 được set
+   - Fix: Combine thành `{ gte: min, lte: max }` object
+
+2. **SMS Service - Phone Formatting:**
+   - Problem: `84xxx` → `+8484xxx` (double prefix)
+   - Fix: Check `startsWith('84')` trước khi add prefix
+
+3. **JWT Mock - ActorType Missing:**
+   - Problem: Build fail do roleMap thiếu `guest` và `system`
+   - Fix: Add missing enum values
+
+**Files thay đổi:**
+- `src/modules/apartments/apartments.service.ts`
+- `src/modules/sms/sms.service.ts`
+- `src/test-utils/jwt-mock.ts`
+- Related test files
+
+---
+
+### Task 9: README Rewrite
+**Ngày:** 2026-02-09  
+**Thực hiện bởi:** AI Assistant  
+
+**Mô tả:**
+Viết lại README.md với documentation đầy đủ cho project.
+
+**Chi tiết:**
+- Tech Stack overview
+- 16 Modules description
+- Quick Start guide
+- Testing instructions
+- Authentication flow
+- Project structure
+
+**Files thay đổi:**
+- `README.md`
+
+---
+
 ## 📝 Backlog / TODO
 
 ### Feature Modules
-- [ ] UsersModule - User management
-- [ ] ApartmentsModule - Apartment listings
-- [ ] ContractsModule - Rental contracts
-- [ ] InvoicesModule - Billing & invoices
-- [ ] PaymentsModule - Payment processing (PayOS integration)
-- [ ] IotModule - IoT device control (Tuya integration)
-- [ ] MaintenanceModule - Maintenance requests
-- [ ] TicketsModule - Support tickets
+- [x] UsersModule - User management
+- [x] ApartmentsModule - Apartment listings
+- [x] ContractsModule - Rental contracts
+- [x] InvoicesModule - Billing & invoices
+- [x] PaymentsModule - Payment processing (PayOS integration pending)
+- [x] IotModule - IoT device control (Tuya integration pending)
+- [x] MaintenanceModule - Maintenance requests
+- [x] TicketsModule - Support tickets
+- [x] NotificationsModule - Multi-channel notifications
+- [x] ViewingRequestsModule - Guest apartment viewing
 
 ### Prisma Schema
 - [x] Define OTP and PendingGuestRegistration models
-- [ ] Define remaining entity models in Prisma schema
+- [x] Define remaining entity models in Prisma schema
 - [ ] Seed database with sample data
 
 ### Common Components
-- [ ] Exception filters
-- [ ] Validation pipes
+- [x] Exception filters (HttpExceptionFilter)
+- [x] Validation pipes (ValidationPipe)
 - [ ] Logging interceptors
 - [ ] Response transform interceptors
 
 ### Testing
-- [ ] Unit tests
+- [x] Unit tests (287 tests, 22 suites)
 - [ ] Integration tests
 - [ ] E2E tests
 
@@ -299,6 +373,11 @@ Implement flow cho Guest đăng ký trở thành User thông qua xác thực OTP
 - [ ] GitHub Actions workflow
 - [ ] Staging deployment
 - [ ] Production deployment
+
+### Pending Integrations
+- [ ] PayOS payment gateway integration
+- [ ] Tuya IoT API integration
+- [ ] Email service (SendGrid/SES)
 
 ---
 
