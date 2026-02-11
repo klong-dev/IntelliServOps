@@ -3,9 +3,11 @@ dist
 .git
 .gitignore
 .env
+.env.*
 *.md
 *.log
 .vscode
 .idea
 coverage
 test
+temp-seed
