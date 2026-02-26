@@ -4,3 +4,4 @@ export * from './create-utility-meter.dto';
 export * from './update-utility-meter.dto';
 export * from './create-utility-reading.dto';
 export * from './control-device.dto';
+export * from './iot-response.dto';

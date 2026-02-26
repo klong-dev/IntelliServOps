@@ -4,8 +4,8 @@ import {
   Post,
   Body,
   Patch,
-  Param,
   Delete,
+  Param,
   Query,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -16,8 +16,17 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ApartmentsService } from './apartments.service';
-import { CreateApartmentDto, UpdateApartmentDto, SearchApartmentDto } from './dto';
-import { Roles, CurrentUser, Public } from '../../common/decorators';
+import {
+  CreateApartmentDto,
+  UpdateApartmentDto,
+  SearchApartmentDto,
+  ApartmentListItemDto,
+  ApartmentDetailDto,
+  ApartmentMutationResultDto,
+  ApartmentStatusResultDto,
+} from './dto';
+import { ApiJsonResponse } from '../../common/dto';
+import { Public, Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 
@@ -26,37 +35,38 @@ import type { JwtPayload } from '../auth/auth.service';
 export class ApartmentsController {
   constructor(private readonly apartmentsService: ApartmentsService) {}
 
-  @Get()
+  @Get('search')
   @Public()
   @ApiOperation({
     summary: 'Search apartments',
-    description: 'Search available apartments with filters. Public endpoint.',
+    description: 'Public endpoint to search available apartments with filters',
   })
-  @ApiResponse({ status: 200, description: 'List of apartments with pagination' })
+  @ApiJsonResponse(ApartmentListItemDto, {
+    isArray: true,
+    isPaginated: true,
+    description: 'Paginated apartment search results',
+  })
   async search(@Query() searchDto: SearchApartmentDto) {
     return this.apartmentsService.search(searchDto);
   }
 
   @Get(':id')
   @Public()
-  @ApiOperation({
-    summary: 'Get apartment details',
-    description: 'Get full apartment details by ID. Public endpoint.',
-  })
-  @ApiResponse({ status: 200, description: 'Apartment details' })
+  @ApiOperation({ summary: 'Get apartment details' })
+  @ApiJsonResponse(ApartmentDetailDto, { description: 'Apartment details' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.apartmentsService.findOne(id);
   }
 
   @Post()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Create apartment',
-    description: 'Create new apartment listing. Admin, Operator, or Partner only.',
+  @ApiOperation({ summary: 'Create apartment' })
+  @ApiJsonResponse(ApartmentMutationResultDto, {
+    status: 201,
+    description: 'Apartment created',
   })
-  @ApiResponse({ status: 201, description: 'Apartment created' })
   async create(
     @Body() createDto: CreateApartmentDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -65,15 +75,11 @@ export class ApartmentsController {
   }
 
   @Patch(':id')
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Update apartment',
-    description: 'Update apartment details. Partners can only update their own.',
-  })
-  @ApiResponse({ status: 200, description: 'Apartment updated' })
+  @ApiOperation({ summary: 'Update apartment' })
+  @ApiJsonResponse(ApartmentMutationResultDto, { description: 'Apartment updated' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
-  @ApiResponse({ status: 403, description: 'Access denied' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateApartmentDto,
@@ -83,38 +89,33 @@ export class ApartmentsController {
   }
 
   @Delete(':id')
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Delete apartment',
-    description: 'Soft delete apartment (mark as inactive). Admin only.',
-  })
-  @ApiResponse({ status: 200, description: 'Apartment deactivated' })
+  @ApiOperation({ summary: 'Delete apartment (soft delete)' })
+  @ApiJsonResponse(ApartmentStatusResultDto, { description: 'Apartment deactivated' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.apartmentsService.remove(id);
   }
 
   @Get('partner/:partnerId')
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get partner apartments',
-    description: 'Get all apartments owned by a partner.',
+  @ApiOperation({ summary: 'Get apartments by partner' })
+  @ApiJsonResponse(ApartmentListItemDto, {
+    isArray: true,
+    description: 'Partner apartments',
   })
-  @ApiResponse({ status: 200, description: 'List of partner apartments' })
   async findByPartner(@Param('partnerId', ParseUUIDPipe) partnerId: string) {
     return this.apartmentsService.findByPartner(partnerId);
   }
 
   @Patch(':id/approve')
-  @Roles(Role.OPERATOR, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Approve apartment',
-    description: 'Approve apartment for listing. Operator or Admin only.',
-  })
-  @ApiResponse({ status: 200, description: 'Apartment approved' })
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'Approve apartment' })
+  @ApiJsonResponse(ApartmentStatusResultDto, { description: 'Apartment approved' })
+  @ApiResponse({ status: 404, description: 'Apartment not found' })
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: JwtPayload,

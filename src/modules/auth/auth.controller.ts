@@ -1,23 +1,34 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { AuthService, AuthResponse, TokenPair } from './auth.service';
+import { AuthService } from './auth.service';
 import {
   LoginDto,
   RefreshTokenDto,
   SubmitGuestInfoDto,
   RequestOtpDto,
   VerifyOtpDto,
+  AuthResponseDto,
+  TokenPairDto,
+  OtpResponseDto,
+  SubmitGuestResponseDto,
 } from './dto';
-import { Public, Roles, CurrentUser } from '../../common/decorators';
+import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from './auth.service';
+import { ApiJsonResponse } from '../../common/dto';
 
-@ApiTags('Authentication')
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -27,18 +38,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Login',
-    description:
-      'Authenticate any actor type (User, Staff, Operator, Admin, Partner)',
+    description: 'Login with email and password. Supports User, Staff, Operator, Admin, Partner.',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Login successful, returns user info and tokens',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid credentials or account deactivated',
-  })
-  async login(@Body() loginDto: LoginDto): Promise<AuthResponse> {
+  @ApiJsonResponse(AuthResponseDto, { description: 'Login successful' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
 
@@ -46,151 +50,93 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Refresh Token',
+    summary: 'Refresh token',
     description: 'Get new access token using refresh token',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns new access and refresh tokens',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid or expired refresh token',
-  })
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<TokenPair> {
+  @ApiJsonResponse(TokenPairDto, { description: 'Token refreshed' })
+  @ApiResponse({ status: 401, description: 'Invalid refresh token' })
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
     return this.authService.refresh(refreshTokenDto.refreshToken);
   }
 
   @Post('logout')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiBearerAuth()
+  @Public()
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Logout',
     description: 'Revoke refresh token',
   })
-  @ApiResponse({
-    status: 204,
-    description: 'Logout successful',
-  })
-  async logout(@Body() refreshTokenDto: RefreshTokenDto): Promise<void> {
+  @ApiResponse({ status: 200, description: 'Logged out' })
+  async logout(@Body() refreshTokenDto: RefreshTokenDto) {
     await this.authService.logout(refreshTokenDto.refreshToken);
+    return { message: 'Logged out successfully' };
   }
 
-  // ============================================================================
-  // Guest Registration Flow Endpoints
-  // ============================================================================
+  // ─── Guest Registration Flow ──────────────────────────────────────
 
-  @Post('submit-guest')
-  @ApiBearerAuth()
+  @Post('guest/submit-info')
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
-  @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Submit Guest Information (Staff only)',
-    description:
-      'Staff submits guest information after rental agreement. Creates a pending registration.',
+    summary: 'Submit guest information',
+    description: 'Staff submits guest info after rental agreement. Creates a pending registration.',
   })
-  @ApiResponse({
-    status: 201,
-    description: 'Guest information submitted successfully',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Phone number or email already registered',
-  })
+  @ApiJsonResponse(SubmitGuestResponseDto, { status: 201, description: 'Guest info submitted' })
+  @ApiResponse({ status: 409, description: 'Phone/email already registered' })
   async submitGuestInfo(
     @Body() submitGuestInfoDto: SubmitGuestInfoDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
-    return this.authService.submitGuestInfo(
-      submitGuestInfoDto,
-      currentUser.sub,
-    );
+    return this.authService.submitGuestInfo(submitGuestInfoDto, currentUser.sub);
   }
 
-  @Post('request-otp')
+  @Post('guest/request-otp')
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Request OTP',
-    description:
-      'Guest requests OTP via mobile app. Phone must match a pending registration.',
+    description: 'Guest requests OTP for registration. Phone must match a pending registration.',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'OTP sent successfully',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'No pending registration found for this phone',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Rate limit exceeded or registration expired',
-  })
+  @ApiJsonResponse(OtpResponseDto, { description: 'OTP sent' })
+  @ApiResponse({ status: 404, description: 'No pending registration' })
   async requestOtp(@Body() requestOtpDto: RequestOtpDto) {
     return this.authService.requestOtp(requestOtpDto);
   }
 
-  @Post('verify-otp')
+  @Post('guest/verify-otp')
   @Public()
-  @HttpCode(HttpStatus.CREATED)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Verify OTP and Complete Registration',
-    description:
-      'Guest verifies OTP and creates account. After success, Guest becomes User.',
+    summary: 'Verify OTP',
+    description: 'Guest verifies OTP and completes registration. Returns auth tokens.',
   })
-  @ApiResponse({
-    status: 201,
-    description: 'Registration successful, returns user info and tokens',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid OTP, expired, or too many attempts',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'No pending registration found',
-  })
-  async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto): Promise<AuthResponse> {
+  @ApiJsonResponse(AuthResponseDto, { description: 'OTP verified, registration complete' })
+  @ApiResponse({ status: 400, description: 'Invalid OTP' })
+  async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyOtpAndRegister(verifyOtpDto);
   }
 
-  @Post('resend-otp')
+  @Post('send-otp')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Send OTP directly',
+    description: 'Send OTP to any phone number. For testing or simplified flow.',
+  })
+  @ApiJsonResponse(OtpResponseDto, { description: 'OTP sent' })
+  async sendDirectOtp(@Body() body: { phone: string }) {
+    return this.authService.sendDirectOtp(body.phone);
+  }
+
+  @Post('guest/resend-otp')
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Resend OTP',
-    description: 'Invalidate old OTP and send a new one',
+    description: 'Resend OTP for guest registration',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'New OTP sent successfully',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Rate limit exceeded',
-  })
-  async resendOtp(@Body() requestOtpDto: RequestOtpDto) {
-    return this.authService.resendOtp(requestOtpDto.phone);
-  }
-
-  @Post('send-direct-otp')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: '[DEV] Send OTP Directly',
-    description:
-      'Send OTP to any phone number without pending registration. For testing purposes.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'OTP sent successfully with code included',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Rate limit exceeded',
-  })
-  async sendDirectOtp(@Body() requestOtpDto: RequestOtpDto) {
-    return this.authService.sendDirectOtp(requestOtpDto.phone);
+  @ApiJsonResponse(OtpResponseDto, { description: 'OTP resent' })
+  async resendOtp(@Body() body: { phone: string }) {
+    return this.authService.resendOtp(body.phone);
   }
 }

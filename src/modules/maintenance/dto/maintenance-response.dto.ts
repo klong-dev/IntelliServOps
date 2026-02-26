@@ -1,0 +1,175 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+// ─── Nested DTOs ────────────────────────────────────────────────────
+
+class MaintenanceApartmentDto {
+  @ApiProperty({ example: 'A101' })
+  apartmentNumber: string;
+
+  @ApiProperty({ example: '123 Nguyen Hue, Q1' })
+  address: string;
+}
+
+class MaintenanceRoomDto {
+  @ApiProperty({ example: 'R01' })
+  roomNumber: string;
+
+  @ApiProperty({ example: 'bedroom' })
+  roomType: string;
+}
+
+class MaintenanceUserDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Nguyen Van A' })
+  fullName: string;
+
+  @ApiProperty({ example: '0901234567' })
+  phone: string;
+}
+
+// ─── Maintenance List Item DTO (findAll) ────────────────────────────
+
+export class MaintenanceListItemDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Broken AC in bedroom' })
+  title: string;
+
+  @ApiProperty({ example: 'hvac' })
+  category: string;
+
+  @ApiProperty({ example: 'medium' })
+  urgency: string;
+
+  @ApiProperty({ example: 'submitted' })
+  status: string;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  preferredDate: Date | null;
+
+  @ApiProperty({ type: MaintenanceApartmentDto })
+  apartment: MaintenanceApartmentDto;
+}
+
+// ─── Maintenance Detail DTO (findOne) ───────────────────────────────
+
+export class MaintenanceDetailDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  userId: string;
+
+  @ApiProperty()
+  rentalContractId: string;
+
+  @ApiProperty()
+  apartmentId: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  roomId: string | null;
+
+  @ApiProperty({ example: 'hvac' })
+  category: string;
+
+  @ApiProperty({ example: 'Broken AC in bedroom' })
+  title: string;
+
+  @ApiProperty({ example: 'The AC unit is making loud noise and not cooling' })
+  description: string;
+
+  @ApiProperty({ example: 'medium' })
+  urgency: string;
+
+  @ApiPropertyOptional({ type: Object, nullable: true })
+  images: any;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  preferredDate: Date | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  preferredTimeSlot: string | null;
+
+  @ApiProperty()
+  isTenantPresentRequired: boolean;
+
+  @ApiProperty({ example: 'submitted' })
+  status: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  assignedTaskId: string | null;
+
+  @ApiPropertyOptional({ type: Object, nullable: true })
+  completionImages: any;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  completionNotes: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  tenantRating: number | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  tenantFeedback: string | null;
+
+  @ApiPropertyOptional({ example: '500000.00', nullable: true })
+  costEstimate: string | null;
+
+  @ApiPropertyOptional({ example: '450000.00', nullable: true })
+  actualCost: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  costCoveredBy: string | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  completedAt: Date | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+
+  @ApiProperty({ type: MaintenanceApartmentDto })
+  apartment: MaintenanceApartmentDto;
+
+  @ApiPropertyOptional({ type: MaintenanceRoomDto, nullable: true })
+  room: MaintenanceRoomDto | null;
+
+  @ApiProperty({ type: MaintenanceUserDto })
+  user: MaintenanceUserDto;
+}
+
+// ─── Maintenance Created DTO ────────────────────────────────────────
+
+export class MaintenanceCreatedDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Broken AC in bedroom' })
+  title: string;
+
+  @ApiProperty({ example: 'submitted' })
+  status: string;
+
+  @ApiProperty({ example: 'medium' })
+  urgency: string;
+}
+
+// ─── Maintenance Updated DTO ────────────────────────────────────────
+
+export class MaintenanceUpdatedDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Broken AC in bedroom' })
+  title: string;
+
+  @ApiProperty({ example: 'in_progress' })
+  status: string;
+}

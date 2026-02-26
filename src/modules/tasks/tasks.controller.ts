@@ -16,26 +16,29 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
-import { CreateTaskDto, UpdateTaskDto } from './dto';
+import {
+  CreateTaskDto,
+  UpdateTaskDto,
+  TaskListItemDto,
+  TaskDetailDto,
+} from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { TaskStatus } from '@prisma/client';
 
 @ApiTags('Tasks')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('tasks')
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Get()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'List tasks',
-    description: 'Staff sees assigned tasks. Operators see tasks they created.',
-  })
+  @ApiOperation({ summary: 'List tasks' })
   @ApiQuery({ name: 'status', required: false, enum: TaskStatus })
-  @ApiResponse({ status: 200, description: 'List of tasks' })
+  @ApiJsonResponse(TaskListItemDto, { isArray: true, description: 'List of tasks' })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: TaskStatus,
@@ -46,7 +49,7 @@ export class TasksController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get task details' })
-  @ApiResponse({ status: 200, description: 'Task details' })
+  @ApiJsonResponse(TaskDetailDto, { description: 'Task details' })
   @ApiResponse({ status: 404, description: 'Task not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.tasksService.findOne(id);
@@ -54,12 +57,8 @@ export class TasksController {
 
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({
-    summary: 'Create task',
-    description:
-      'Operator or Admin creates a task and optionally assigns to staff.',
-  })
-  @ApiResponse({ status: 201, description: 'Task created' })
+  @ApiOperation({ summary: 'Create task' })
+  @ApiJsonResponse(TaskDetailDto, { status: 201, description: 'Task created' })
   async create(
     @Body() createDto: CreateTaskDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -70,7 +69,8 @@ export class TasksController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update task' })
-  @ApiResponse({ status: 200, description: 'Task updated' })
+  @ApiJsonResponse(TaskDetailDto, { description: 'Task updated' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateTaskDto,
@@ -81,7 +81,7 @@ export class TasksController {
   @Patch(':id/assign')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Assign task to staff' })
-  @ApiResponse({ status: 200, description: 'Task assigned' })
+  @ApiJsonResponse(TaskDetailDto, { description: 'Task assigned' })
   async assign(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { staffId: string },
@@ -92,7 +92,7 @@ export class TasksController {
   @Patch(':id/start')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Start task' })
-  @ApiResponse({ status: 200, description: 'Task started' })
+  @ApiJsonResponse(TaskDetailDto, { description: 'Task started' })
   async start(@Param('id', ParseUUIDPipe) id: string) {
     return this.tasksService.start(id);
   }
@@ -100,7 +100,7 @@ export class TasksController {
   @Patch(':id/complete')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Complete task' })
-  @ApiResponse({ status: 200, description: 'Task completed' })
+  @ApiJsonResponse(TaskDetailDto, { description: 'Task completed' })
   async complete(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { completionNotes: string },
@@ -111,7 +111,7 @@ export class TasksController {
   @Patch(':id/cancel')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Cancel task' })
-  @ApiResponse({ status: 200, description: 'Task cancelled' })
+  @ApiJsonResponse(TaskDetailDto, { description: 'Task cancelled' })
   async cancel(@Param('id', ParseUUIDPipe) id: string) {
     return this.tasksService.cancel(id);
   }
