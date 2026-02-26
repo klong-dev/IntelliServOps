@@ -16,7 +16,12 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { TicketsService } from './tickets.service';
-import { CreateTicketDto, UpdateTicketDto } from './dto';
+import {
+  CreateTicketDto,
+  UpdateTicketDto,
+  TicketListItemDto,
+  TicketDetailDto,
+} from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
@@ -32,6 +37,7 @@ export class TicketsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List tickets' })
   @ApiQuery({ name: 'status', required: false, enum: TicketStatus })
+  @ApiResponse({ status: 200, description: 'List of tickets', type: [TicketListItemDto] })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: TicketStatus,
@@ -42,6 +48,8 @@ export class TicketsController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get ticket details' })
+  @ApiResponse({ status: 200, description: 'Ticket details', type: TicketDetailDto })
+  @ApiResponse({ status: 404, description: 'Ticket not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.ticketsService.findOne(id);
   }
@@ -49,7 +57,7 @@ export class TicketsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create ticket' })
-  @ApiResponse({ status: 201, description: 'Ticket created' })
+  @ApiResponse({ status: 201, description: 'Ticket created', type: TicketDetailDto })
   async create(
     @Body() createDto: CreateTicketDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -60,6 +68,7 @@ export class TicketsController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update ticket' })
+  @ApiResponse({ status: 200, description: 'Ticket updated', type: TicketDetailDto })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateTicketDto,
@@ -70,6 +79,7 @@ export class TicketsController {
   @Patch(':id/assign')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Assign ticket to staff' })
+  @ApiResponse({ status: 200, description: 'Ticket assigned', type: TicketDetailDto })
   async assign(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { staffId: string },
@@ -80,6 +90,7 @@ export class TicketsController {
   @Patch(':id/resolve')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Resolve ticket' })
+  @ApiResponse({ status: 200, description: 'Ticket resolved', type: TicketDetailDto })
   async resolve(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { resolutionNotes: string },
@@ -88,8 +99,9 @@ export class TicketsController {
   }
 
   @Patch(':id/close')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Close ticket' })
+  @ApiResponse({ status: 200, description: 'Ticket closed', type: TicketDetailDto })
   async close(@Param('id', ParseUUIDPipe) id: string) {
     return this.ticketsService.close(id);
   }

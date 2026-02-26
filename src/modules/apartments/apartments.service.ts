@@ -94,13 +94,11 @@ export class ApartmentsService {
     ]);
 
     return {
-      data: apartments,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
+      items: apartments,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

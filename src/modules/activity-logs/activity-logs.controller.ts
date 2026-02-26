@@ -1,4 +1,8 @@
-import { Controller, Get, Param, Query, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -7,6 +11,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ActivityLogsService } from './activity-logs.service';
+import { ActivityLogResponseDto } from './dto';
 import { Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import { ActorType } from '@prisma/client';
@@ -19,18 +24,15 @@ export class ActivityLogsController {
 
   @Get()
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({
-    summary: 'List activity logs',
-    description: 'Filter by actor, entity, action, date range',
-  })
+  @ApiOperation({ summary: 'List activity logs' })
   @ApiQuery({ name: 'actorType', required: false, enum: ActorType })
   @ApiQuery({ name: 'actorId', required: false })
   @ApiQuery({ name: 'entityType', required: false })
   @ApiQuery({ name: 'entityId', required: false })
   @ApiQuery({ name: 'action', required: false })
-  @ApiQuery({ name: 'startDate', required: false, example: '2026-01-01' })
-  @ApiQuery({ name: 'endDate', required: false, example: '2026-12-31' })
-  @ApiResponse({ status: 200, description: 'List of activity logs' })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601)' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601)' })
+  @ApiResponse({ status: 200, description: 'List of activity logs', type: [ActivityLogResponseDto] })
   async findAll(
     @Query('actorType') actorType?: ActorType,
     @Query('actorId') actorId?: string,
@@ -49,13 +51,5 @@ export class ActivityLogsController {
       startDate,
       endDate,
     });
-  }
-
-  @Get(':id')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Get activity log details' })
-  @ApiResponse({ status: 200, description: 'Activity log details' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.activityLogsService.findOne(id);
   }
 }

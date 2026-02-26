@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder, OpenAPIObject } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { TransformInterceptor } from './common/interceptors';
 import * as yaml from 'js-yaml';
 
 async function bootstrap() {
@@ -25,6 +26,9 @@ async function bootstrap() {
       },
     }),
   );
+
+  // Global JSON:API response interceptor
+  app.useGlobalInterceptors(new TransformInterceptor());
 
   // CORS
   app.enableCors({

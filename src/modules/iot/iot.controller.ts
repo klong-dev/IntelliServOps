@@ -24,6 +24,12 @@ import {
   UpdateUtilityMeterDto,
   CreateUtilityReadingDto,
   ControlDeviceDto,
+  IoTDeviceListItemDto,
+  IoTDeviceDetailDto,
+  ControlDeviceResponseDto,
+  UtilityMeterListItemDto,
+  UtilityMeterDetailDto,
+  UtilityReadingDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
@@ -45,7 +51,7 @@ export class IoTController {
   @ApiOperation({ summary: 'List all IoT devices' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: IoTStatus })
-  @ApiResponse({ status: 200, description: 'List of IoT devices' })
+  @ApiResponse({ status: 200, description: 'List of IoT devices', type: [IoTDeviceListItemDto] })
   async findAllDevices(
     @Query('apartmentId') apartmentId?: string,
     @Query('status') status?: IoTStatus,
@@ -56,7 +62,7 @@ export class IoTController {
   @Get('devices/:id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get IoT device details' })
-  @ApiResponse({ status: 200, description: 'Device details' })
+  @ApiResponse({ status: 200, description: 'Device details', type: IoTDeviceDetailDto })
   @ApiResponse({ status: 404, description: 'Device not found' })
   async findOneDevice(@Param('id', ParseUUIDPipe) id: string) {
     return this.iotService.findOneDevice(id);
@@ -68,7 +74,7 @@ export class IoTController {
     summary: 'Get devices by apartment',
     description: 'Tenants see only controllable active devices.',
   })
-  @ApiResponse({ status: 200, description: 'List of apartment devices' })
+  @ApiResponse({ status: 200, description: 'List of apartment devices', type: [IoTDeviceListItemDto] })
   async findDevicesByApartment(
     @Param('apartmentId', ParseUUIDPipe) apartmentId: string,
     @CurrentUser() currentUser: JwtPayload,
@@ -79,7 +85,7 @@ export class IoTController {
   @Post('devices')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Register new IoT device' })
-  @ApiResponse({ status: 201, description: 'Device registered' })
+  @ApiResponse({ status: 201, description: 'Device registered', type: IoTDeviceDetailDto })
   async createDevice(@Body() createDto: CreateIoTDeviceDto) {
     return this.iotService.createDevice(createDto);
   }
@@ -87,7 +93,7 @@ export class IoTController {
   @Patch('devices/:id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update IoT device' })
-  @ApiResponse({ status: 200, description: 'Device updated' })
+  @ApiResponse({ status: 200, description: 'Device updated', type: IoTDeviceDetailDto })
   async updateDevice(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateIoTDeviceDto,
@@ -110,7 +116,7 @@ export class IoTController {
     description:
       'Control device (lock/unlock, on/off). Tenants must have active contract.',
   })
-  @ApiResponse({ status: 200, description: 'Command sent' })
+  @ApiResponse({ status: 200, description: 'Command sent', type: ControlDeviceResponseDto })
   @ApiResponse({ status: 403, description: 'Access denied' })
   async controlDevice(
     @Param('id', ParseUUIDPipe) id: string,
@@ -129,7 +135,7 @@ export class IoTController {
   @ApiOperation({ summary: 'List all utility meters' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
-  @ApiResponse({ status: 200, description: 'List of utility meters' })
+  @ApiResponse({ status: 200, description: 'List of utility meters', type: [UtilityMeterListItemDto] })
   async findAllMeters(
     @Query('apartmentId') apartmentId?: string,
     @Query('status') status?: MeterStatus,
@@ -140,7 +146,7 @@ export class IoTController {
   @Get('meters/:id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get utility meter details with readings history' })
-  @ApiResponse({ status: 200, description: 'Meter details with readings' })
+  @ApiResponse({ status: 200, description: 'Meter details with readings', type: UtilityMeterDetailDto })
   async findOneMeter(@Param('id', ParseUUIDPipe) id: string) {
     return this.iotService.findOneMeter(id);
   }
@@ -148,7 +154,7 @@ export class IoTController {
   @Post('meters')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Register new utility meter' })
-  @ApiResponse({ status: 201, description: 'Meter registered' })
+  @ApiResponse({ status: 201, description: 'Meter registered', type: UtilityMeterDetailDto })
   async createMeter(@Body() createDto: CreateUtilityMeterDto) {
     return this.iotService.createMeter(createDto);
   }
@@ -156,7 +162,7 @@ export class IoTController {
   @Patch('meters/:id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update utility meter' })
-  @ApiResponse({ status: 200, description: 'Meter updated' })
+  @ApiResponse({ status: 200, description: 'Meter updated', type: UtilityMeterDetailDto })
   async updateMeter(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateUtilityMeterDto,
@@ -171,7 +177,7 @@ export class IoTController {
   @Post('readings')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Record utility reading' })
-  @ApiResponse({ status: 201, description: 'Reading recorded' })
+  @ApiResponse({ status: 201, description: 'Reading recorded', type: UtilityReadingDto })
   async createReading(
     @Body() createDto: CreateUtilityReadingDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -183,7 +189,7 @@ export class IoTController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get meter reading history' })
   @ApiQuery({ name: 'limit', required: false, example: 12 })
-  @ApiResponse({ status: 200, description: 'Reading history' })
+  @ApiResponse({ status: 200, description: 'Reading history', type: [UtilityReadingDto] })
   async getReadings(
     @Param('meterId', ParseUUIDPipe) meterId: string,
     @Query('limit') limit?: number,
@@ -194,7 +200,7 @@ export class IoTController {
   @Patch('readings/:id/verify')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Verify utility reading' })
-  @ApiResponse({ status: 200, description: 'Reading verified' })
+  @ApiResponse({ status: 200, description: 'Reading verified', type: UtilityReadingDto })
   async verifyReading(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: JwtPayload,

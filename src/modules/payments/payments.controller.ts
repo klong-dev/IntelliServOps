@@ -15,8 +15,13 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
-import { CreatePaymentDto } from './dto';
-import { Roles, CurrentUser, Public } from '../../common/decorators';
+import {
+  CreatePaymentDto,
+  PaymentListItemDto,
+  PaymentDetailDto,
+  PaymentCreatedDto,
+} from './dto';
+import { Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { PaymentStatus } from '@prisma/client';
@@ -31,6 +36,7 @@ export class PaymentsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List payments' })
   @ApiQuery({ name: 'status', required: false, enum: PaymentStatus })
+  @ApiResponse({ status: 200, description: 'List of payments', type: [PaymentListItemDto] })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: PaymentStatus,
@@ -41,6 +47,8 @@ export class PaymentsController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get payment details' })
+  @ApiResponse({ status: 200, description: 'Payment details', type: PaymentDetailDto })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: JwtPayload,
@@ -51,7 +59,8 @@ export class PaymentsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create payment' })
-  @ApiResponse({ status: 201, description: 'Payment created' })
+  @ApiResponse({ status: 201, description: 'Payment created', type: PaymentCreatedDto })
+  @ApiResponse({ status: 404, description: 'Invoice not found' })
   async create(
     @Body() createDto: CreatePaymentDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -62,6 +71,8 @@ export class PaymentsController {
   @Post(':id/confirm')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Confirm payment' })
+  @ApiResponse({ status: 200, description: 'Payment confirmed' })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
   async confirm(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { transactionId?: string },
@@ -70,9 +81,9 @@ export class PaymentsController {
   }
 
   @Post('webhook/payos')
-  @Public()
-  @ApiOperation({ summary: 'PayOS webhook endpoint' })
-  async payosWebhook(@Body() webhookData: any) {
-    return this.paymentsService.handlePayOSWebhook(webhookData);
+  @ApiOperation({ summary: 'PayOS webhook' })
+  @ApiResponse({ status: 200, description: 'Webhook processed' })
+  async handlePayOSWebhook(@Body() body: any) {
+    return this.paymentsService.handlePayOSWebhook(body);
   }
 }

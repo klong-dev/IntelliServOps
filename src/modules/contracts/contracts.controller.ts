@@ -16,7 +16,12 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ContractsService } from './contracts.service';
-import { CreateContractDto, UpdateContractDto } from './dto';
+import {
+  CreateContractDto,
+  UpdateContractDto,
+  ContractListItemDto,
+  ContractDetailDto,
+} from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
@@ -30,12 +35,9 @@ export class ContractsController {
 
   @Get()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
-  @ApiOperation({
-    summary: 'List contracts',
-    description: 'Get all contracts. Users only see their own contracts.',
-  })
+  @ApiOperation({ summary: 'List contracts' })
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
-  @ApiResponse({ status: 200, description: 'List of contracts' })
+  @ApiResponse({ status: 200, description: 'List of contracts', type: [ContractListItemDto] })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: ContractStatus,
@@ -45,11 +47,8 @@ export class ContractsController {
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
-  @ApiOperation({
-    summary: 'Get contract details',
-    description: 'Get contract by ID. Users only see their own contracts.',
-  })
-  @ApiResponse({ status: 200, description: 'Contract details' })
+  @ApiOperation({ summary: 'Get contract details' })
+  @ApiResponse({ status: 200, description: 'Contract details', type: ContractDetailDto })
   @ApiResponse({ status: 404, description: 'Contract not found' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -60,12 +59,8 @@ export class ContractsController {
 
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Create contract',
-    description: 'Create new rental contract with members.',
-  })
-  @ApiResponse({ status: 201, description: 'Contract created' })
-  @ApiResponse({ status: 409, description: 'Apartment not available or overlapping contract' })
+  @ApiOperation({ summary: 'Create contract' })
+  @ApiResponse({ status: 201, description: 'Contract created', type: ContractDetailDto })
   async create(
     @Body() createDto: CreateContractDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -75,11 +70,8 @@ export class ContractsController {
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Update contract',
-    description: 'Update contract details. Cannot modify active contracts.',
-  })
-  @ApiResponse({ status: 200, description: 'Contract updated' })
+  @ApiOperation({ summary: 'Update contract' })
+  @ApiResponse({ status: 200, description: 'Contract updated', type: ContractDetailDto })
   @ApiResponse({ status: 404, description: 'Contract not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -90,24 +82,18 @@ export class ContractsController {
 
   @Patch(':id/activate')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({
-    summary: 'Activate contract',
-    description: 'Sign and activate pending contract. Updates apartment to occupied.',
-  })
-  @ApiResponse({ status: 200, description: 'Contract activated' })
-  @ApiResponse({ status: 409, description: 'Contract not in pending status' })
+  @ApiOperation({ summary: 'Activate contract' })
+  @ApiResponse({ status: 200, description: 'Contract activated', type: ContractDetailDto })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
   async activate(@Param('id', ParseUUIDPipe) id: string) {
     return this.contractsService.activate(id);
   }
 
   @Patch(':id/terminate')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({
-    summary: 'Terminate contract',
-    description: 'Terminate active contract early. Updates apartment to available.',
-  })
-  @ApiResponse({ status: 200, description: 'Contract terminated' })
-  @ApiResponse({ status: 409, description: 'Contract not active' })
+  @ApiOperation({ summary: 'Terminate contract' })
+  @ApiResponse({ status: 200, description: 'Contract terminated', type: ContractDetailDto })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
   async terminate(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { reason: string; terminationFee?: number },

@@ -13,8 +13,10 @@ interface ErrorResponse {
   statusCode: number;
   message: string | string[];
   error: string;
-  timestamp: string;
-  path: string;
+  meta: {
+    timestamp: string;
+    path: string;
+  };
 }
 
 @Catch()
@@ -88,8 +90,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       message,
       error,
-      timestamp: new Date().toISOString(),
-      path: request.url,
+      meta: {
+        timestamp: new Date().toISOString(),
+        path: request.url,
+      },
     };
 
     response.status(status).json(errorResponse);
