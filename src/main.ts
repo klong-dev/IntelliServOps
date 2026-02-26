@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder, OpenAPIObject } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { TransformInterceptor } from './common/interceptors';
+import { AllExceptionsFilter } from './common/filters';
 import * as yaml from 'js-yaml';
 
 async function bootstrap() {
@@ -26,6 +27,9 @@ async function bootstrap() {
       },
     }),
   );
+
+  // Global error handling filter (must be before interceptor)
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // Global JSON:API response interceptor
   app.useGlobalInterceptors(new TransformInterceptor());
