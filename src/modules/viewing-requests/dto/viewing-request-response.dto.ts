@@ -18,19 +18,19 @@ export class ViewingRequestResponseDto {
   @ApiProperty()
   apartmentId: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   assignedStaffId: string | null;
 
   @ApiProperty({ example: 'pending' })
   status: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   preferredDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   preferredTimeSlot: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   notes: string | null;
 
   @ApiProperty()
@@ -46,13 +46,13 @@ export class AppointmentResponseDto {
   @ApiProperty()
   id: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   guestId: string | null;
 
   @ApiProperty()
   apartmentId: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   contactRequestId: string | null;
 
   @ApiProperty()
@@ -67,7 +67,7 @@ export class AppointmentResponseDto {
   @ApiProperty({ example: 30 })
   durationMinutes: number;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   meetingLocation: string | null;
 
   @ApiProperty({ example: 'physical_viewing' })
@@ -76,13 +76,13 @@ export class AppointmentResponseDto {
   @ApiProperty({ example: 'scheduled' })
   status: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   guestNotes: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   staffNotes: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   outcome: string | null;
 
   @ApiProperty()

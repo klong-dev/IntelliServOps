@@ -22,6 +22,7 @@ import {
   AppointmentResponseDto,
 } from './dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 
@@ -38,28 +39,28 @@ export class ViewingRequestsController {
     summary: 'Submit viewing request',
     description: 'Guest submits a request to view an apartment',
   })
-  @ApiResponse({ status: 201, description: 'Request submitted', type: ViewingRequestResponseDto })
+  @ApiJsonResponse(ViewingRequestResponseDto, { status: 201, description: 'Request submitted' })
   async create(@Body() createDto: CreateViewingRequestDto) {
     return this.viewingRequestsService.create(createDto);
   }
 
   @Get('my-assigned')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get viewing requests assigned to me' })
-  @ApiResponse({ status: 200, description: 'List of assigned viewing requests', type: [ViewingRequestResponseDto] })
+  @ApiJsonResponse(ViewingRequestResponseDto, { isArray: true, description: 'List of assigned viewing requests' })
   async getMyAssigned(@CurrentUser() currentUser: JwtPayload) {
     return this.viewingRequestsService.getMyAssigned(currentUser);
   }
 
   @Post(':contactRequestId/appointments')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({
     summary: 'Create appointment from viewing request',
     description: 'Staff creates an appointment for a viewing',
   })
-  @ApiResponse({ status: 201, description: 'Appointment created', type: AppointmentResponseDto })
+  @ApiJsonResponse(AppointmentResponseDto, { status: 201, description: 'Appointment created' })
   async createAppointment(
     @Param('contactRequestId', ParseUUIDPipe) contactRequestId: string,
     @Body() createDto: CreateAppointmentDto,
@@ -73,11 +74,11 @@ export class ViewingRequestsController {
   }
 
   @Get('apartments/:apartmentId/appointments')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get apartment appointments for a date' })
   @ApiQuery({ name: 'date', required: true, description: 'Date (YYYY-MM-DD)' })
-  @ApiResponse({ status: 200, description: 'Apartment appointments', type: [AppointmentResponseDto] })
+  @ApiJsonResponse(AppointmentResponseDto, { isArray: true, description: 'Apartment appointments' })
   async getApartmentAppointments(
     @Param('apartmentId', ParseUUIDPipe) apartmentId: string,
     @Query('date') date: string,

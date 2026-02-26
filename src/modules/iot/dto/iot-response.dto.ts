@@ -34,13 +34,13 @@ export class IoTDeviceListItemDto {
   @ApiProperty({ example: 'smart_lock' })
   deviceType: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   brand: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   model: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   serialNumber: string | null;
 
   @ApiProperty({ example: 'active' })
@@ -49,7 +49,7 @@ export class IoTDeviceListItemDto {
   @ApiProperty()
   isControllableByTenant: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   lastOnlineAt: Date | null;
 
   @ApiProperty()
@@ -74,22 +74,22 @@ export class IoTDeviceDetailDto {
   @ApiProperty({ example: 'smart_lock' })
   deviceType: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   brand: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   model: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   serialNumber: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   macAddress: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   locationDescription: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   firmwareVersion: string | null;
 
   @ApiProperty({ example: 'active' })
@@ -98,28 +98,28 @@ export class IoTDeviceDetailDto {
   @ApiProperty()
   isControllableByTenant: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   lastOnlineAt: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   lastMaintenanceDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   nextMaintenanceDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   installationDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   warrantyExpiryDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   configuration: any;
 
   @ApiProperty()
   accessLogsEnabled: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   notes: string | null;
 
   @ApiProperty()
@@ -163,10 +163,10 @@ export class UtilityMeterListItemDto {
   @ApiProperty({ example: 'electricity' })
   meterType: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   brand: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   model: string | null;
 
   @ApiPropertyOptional({ example: '1234.56', nullable: true })
@@ -175,7 +175,7 @@ export class UtilityMeterListItemDto {
   @ApiPropertyOptional({ example: '1200.00', nullable: true })
   previousReading: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   readingDate: Date | null;
 
   @ApiProperty({ example: 'active' })
@@ -200,22 +200,22 @@ export class UtilityMeterDetailDto {
   @ApiProperty({ example: 'electricity' })
   meterType: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   brand: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   model: string | null;
 
   @ApiProperty()
   installationDate: Date;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   lastInspectionDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   nextInspectionDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   unitOfMeasurement: string | null;
 
   @ApiPropertyOptional({ example: '3500.00', nullable: true })
@@ -227,7 +227,7 @@ export class UtilityMeterDetailDto {
   @ApiPropertyOptional({ example: '1200.00', nullable: true })
   previousReading: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   readingDate: Date | null;
 
   @ApiProperty({ example: 'active' })
@@ -236,7 +236,7 @@ export class UtilityMeterDetailDto {
   @ApiProperty()
   isDigital: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   notes: string | null;
 
   @ApiProperty()
@@ -273,13 +273,13 @@ export class UtilityReadingDto {
   @ApiProperty()
   isVerified: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   verifiedAt: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   notes: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   images: any;
 
   @ApiProperty()

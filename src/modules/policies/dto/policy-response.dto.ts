@@ -24,7 +24,7 @@ export class PolicyResponseDto {
   @ApiProperty()
   effectiveDate: Date;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   expiryDate: Date | null;
 
   @ApiProperty()
@@ -36,13 +36,13 @@ export class PolicyResponseDto {
   @ApiProperty({ example: 0 })
   displayOrder: number;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   createdByAdminId: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   approvedByAdminId: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   approvedAt: Date | null;
 
   @ApiProperty()
@@ -64,25 +64,25 @@ export class LegalDocumentResponseDto {
   @ApiProperty({ example: 'Mẫu hợp đồng thuê nhà' })
   title: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   description: string | null;
 
   @ApiProperty({ example: 'https://storage.example.com/docs/template.pdf' })
   fileUrl: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   fileType: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   fileSizeBytes: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   category: string | null;
 
   @ApiProperty({ example: 'vi' })
   language: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   version: string | null;
 
   @ApiProperty()
@@ -94,13 +94,13 @@ export class LegalDocumentResponseDto {
   @ApiProperty()
   isPublic: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   tags: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   effectiveDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   createdByAdminId: string | null;
 
   @ApiProperty()

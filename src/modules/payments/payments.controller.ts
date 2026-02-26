@@ -22,12 +22,13 @@ import {
   PaymentCreatedDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { PaymentStatus } from '@prisma/client';
 
 @ApiTags('Payments')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
@@ -36,7 +37,7 @@ export class PaymentsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List payments' })
   @ApiQuery({ name: 'status', required: false, enum: PaymentStatus })
-  @ApiResponse({ status: 200, description: 'List of payments', type: [PaymentListItemDto] })
+  @ApiJsonResponse(PaymentListItemDto, { isArray: true, description: 'List of payments' })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: PaymentStatus,
@@ -47,7 +48,7 @@ export class PaymentsController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get payment details' })
-  @ApiResponse({ status: 200, description: 'Payment details', type: PaymentDetailDto })
+  @ApiJsonResponse(PaymentDetailDto, { description: 'Payment details' })
   @ApiResponse({ status: 404, description: 'Payment not found' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -59,7 +60,7 @@ export class PaymentsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create payment' })
-  @ApiResponse({ status: 201, description: 'Payment created', type: PaymentCreatedDto })
+  @ApiJsonResponse(PaymentCreatedDto, { status: 201, description: 'Payment created' })
   @ApiResponse({ status: 404, description: 'Invoice not found' })
   async create(
     @Body() createDto: CreatePaymentDto,

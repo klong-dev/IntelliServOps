@@ -74,7 +74,7 @@ class ContractMembershipDto {
   @ApiProperty({ example: 'primary' })
   memberType: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   moveInDate: Date | null;
 
   @ApiPropertyOptional({ example: '50.00', nullable: true })
@@ -99,7 +99,7 @@ export class UserDetailDto {
   @ApiProperty({ example: 'Nguyen Van A' })
   fullName: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   dateOfBirth: Date | null;
 
   @ApiPropertyOptional({ example: '012345678901', nullable: true })
@@ -108,13 +108,13 @@ export class UserDetailDto {
   @ApiPropertyOptional({ example: 'A12345678', nullable: true })
   passportNumber: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   profileImageUrl: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   emergencyContactName: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   emergencyContactPhone: string | null;
 
   @ApiProperty()
@@ -123,7 +123,7 @@ export class UserDetailDto {
   @ApiProperty()
   isVerified: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   lastLoginAt: Date | null;
 
   @ApiProperty()
@@ -151,7 +151,7 @@ export class UserCreatedDto {
   @ApiProperty({ example: 'Nguyen Van A' })
   fullName: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   dateOfBirth: Date | null;
 
   @ApiProperty()
@@ -179,10 +179,10 @@ export class UserUpdatedDto {
   @ApiProperty({ example: 'Nguyen Van A' })
   fullName: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   dateOfBirth: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   profileImageUrl: string | null;
 
   @ApiProperty()

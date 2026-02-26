@@ -25,12 +25,13 @@ import {
   MaintenanceUpdatedDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { MaintenanceStatus } from '@prisma/client';
 
 @ApiTags('Maintenance')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('maintenance')
 export class MaintenanceController {
   constructor(private readonly maintenanceService: MaintenanceService) {}
@@ -39,7 +40,7 @@ export class MaintenanceController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List maintenance requests' })
   @ApiQuery({ name: 'status', required: false, enum: MaintenanceStatus })
-  @ApiResponse({ status: 200, description: 'List of maintenance requests', type: [MaintenanceListItemDto] })
+  @ApiJsonResponse(MaintenanceListItemDto, { isArray: true, description: 'List of maintenance requests' })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: MaintenanceStatus,
@@ -50,7 +51,7 @@ export class MaintenanceController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get maintenance request details' })
-  @ApiResponse({ status: 200, description: 'Maintenance request details', type: MaintenanceDetailDto })
+  @ApiJsonResponse(MaintenanceDetailDto, { description: 'Maintenance request details' })
   @ApiResponse({ status: 404, description: 'Request not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.maintenanceService.findOne(id);
@@ -59,7 +60,7 @@ export class MaintenanceController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create maintenance request' })
-  @ApiResponse({ status: 201, description: 'Request created', type: MaintenanceCreatedDto })
+  @ApiJsonResponse(MaintenanceCreatedDto, { status: 201, description: 'Request created' })
   async create(
     @Body() createDto: CreateMaintenanceDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -70,7 +71,7 @@ export class MaintenanceController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update maintenance request' })
-  @ApiResponse({ status: 200, description: 'Request updated', type: MaintenanceUpdatedDto })
+  @ApiJsonResponse(MaintenanceUpdatedDto, { description: 'Request updated' })
   @ApiResponse({ status: 404, description: 'Request not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -82,7 +83,7 @@ export class MaintenanceController {
   @Patch(':id/complete')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Complete maintenance request' })
-  @ApiResponse({ status: 200, description: 'Request completed', type: MaintenanceDetailDto })
+  @ApiJsonResponse(MaintenanceDetailDto, { description: 'Request completed' })
   @ApiResponse({ status: 404, description: 'Request not found' })
   async complete(
     @Param('id', ParseUUIDPipe) id: string,

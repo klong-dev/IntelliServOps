@@ -40,10 +40,10 @@ class ContractMemberDto {
   @ApiProperty()
   isPrimaryContact: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   moveInDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   moveOutDate: Date | null;
 
   @ApiProperty({ example: 'active' })
@@ -108,34 +108,34 @@ export class ContractDetailDto {
   @ApiProperty({ example: 'bank_transfer' })
   paymentMethod: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   utilitiesIncluded: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   utilitiesCharges: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   contractTerms: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   specialConditions: string | null;
 
   @ApiProperty({ example: 'active' })
   status: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   signedDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   contractDocumentUrl: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   terminationReason: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   earlyTerminationFee: string | null;
 
   @ApiProperty()

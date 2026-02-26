@@ -93,13 +93,13 @@ export class InvoiceDetailDto {
   @ApiProperty({ example: '15000000.00' })
   baseRent: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   utilityCharges: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   additionalCharges: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   discounts: any;
 
   @ApiProperty({ example: '0.00' })
@@ -114,19 +114,19 @@ export class InvoiceDetailDto {
   @ApiProperty({ example: 'issued' })
   status: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   paymentMethod: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   invoiceDocumentUrl: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   notes: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   sentAt: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   paidAt: Date | null;
 
   @ApiProperty()

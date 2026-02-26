@@ -13,11 +13,12 @@ import {
 import { ActivityLogsService } from './activity-logs.service';
 import { ActivityLogResponseDto } from './dto';
 import { Roles } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import { ActorType } from '@prisma/client';
 
 @ApiTags('Activity Logs')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('activity-logs')
 export class ActivityLogsController {
   constructor(private readonly activityLogsService: ActivityLogsService) {}
@@ -32,7 +33,7 @@ export class ActivityLogsController {
   @ApiQuery({ name: 'action', required: false })
   @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601)' })
   @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601)' })
-  @ApiResponse({ status: 200, description: 'List of activity logs', type: [ActivityLogResponseDto] })
+  @ApiJsonResponse(ActivityLogResponseDto, { isArray: true, description: 'List of activity logs' })
   async findAll(
     @Query('actorType') actorType?: ActorType,
     @Query('actorId') actorId?: string,

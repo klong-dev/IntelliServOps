@@ -22,11 +22,12 @@ import {
   UnreadCountResponseDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 
 @ApiTags('Notifications')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
@@ -35,7 +36,7 @@ export class NotificationsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get my notifications' })
   @ApiQuery({ name: 'isRead', required: false, type: Boolean })
-  @ApiResponse({ status: 200, description: 'List of notifications', type: [NotificationResponseDto] })
+  @ApiJsonResponse(NotificationResponseDto, { isArray: true, description: 'List of notifications' })
   async findMyNotifications(
     @CurrentUser() currentUser: JwtPayload,
     @Query('isRead') isRead?: boolean,
@@ -46,7 +47,7 @@ export class NotificationsController {
   @Get('unread-count')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get unread notification count' })
-  @ApiResponse({ status: 200, description: 'Unread count', type: UnreadCountResponseDto })
+  @ApiJsonResponse(UnreadCountResponseDto, { description: 'Unread count' })
   async countUnread(@CurrentUser() currentUser: JwtPayload) {
     return this.notificationsService.countUnread(currentUser);
   }
@@ -54,7 +55,7 @@ export class NotificationsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Send notification' })
-  @ApiResponse({ status: 201, description: 'Notification sent', type: NotificationResponseDto })
+  @ApiJsonResponse(NotificationResponseDto, { status: 201, description: 'Notification sent' })
   async create(@Body() createDto: CreateNotificationDto) {
     return this.notificationsService.create(createDto);
   }
@@ -62,7 +63,7 @@ export class NotificationsController {
   @Patch(':id/read')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Mark notification as read' })
-  @ApiResponse({ status: 200, description: 'Notification marked as read', type: NotificationResponseDto })
+  @ApiJsonResponse(NotificationResponseDto, { description: 'Notification marked as read' })
   @ApiResponse({ status: 404, description: 'Notification not found' })
   async markAsRead(
     @Param('id', ParseUUIDPipe) id: string,

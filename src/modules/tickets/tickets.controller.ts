@@ -23,12 +23,13 @@ import {
   TicketDetailDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { TicketStatus } from '@prisma/client';
 
 @ApiTags('Tickets')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('tickets')
 export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
@@ -37,7 +38,7 @@ export class TicketsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List tickets' })
   @ApiQuery({ name: 'status', required: false, enum: TicketStatus })
-  @ApiResponse({ status: 200, description: 'List of tickets', type: [TicketListItemDto] })
+  @ApiJsonResponse(TicketListItemDto, { isArray: true, description: 'List of tickets' })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: TicketStatus,
@@ -48,7 +49,7 @@ export class TicketsController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get ticket details' })
-  @ApiResponse({ status: 200, description: 'Ticket details', type: TicketDetailDto })
+  @ApiJsonResponse(TicketDetailDto, { description: 'Ticket details' })
   @ApiResponse({ status: 404, description: 'Ticket not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.ticketsService.findOne(id);
@@ -57,7 +58,7 @@ export class TicketsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create ticket' })
-  @ApiResponse({ status: 201, description: 'Ticket created', type: TicketDetailDto })
+  @ApiJsonResponse(TicketDetailDto, { status: 201, description: 'Ticket created' })
   async create(
     @Body() createDto: CreateTicketDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -68,7 +69,7 @@ export class TicketsController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update ticket' })
-  @ApiResponse({ status: 200, description: 'Ticket updated', type: TicketDetailDto })
+  @ApiJsonResponse(TicketDetailDto, { description: 'Ticket updated' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateTicketDto,
@@ -79,7 +80,7 @@ export class TicketsController {
   @Patch(':id/assign')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Assign ticket to staff' })
-  @ApiResponse({ status: 200, description: 'Ticket assigned', type: TicketDetailDto })
+  @ApiJsonResponse(TicketDetailDto, { description: 'Ticket assigned' })
   async assign(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { staffId: string },
@@ -90,7 +91,7 @@ export class TicketsController {
   @Patch(':id/resolve')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Resolve ticket' })
-  @ApiResponse({ status: 200, description: 'Ticket resolved', type: TicketDetailDto })
+  @ApiJsonResponse(TicketDetailDto, { description: 'Ticket resolved' })
   async resolve(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { resolutionNotes: string },
@@ -101,7 +102,7 @@ export class TicketsController {
   @Patch(':id/close')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Close ticket' })
-  @ApiResponse({ status: 200, description: 'Ticket closed', type: TicketDetailDto })
+  @ApiJsonResponse(TicketDetailDto, { description: 'Ticket closed' })
   async close(@Param('id', ParseUUIDPipe) id: string) {
     return this.ticketsService.close(id);
   }

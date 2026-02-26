@@ -24,11 +24,12 @@ import {
   PartnerRequestResponseDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 
 @ApiTags('Partners')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('partners')
 export class PartnersController {
   constructor(private readonly partnersService: PartnersService) {}
@@ -39,7 +40,7 @@ export class PartnersController {
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'List all partners' })
   @ApiQuery({ name: 'isActive', required: false })
-  @ApiResponse({ status: 200, description: 'List of partners', type: [PartnerResponseDto] })
+  @ApiJsonResponse(PartnerResponseDto, { isArray: true, description: 'List of partners' })
   async findAllPartners(@Query('isActive') isActive?: string) {
     return this.partnersService.findAllPartners(isActive);
   }
@@ -47,7 +48,7 @@ export class PartnersController {
   @Get('profile')
   @Roles(Role.PARTNER)
   @ApiOperation({ summary: 'Get own partner profile' })
-  @ApiResponse({ status: 200, description: 'Partner profile', type: PartnerResponseDto })
+  @ApiJsonResponse(PartnerResponseDto, { description: 'Partner profile' })
   async getMyProfile(@CurrentUser() currentUser: JwtPayload) {
     return this.partnersService.getMyProfile(currentUser);
   }
@@ -55,7 +56,7 @@ export class PartnersController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Get partner by ID' })
-  @ApiResponse({ status: 200, description: 'Partner details', type: PartnerResponseDto })
+  @ApiJsonResponse(PartnerResponseDto, { description: 'Partner details' })
   @ApiResponse({ status: 404, description: 'Partner not found' })
   async findOnePartner(@Param('id', ParseUUIDPipe) id: string) {
     return this.partnersService.findOnePartner(id);
@@ -66,7 +67,7 @@ export class PartnersController {
   @Get('requests/all')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'List all partner requests' })
-  @ApiResponse({ status: 200, description: 'List of partner requests', type: [PartnerRequestResponseDto] })
+  @ApiJsonResponse(PartnerRequestResponseDto, { isArray: true, description: 'List of partner requests' })
   async findAllRequests() {
     return this.partnersService.findAllRequests();
   }
@@ -74,7 +75,7 @@ export class PartnersController {
   @Get('requests/my')
   @Roles(Role.PARTNER)
   @ApiOperation({ summary: 'List own partner requests' })
-  @ApiResponse({ status: 200, description: 'Own partner requests', type: [PartnerRequestResponseDto] })
+  @ApiJsonResponse(PartnerRequestResponseDto, { isArray: true, description: 'Own partner requests' })
   async findMyRequests(@CurrentUser() currentUser: JwtPayload) {
     return this.partnersService.findMyRequests(currentUser);
   }
@@ -82,7 +83,7 @@ export class PartnersController {
   @Get('requests/:id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
   @ApiOperation({ summary: 'Get partner request details' })
-  @ApiResponse({ status: 200, description: 'Partner request details', type: PartnerRequestResponseDto })
+  @ApiJsonResponse(PartnerRequestResponseDto, { description: 'Partner request details' })
   @ApiResponse({ status: 404, description: 'Request not found' })
   async findOneRequest(@Param('id', ParseUUIDPipe) id: string) {
     return this.partnersService.findOneRequest(id);
@@ -91,7 +92,7 @@ export class PartnersController {
   @Post('requests')
   @Roles(Role.PARTNER)
   @ApiOperation({ summary: 'Submit partner request' })
-  @ApiResponse({ status: 201, description: 'Request submitted', type: PartnerRequestResponseDto })
+  @ApiJsonResponse(PartnerRequestResponseDto, { status: 201, description: 'Request submitted' })
   async createRequest(
     @Body() createDto: CreatePartnerRequestDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -102,7 +103,7 @@ export class PartnersController {
   @Patch('requests/:id')
   @Roles(Role.PARTNER)
   @ApiOperation({ summary: 'Update partner request' })
-  @ApiResponse({ status: 200, description: 'Request updated', type: PartnerRequestResponseDto })
+  @ApiJsonResponse(PartnerRequestResponseDto, { description: 'Request updated' })
   @ApiResponse({ status: 404, description: 'Request not found' })
   async updateRequest(
     @Param('id', ParseUUIDPipe) id: string,
@@ -115,7 +116,7 @@ export class PartnersController {
   @Patch('requests/:id/review')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Review partner request (approve/reject)' })
-  @ApiResponse({ status: 200, description: 'Request reviewed', type: PartnerRequestResponseDto })
+  @ApiJsonResponse(PartnerRequestResponseDto, { description: 'Request reviewed' })
   @ApiResponse({ status: 404, description: 'Request not found' })
   async reviewRequest(
     @Param('id', ParseUUIDPipe) id: string,

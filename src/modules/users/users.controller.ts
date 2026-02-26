@@ -27,11 +27,12 @@ import {
   UserDeletedDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 
 @ApiTags('Users')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -40,14 +41,14 @@ export class UsersController {
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'List all users' })
   @ApiQuery({ name: 'search', required: false, description: 'Search by email, name, or phone' })
-  @ApiResponse({ status: 200, description: 'List of users', type: [UserListItemDto] })
+  @ApiJsonResponse(UserListItemDto, { isArray: true, description: 'List of users' })
   async findAll(@Query('search') search?: string) {
     return this.usersService.findAll(search);
   }
 
   @Get('profile')
   @ApiOperation({ summary: 'Get my profile' })
-  @ApiResponse({ status: 200, description: 'User profile', type: UserDetailDto })
+  @ApiJsonResponse(UserDetailDto, { description: 'User profile' })
   async getProfile(@CurrentUser() currentUser: JwtPayload) {
     return this.usersService.getProfile(currentUser.sub);
   }
@@ -55,7 +56,7 @@ export class UsersController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get user by ID' })
-  @ApiResponse({ status: 200, description: 'User details', type: UserDetailDto })
+  @ApiJsonResponse(UserDetailDto, { description: 'User details' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -67,7 +68,7 @@ export class UsersController {
   @Post()
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Create user' })
-  @ApiResponse({ status: 201, description: 'User created', type: UserCreatedDto })
+  @ApiJsonResponse(UserCreatedDto, { status: 201, description: 'User created' })
   @ApiResponse({ status: 409, description: 'Email or national ID already exists' })
   async create(
     @Body() createUserDto: CreateUserDto,
@@ -79,7 +80,7 @@ export class UsersController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
   @ApiOperation({ summary: 'Update user' })
-  @ApiResponse({ status: 200, description: 'User updated', type: UserUpdatedDto })
+  @ApiJsonResponse(UserUpdatedDto, { description: 'User updated' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -92,7 +93,7 @@ export class UsersController {
   @Delete(':id')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Delete user (soft delete)' })
-  @ApiResponse({ status: 200, description: 'User deactivated', type: UserDeletedDto })
+  @ApiJsonResponse(UserDeletedDto, { description: 'User deactivated' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.remove(id);

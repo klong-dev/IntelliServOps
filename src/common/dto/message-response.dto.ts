@@ -1,47 +1,76 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { applyDecorators, Type } from '@nestjs/common';
+import { ApiOkResponse, ApiCreatedResponse, getSchemaPath, ApiExtraModels } from '@nestjs/swagger';
 
-// ─── JSON:API Meta DTO ──────────────────────────────────────────────
-
-export class PaginationMetaDto {
-  @ApiProperty({ example: 25 })
-  total: number;
-
-  @ApiProperty({ example: 1 })
-  page: number;
-
-  @ApiProperty({ example: 10 })
-  limit: number;
-
-  @ApiProperty({ example: 3 })
-  totalPages: number;
-}
+// ─── Meta DTOs ──────────────────────────────────────────────────────
 
 export class ResponseMetaDto {
   @ApiProperty({ example: '2026-02-26T10:21:00.000Z' })
   timestamp: string;
 
-  @ApiPropertyOptional({ type: PaginationMetaDto })
-  pagination?: PaginationMetaDto;
+  @ApiPropertyOptional({ type: Number, example: 25 })
+  total?: number;
+
+  @ApiPropertyOptional({ type: Number, example: 1 })
+  page?: number;
+
+  @ApiPropertyOptional({ type: Number, example: 10 })
+  limit?: number;
+
+  @ApiPropertyOptional({ type: Number, example: 3 })
+  totalPages?: number;
 }
 
-// ─── JSON:API Wrapper DTO (for Swagger docs) ────────────────────────
+// ─── Swagger Helpers ────────────────────────────────────────────────
 
 /**
- * Base JSON:API response wrapper.
- * All successful responses are wrapped: { statusCode, message, data, meta }
+ * Wraps a DTO in the JSON:API envelope for Swagger documentation.
+ * Usage: @ApiJsonResponse(ApartmentDetailDto)
+ *        @ApiJsonResponse(ApartmentListItemDto, { isArray: true })
+ *        @ApiJsonResponse(ApartmentListItemDto, { isArray: true, isPaginated: true })
  */
-export class JsonApiResponseDto<T = any> {
-  @ApiProperty({ example: 200 })
-  statusCode: number;
+export function ApiJsonResponse(
+  dataDto: Type<any>,
+  options?: { isArray?: boolean; isPaginated?: boolean; status?: number; description?: string },
+) {
+  const isArray = options?.isArray ?? false;
+  const isPaginated = options?.isPaginated ?? false;
+  const status = options?.status ?? 200;
+  const description = options?.description ?? 'Successful response';
 
-  @ApiProperty({ example: 'Success' })
-  message: string;
+  const dataSchema = isArray
+    ? { type: 'array', items: { $ref: getSchemaPath(dataDto) } }
+    : { $ref: getSchemaPath(dataDto) };
 
-  @ApiProperty()
-  data: T;
+  const metaProperties: Record<string, any> = {
+    timestamp: { type: 'string', example: '2026-02-26T10:21:00.000Z' },
+  };
 
-  @ApiProperty({ type: ResponseMetaDto })
-  meta: ResponseMetaDto;
+  if (isPaginated) {
+    metaProperties.total = { type: 'number', example: 25 };
+    metaProperties.page = { type: 'number', example: 1 };
+    metaProperties.limit = { type: 'number', example: 10 };
+    metaProperties.totalPages = { type: 'number', example: 3 };
+  }
+
+  const schema = {
+    properties: {
+      statusCode: { type: 'number', example: status },
+      message: { type: 'string', example: 'Success' },
+      data: dataSchema,
+      meta: {
+        type: 'object',
+        properties: metaProperties,
+      },
+    },
+  };
+
+  const responseDecorator =
+    status === 201
+      ? ApiCreatedResponse({ description, schema })
+      : ApiOkResponse({ description, schema });
+
+  return applyDecorators(ApiExtraModels(dataDto), responseDecorator);
 }
 
 // ─── Simple Message Response ────────────────────────────────────────

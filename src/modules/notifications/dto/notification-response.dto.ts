@@ -24,43 +24,43 @@ export class NotificationResponseDto {
   @ApiProperty({ example: 'Your rent payment is due in 3 days.' })
   message: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   actionUrl: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   actionLabel: string | null;
 
   @ApiProperty({ example: 'medium' })
   priority: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   relatedEntityType: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   relatedEntityId: string | null;
 
   @ApiProperty({ example: false })
   isRead: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   readAt: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   sentAt: Date | null;
 
   @ApiProperty({ example: 'delivered' })
   deliveryStatus: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   failureReason: string | null;
 
   @ApiProperty({ example: 0 })
   retryCount: number;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   metadata: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   expiresAt: Date | null;
 
   @ApiProperty()

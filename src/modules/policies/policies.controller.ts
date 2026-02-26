@@ -25,6 +25,7 @@ import {
   LegalDocumentResponseDto,
 } from './dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { PolicyType, DocumentType } from '@prisma/client';
@@ -37,12 +38,12 @@ export class PoliciesController {
   // ─── Policies ───────────────────────────────────────────────────
 
   @Get()
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List policies' })
   @ApiQuery({ name: 'type', required: false, enum: PolicyType })
   @ApiQuery({ name: 'isActive', required: false, type: Boolean })
-  @ApiResponse({ status: 200, description: 'List of policies', type: [PolicyResponseDto] })
+  @ApiJsonResponse(PolicyResponseDto, { isArray: true, description: 'List of policies' })
   async findAllPolicies(
     @Query('type') policyType?: PolicyType,
     @Query('isActive') isActive?: boolean,
@@ -53,26 +54,26 @@ export class PoliciesController {
   @Get('public')
   @Public()
   @ApiOperation({ summary: 'List active public policies' })
-  @ApiResponse({ status: 200, description: 'Active public policies', type: [PolicyResponseDto] })
+  @ApiJsonResponse(PolicyResponseDto, { isArray: true, description: 'Active public policies' })
   async findActivePublicPolicies() {
     return this.policiesService.findActivePublicPolicies();
   }
 
   @Get(':id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get policy details' })
-  @ApiResponse({ status: 200, description: 'Policy details', type: PolicyResponseDto })
+  @ApiJsonResponse(PolicyResponseDto, { description: 'Policy details' })
   @ApiResponse({ status: 404, description: 'Policy not found' })
   async findOnePolicy(@Param('id', ParseUUIDPipe) id: string) {
     return this.policiesService.findOnePolicy(id);
   }
 
   @Post()
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Create policy' })
-  @ApiResponse({ status: 201, description: 'Policy created', type: PolicyResponseDto })
+  @ApiJsonResponse(PolicyResponseDto, { status: 201, description: 'Policy created' })
   async createPolicy(
     @Body() createDto: CreatePolicyDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -81,10 +82,10 @@ export class PoliciesController {
   }
 
   @Patch(':id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Update policy' })
-  @ApiResponse({ status: 200, description: 'Policy updated', type: PolicyResponseDto })
+  @ApiJsonResponse(PolicyResponseDto, { description: 'Policy updated' })
   @ApiResponse({ status: 404, description: 'Policy not found' })
   async updatePolicy(
     @Param('id', ParseUUIDPipe) id: string,
@@ -94,10 +95,10 @@ export class PoliciesController {
   }
 
   @Patch(':id/approve')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Approve policy' })
-  @ApiResponse({ status: 200, description: 'Policy approved', type: PolicyResponseDto })
+  @ApiJsonResponse(PolicyResponseDto, { description: 'Policy approved' })
   @ApiResponse({ status: 404, description: 'Policy not found' })
   async approvePolicy(
     @Param('id', ParseUUIDPipe) id: string,
@@ -109,12 +110,12 @@ export class PoliciesController {
   // ─── Legal Documents ────────────────────────────────────────────
 
   @Get('legal-documents/all')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List legal documents' })
   @ApiQuery({ name: 'documentType', required: false, enum: DocumentType })
   @ApiQuery({ name: 'isPublic', required: false, type: Boolean })
-  @ApiResponse({ status: 200, description: 'List of legal documents', type: [LegalDocumentResponseDto] })
+  @ApiJsonResponse(LegalDocumentResponseDto, { isArray: true, description: 'List of legal documents' })
   async findAllDocuments(
     @Query('documentType') documentType?: DocumentType,
     @Query('isPublic') isPublic?: boolean,
@@ -125,26 +126,26 @@ export class PoliciesController {
   @Get('legal-documents/public')
   @Public()
   @ApiOperation({ summary: 'List public legal documents' })
-  @ApiResponse({ status: 200, description: 'Public legal documents', type: [LegalDocumentResponseDto] })
+  @ApiJsonResponse(LegalDocumentResponseDto, { isArray: true, description: 'Public legal documents' })
   async findPublicDocuments() {
     return this.policiesService.findPublicDocuments();
   }
 
   @Get('legal-documents/:id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get legal document details' })
-  @ApiResponse({ status: 200, description: 'Legal document details', type: LegalDocumentResponseDto })
+  @ApiJsonResponse(LegalDocumentResponseDto, { description: 'Legal document details' })
   @ApiResponse({ status: 404, description: 'Document not found' })
   async findOneDocument(@Param('id', ParseUUIDPipe) id: string) {
     return this.policiesService.findOneDocument(id);
   }
 
   @Post('legal-documents')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Upload legal document' })
-  @ApiResponse({ status: 201, description: 'Document created', type: LegalDocumentResponseDto })
+  @ApiJsonResponse(LegalDocumentResponseDto, { status: 201, description: 'Document created' })
   async createDocument(
     @Body() createDto: CreateLegalDocumentDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -153,10 +154,10 @@ export class PoliciesController {
   }
 
   @Patch('legal-documents/:id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Update legal document' })
-  @ApiResponse({ status: 200, description: 'Document updated', type: LegalDocumentResponseDto })
+  @ApiJsonResponse(LegalDocumentResponseDto, { description: 'Document updated' })
   @ApiResponse({ status: 404, description: 'Document not found' })
   async updateDocument(
     @Param('id', ParseUUIDPipe) id: string,

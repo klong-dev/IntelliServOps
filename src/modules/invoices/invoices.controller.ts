@@ -25,12 +25,13 @@ import {
   InvoiceUpdatedDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { InvoiceStatus } from '@prisma/client';
 
 @ApiTags('Invoices')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('invoices')
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
@@ -39,7 +40,7 @@ export class InvoicesController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List invoices' })
   @ApiQuery({ name: 'status', required: false, enum: InvoiceStatus })
-  @ApiResponse({ status: 200, description: 'List of invoices', type: [InvoiceListItemDto] })
+  @ApiJsonResponse(InvoiceListItemDto, { isArray: true, description: 'List of invoices' })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: InvoiceStatus,
@@ -50,7 +51,7 @@ export class InvoicesController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get invoice details' })
-  @ApiResponse({ status: 200, description: 'Invoice details', type: InvoiceDetailDto })
+  @ApiJsonResponse(InvoiceDetailDto, { description: 'Invoice details' })
   @ApiResponse({ status: 404, description: 'Invoice not found' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -62,7 +63,7 @@ export class InvoicesController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Create invoice' })
-  @ApiResponse({ status: 201, description: 'Invoice created', type: InvoiceCreatedDto })
+  @ApiJsonResponse(InvoiceCreatedDto, { status: 201, description: 'Invoice created' })
   async create(
     @Body() createDto: CreateInvoiceDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -73,7 +74,7 @@ export class InvoicesController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update invoice' })
-  @ApiResponse({ status: 200, description: 'Invoice updated', type: InvoiceUpdatedDto })
+  @ApiJsonResponse(InvoiceUpdatedDto, { description: 'Invoice updated' })
   @ApiResponse({ status: 404, description: 'Invoice not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,

@@ -23,12 +23,13 @@ import {
   ContractDetailDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { ContractStatus } from '@prisma/client';
 
 @ApiTags('Contracts')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('contracts')
 export class ContractsController {
   constructor(private readonly contractsService: ContractsService) {}
@@ -37,7 +38,7 @@ export class ContractsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List contracts' })
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
-  @ApiResponse({ status: 200, description: 'List of contracts', type: [ContractListItemDto] })
+  @ApiJsonResponse(ContractListItemDto, { isArray: true, description: 'List of contracts' })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: ContractStatus,
@@ -48,7 +49,7 @@ export class ContractsController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get contract details' })
-  @ApiResponse({ status: 200, description: 'Contract details', type: ContractDetailDto })
+  @ApiJsonResponse(ContractDetailDto, { description: 'Contract details' })
   @ApiResponse({ status: 404, description: 'Contract not found' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -60,7 +61,7 @@ export class ContractsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Create contract' })
-  @ApiResponse({ status: 201, description: 'Contract created', type: ContractDetailDto })
+  @ApiJsonResponse(ContractDetailDto, { status: 201, description: 'Contract created' })
   async create(
     @Body() createDto: CreateContractDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -71,7 +72,7 @@ export class ContractsController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update contract' })
-  @ApiResponse({ status: 200, description: 'Contract updated', type: ContractDetailDto })
+  @ApiJsonResponse(ContractDetailDto, { description: 'Contract updated' })
   @ApiResponse({ status: 404, description: 'Contract not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -83,7 +84,7 @@ export class ContractsController {
   @Patch(':id/activate')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Activate contract' })
-  @ApiResponse({ status: 200, description: 'Contract activated', type: ContractDetailDto })
+  @ApiJsonResponse(ContractDetailDto, { description: 'Contract activated' })
   @ApiResponse({ status: 404, description: 'Contract not found' })
   async activate(@Param('id', ParseUUIDPipe) id: string) {
     return this.contractsService.activate(id);
@@ -92,7 +93,7 @@ export class ContractsController {
   @Patch(':id/terminate')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Terminate contract' })
-  @ApiResponse({ status: 200, description: 'Contract terminated', type: ContractDetailDto })
+  @ApiJsonResponse(ContractDetailDto, { description: 'Contract terminated' })
   @ApiResponse({ status: 404, description: 'Contract not found' })
   async terminate(
     @Param('id', ParseUUIDPipe) id: string,

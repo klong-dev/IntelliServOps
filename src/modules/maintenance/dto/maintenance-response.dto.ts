@@ -50,7 +50,7 @@ export class MaintenanceListItemDto {
   @ApiProperty()
   createdAt: Date;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   preferredDate: Date | null;
 
   @ApiProperty({ type: MaintenanceApartmentDto })
@@ -72,7 +72,7 @@ export class MaintenanceDetailDto {
   @ApiProperty()
   apartmentId: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   roomId: string | null;
 
   @ApiProperty({ example: 'hvac' })
@@ -87,13 +87,13 @@ export class MaintenanceDetailDto {
   @ApiProperty({ example: 'medium' })
   urgency: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   images: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   preferredDate: Date | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   preferredTimeSlot: string | null;
 
   @ApiProperty()
@@ -102,19 +102,19 @@ export class MaintenanceDetailDto {
   @ApiProperty({ example: 'submitted' })
   status: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   assignedTaskId: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Object, nullable: true })
   completionImages: any;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   completionNotes: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Number, nullable: true })
   tenantRating: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   tenantFeedback: string | null;
 
   @ApiPropertyOptional({ example: '500000.00', nullable: true })
@@ -123,10 +123,10 @@ export class MaintenanceDetailDto {
   @ApiPropertyOptional({ example: '450000.00', nullable: true })
   actualCost: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   costCoveredBy: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Date, nullable: true })
   completedAt: Date | null;
 
   @ApiProperty()

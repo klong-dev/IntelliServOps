@@ -14,7 +14,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
 } from '@nestjs/swagger';
 import { ApartmentsService } from './apartments.service';
 import {
@@ -23,8 +22,10 @@ import {
   SearchApartmentDto,
   ApartmentListItemDto,
   ApartmentDetailDto,
-  ApartmentSearchResultDto,
+  ApartmentMutationResultDto,
+  ApartmentStatusResultDto,
 } from './dto';
+import { ApiJsonResponse } from '../../common/dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
@@ -40,7 +41,11 @@ export class ApartmentsController {
     summary: 'Search apartments',
     description: 'Public endpoint to search available apartments with filters',
   })
-  @ApiResponse({ status: 200, description: 'Search results', type: ApartmentSearchResultDto })
+  @ApiJsonResponse(ApartmentListItemDto, {
+    isArray: true,
+    isPaginated: true,
+    description: 'Paginated apartment search results',
+  })
   async search(@Query() searchDto: SearchApartmentDto) {
     return this.apartmentsService.search(searchDto);
   }
@@ -48,17 +53,20 @@ export class ApartmentsController {
   @Get(':id')
   @Public()
   @ApiOperation({ summary: 'Get apartment details' })
-  @ApiResponse({ status: 200, description: 'Apartment details', type: ApartmentDetailDto })
+  @ApiJsonResponse(ApartmentDetailDto, { description: 'Apartment details' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.apartmentsService.findOne(id);
   }
 
   @Post()
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
   @ApiOperation({ summary: 'Create apartment' })
-  @ApiResponse({ status: 201, description: 'Apartment created', type: ApartmentDetailDto })
+  @ApiJsonResponse(ApartmentMutationResultDto, {
+    status: 201,
+    description: 'Apartment created',
+  })
   async create(
     @Body() createDto: CreateApartmentDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -67,10 +75,10 @@ export class ApartmentsController {
   }
 
   @Patch(':id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
   @ApiOperation({ summary: 'Update apartment' })
-  @ApiResponse({ status: 200, description: 'Apartment updated', type: ApartmentDetailDto })
+  @ApiJsonResponse(ApartmentMutationResultDto, { description: 'Apartment updated' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -81,29 +89,32 @@ export class ApartmentsController {
   }
 
   @Delete(':id')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Delete apartment (soft delete)' })
-  @ApiResponse({ status: 200, description: 'Apartment deactivated' })
+  @ApiJsonResponse(ApartmentStatusResultDto, { description: 'Apartment deactivated' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.apartmentsService.remove(id);
   }
 
   @Get('partner/:partnerId')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
   @ApiOperation({ summary: 'Get apartments by partner' })
-  @ApiResponse({ status: 200, description: 'Partner apartments', type: [ApartmentListItemDto] })
+  @ApiJsonResponse(ApartmentListItemDto, {
+    isArray: true,
+    description: 'Partner apartments',
+  })
   async findByPartner(@Param('partnerId', ParseUUIDPipe) partnerId: string) {
     return this.apartmentsService.findByPartner(partnerId);
   }
 
   @Patch(':id/approve')
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Approve apartment' })
-  @ApiResponse({ status: 200, description: 'Apartment approved', type: ApartmentDetailDto })
+  @ApiJsonResponse(ApartmentStatusResultDto, { description: 'Apartment approved' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
