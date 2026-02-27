@@ -1,4 +1,10 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
+import {
+  IsString,
+  MinLength,
+  IsOptional,
+  IsEnum,
+  IsNotEmpty,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum LoginActorType {
@@ -12,10 +18,12 @@ export enum LoginActorType {
 export class LoginDto {
   @ApiProperty({
     example: 'user@example.com',
-    description: 'Email address of the actor',
+    description:
+      'Email address or phone number (starting with 0 or +84) of the actor',
   })
-  @IsEmail()
-  email: string;
+  @IsString()
+  @IsNotEmpty()
+  identifier: string;
 
   @ApiProperty({
     example: 'password123',

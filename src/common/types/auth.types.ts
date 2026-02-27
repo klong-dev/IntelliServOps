@@ -10,6 +10,16 @@ export interface JwtPayload {
 }
 
 /**
+ * User object attached to request after JWT validation
+ */
+export interface RequestUser {
+  id: string;
+  email: string;
+  role: string;
+  actorType: string;
+}
+
+/**
  * Token pair returned from login/refresh
  */
 export interface TokenPair {

@@ -35,6 +35,7 @@ import { PartnersModule } from './modules/partners';
 import { NotificationsModule } from './modules/notifications';
 import { PoliciesModule } from './modules/policies';
 import { ActivityLogsModule } from './modules/activity-logs';
+import { StaffNotesModule } from './modules/staff-notes';
 
 // App Core
 import { AppController } from './app.controller';
@@ -76,6 +77,7 @@ import { AppService } from './app.service';
     NotificationsModule,
     PoliciesModule,
     ActivityLogsModule,
+    StaffNotesModule,
   ],
   controllers: [AppController],
   providers: [

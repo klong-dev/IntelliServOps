@@ -421,7 +421,7 @@ model Guest {
 model User {
   id                    String    @id @default(uuid())
   email                 String    @unique
-  phone                 String
+  phone                 String?
   fullName              String
   dateOfBirth           DateTime?
   nationalId            String?   @unique
@@ -429,7 +429,8 @@ model User {
   profileImageUrl       String?
   emergencyContactName  String?
   emergencyContactPhone String?
-  passwordHash          String
+  passwordHash          String?
+  supabaseId            String?   @unique
   isActive              Boolean   @default(true)
   isVerified            Boolean   @default(false)
   lastLoginAt           DateTime?
@@ -443,8 +444,10 @@ model User {
   payments              Payment[]
   tickets               Ticket[]
   maintenanceRequests   MaintenanceRequest[]
+  staffNotes            StaffNote[]
 
   @@index([phone])
+  @@index([supabaseId])
   @@index([createdByStaffId])
   @@map("users")
 }
@@ -477,6 +480,7 @@ model Staff {
   utilityReadings            UtilityReading[]           @relation("ReadingByStaff")
   verifiedReadings           UtilityReading[]           @relation("ReadingVerifiedByStaff")
   pendingGuestRegistrations  PendingGuestRegistration[] @relation("PendingRegistrationByStaff")
+  staffNotes                 StaffNote[]
 
   @@index([role])
   @@index([isActive])
@@ -1306,6 +1310,28 @@ model Notification {
 }
 
 // ============================================================================
+// STAFF NOTES MODEL
+// ============================================================================
+
+model StaffNote {
+  id        String   @id @default(uuid())
+  staffId   String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  staff Staff @relation(fields: [staffId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([staffId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("staff_notes")
+}
+
+// ============================================================================
 // AUTH MODELS
 // ============================================================================
 
@@ -1321,6 +1347,21 @@ model RefreshToken {
   @@index([actorId, actorType])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  isUsed    Boolean   @default(false)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model OtpVerification {

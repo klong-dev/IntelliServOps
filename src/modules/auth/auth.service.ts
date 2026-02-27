@@ -4,20 +4,23 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   LoginDto,
   LoginActorType,
-  SubmitGuestInfoDto,
-  RequestOtpDto,
-  VerifyOtpDto,
+  RegisterDto,
+  GoogleAuthDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  ChangePasswordDto,
 } from './dto';
-import { ActorType, PendingRegistrationStatus } from '@prisma/client';
-import { SmsService } from '../sms/sms.service';
+import { ActorType } from '@prisma/client';
 
 export interface JwtPayload {
   sub: string;
@@ -39,6 +42,7 @@ export interface AuthResponse {
     fullName: string | null;
     role: string;
     actorType: ActorType;
+    availableRoles: ActorType[];
   };
   tokens: TokenPair;
 }
@@ -46,7 +50,7 @@ export interface AuthResponse {
 interface ActorRecord {
   id: string;
   email: string;
-  passwordHash: string;
+  passwordHash: string | null;
   fullName: string | null;
   isActive?: boolean;
   role?: string;
@@ -55,16 +59,14 @@ interface ActorRecord {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly SALT_ROUNDS = 12;
-  private readonly OTP_EXPIRY_MINUTES = 5;
-  private readonly MAX_OTP_ATTEMPTS = 5;
-  private readonly PENDING_REGISTRATION_EXPIRY_DAYS = 30;
+  private readonly PASSWORD_RESET_EXPIRY_HOURS = 1;
 
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
-    private readonly smsService: SmsService,
   ) {}
 
   async hashPassword(password: string): Promise<string> {
@@ -77,15 +79,45 @@ export class AuthService {
 
   /**
    * Login for any actor type (User, Staff, Operator, Admin, Partner)
+   * Supports multi-role: finds all roles for the email, returns available roles.
+   * If actorType not specified, defaults to 'user' if available.
    */
   async login(loginDto: LoginDto): Promise<AuthResponse> {
-    const { email, password, actorType } = loginDto;
+    const { identifier, password, actorType } = loginDto;
 
-    // Find actor by email, optionally filtering by type
-    const { actor, foundActorType } = await this.findActorByEmail(
-      email,
-      actorType,
-    );
+    // Detect if identifier is email or phone
+    const isEmail = identifier.includes('@');
+
+    // Find ALL available roles for this identifier
+    const availableRoles = isEmail
+      ? await this.findAllRolesForEmail(identifier)
+      : await this.findAllRolesForPhone(identifier);
+
+    if (availableRoles.length === 0) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Determine which role to login as
+    let targetType: ActorType;
+    if (actorType) {
+      const mapped = this.mapLoginActorType(actorType);
+      if (!availableRoles.includes(mapped)) {
+        throw new UnauthorizedException(
+          `You do not have the '${actorType}' role. Available roles: ${availableRoles.join(', ')}`,
+        );
+      }
+      targetType = mapped;
+    } else {
+      // Default to 'user' if available, otherwise first available role
+      targetType = availableRoles.includes(ActorType.user)
+        ? ActorType.user
+        : availableRoles[0];
+    }
+
+    // Find the specific actor record
+    const actor = isEmail
+      ? await this.findActorByType(identifier, targetType)
+      : await this.findActorByTypeAndPhone(identifier, targetType);
 
     if (!actor) {
       throw new UnauthorizedException('Invalid credentials');
@@ -97,6 +129,12 @@ export class AuthService {
     }
 
     // Verify password
+    if (!actor.passwordHash) {
+      throw new UnauthorizedException(
+        'This account uses social login. Please use Google OAuth.',
+      );
+    }
+
     const isPasswordValid = await this.comparePassword(
       password,
       actor.passwordHash,
@@ -106,21 +144,21 @@ export class AuthService {
     }
 
     // Determine role based on actor type
-    const role = this.determineRole(actor, foundActorType);
+    const role = this.determineRole(actor, targetType);
 
     // Generate tokens
     const tokens = this.generateTokens({
       sub: actor.id,
       email: actor.email,
       role,
-      actorType: foundActorType,
+      actorType: targetType,
     });
 
     // Store refresh token in database
-    await this.storeRefreshToken(actor.id, foundActorType, tokens.refreshToken);
+    await this.storeRefreshToken(actor.id, targetType, tokens.refreshToken);
 
     // Update last login
-    await this.updateLastLogin(actor.id, foundActorType);
+    await this.updateLastLogin(actor.id, targetType);
 
     return {
       user: {
@@ -128,7 +166,8 @@ export class AuthService {
         email: actor.email,
         fullName: actor.fullName,
         role,
-        actorType: foundActorType,
+        actorType: targetType,
+        availableRoles,
       },
       tokens,
     };
@@ -260,44 +299,73 @@ export class AuthService {
   // Private Helper Methods
   // ============================================================================
 
-  private async findActorByEmail(
-    email: string,
-    actorType?: LoginActorType,
-  ): Promise<{ actor: ActorRecord | null; foundActorType: ActorType }> {
-    // Search order: User -> Staff -> Operator -> Admin -> Partner
-    const searchOrder: { type: ActorType; enabled: boolean }[] = [
-      {
-        type: ActorType.user,
-        enabled: !actorType || actorType === LoginActorType.USER,
-      },
-      {
-        type: ActorType.staff,
-        enabled: !actorType || actorType === LoginActorType.STAFF,
-      },
-      {
-        type: ActorType.operator,
-        enabled: !actorType || actorType === LoginActorType.OPERATOR,
-      },
-      {
-        type: ActorType.admin,
-        enabled: !actorType || actorType === LoginActorType.ADMIN,
-      },
-      {
-        type: ActorType.partner,
-        enabled: !actorType || actorType === LoginActorType.PARTNER,
-      },
-    ];
+  /**
+   * Find ALL roles/actor types for an email across all actor tables
+   */
+  private async findAllRolesForEmail(email: string): Promise<ActorType[]> {
+    const roles: ActorType[] = [];
 
-    for (const { type, enabled } of searchOrder) {
-      if (!enabled) continue;
+    const [user, staff, operator, admin, partner] = await Promise.all([
+      this.prisma.user.findUnique({ where: { email }, select: { id: true } }),
+      this.prisma.staff.findUnique({ where: { email }, select: { id: true } }),
+      this.prisma.operator.findUnique({
+        where: { email },
+        select: { id: true },
+      }),
+      this.prisma.admin.findUnique({ where: { email }, select: { id: true } }),
+      this.prisma.partner.findUnique({
+        where: { email },
+        select: { id: true },
+      }),
+    ]);
 
-      const actor = await this.findActorByType(email, type);
-      if (actor) {
-        return { actor, foundActorType: type };
-      }
-    }
+    if (user) roles.push(ActorType.user);
+    if (staff) roles.push(ActorType.staff);
+    if (operator) roles.push(ActorType.operator);
+    if (admin) roles.push(ActorType.admin);
+    if (partner) roles.push(ActorType.partner);
 
-    return { actor: null, foundActorType: ActorType.user };
+    return roles;
+  }
+
+  /**
+   * Find ALL roles/actor types for a phone number across all actor tables.
+   * Searches both formats: 0xxxxxxxxx and +84xxxxxxxxx
+   */
+  private async findAllRolesForPhone(phone: string): Promise<ActorType[]> {
+    const roles: ActorType[] = [];
+    const phoneVariants = this.getPhoneVariants(phone);
+
+    const [user, staff, operator, admin, partner] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: { phone: { in: phoneVariants } },
+        select: { id: true },
+      }),
+      this.prisma.staff.findFirst({
+        where: { phone: { in: phoneVariants } },
+        select: { id: true },
+      }),
+      this.prisma.operator.findFirst({
+        where: { phone: { in: phoneVariants } },
+        select: { id: true },
+      }),
+      this.prisma.admin.findFirst({
+        where: { phone: { in: phoneVariants } },
+        select: { id: true },
+      }),
+      this.prisma.partner.findFirst({
+        where: { phone: { in: phoneVariants } },
+        select: { id: true },
+      }),
+    ]);
+
+    if (user) roles.push(ActorType.user);
+    if (staff) roles.push(ActorType.staff);
+    if (operator) roles.push(ActorType.operator);
+    if (admin) roles.push(ActorType.admin);
+    if (partner) roles.push(ActorType.partner);
+
+    return roles;
   }
 
   private async findActorByType(
@@ -318,6 +386,68 @@ export class AuthService {
       default:
         return null;
     }
+  }
+
+  /**
+   * Find actor by phone number and type.
+   * Searches both formats: 0xxxxxxxxx and +84xxxxxxxxx
+   */
+  private async findActorByTypeAndPhone(
+    phone: string,
+    type: ActorType,
+  ): Promise<ActorRecord | null> {
+    const phoneVariants = this.getPhoneVariants(phone);
+
+    switch (type) {
+      case ActorType.user:
+        return this.prisma.user.findFirst({
+          where: { phone: { in: phoneVariants } },
+        });
+      case ActorType.staff:
+        return this.prisma.staff.findFirst({
+          where: { phone: { in: phoneVariants } },
+        });
+      case ActorType.operator:
+        return this.prisma.operator.findFirst({
+          where: { phone: { in: phoneVariants } },
+        });
+      case ActorType.admin:
+        return this.prisma.admin.findFirst({
+          where: { phone: { in: phoneVariants } },
+        });
+      case ActorType.partner:
+        return this.prisma.partner.findFirst({
+          where: { phone: { in: phoneVariants } },
+        });
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Get both phone format variants for searching:
+   * 0901234567 → ['0901234567', '+84901234567']
+   * +84901234567 → ['+84901234567', '0901234567']
+   */
+  private getPhoneVariants(phone: string): string[] {
+    if (phone.startsWith('+84')) {
+      return [phone, '0' + phone.slice(3)];
+    }
+    if (phone.startsWith('0')) {
+      return [phone, '+84' + phone.slice(1)];
+    }
+    return [phone];
+  }
+
+  private mapLoginActorType(actorType: LoginActorType): ActorType {
+    const map: Record<LoginActorType, ActorType> = {
+      [LoginActorType.USER]: ActorType.user,
+      [LoginActorType.STAFF]: ActorType.staff,
+      [LoginActorType.OPERATOR]: ActorType.operator,
+      [LoginActorType.ADMIN]: ActorType.admin,
+      [LoginActorType.PARTNER]: ActorType.partner,
+    };
+    return map[actorType];
   }
 
   private determineRole(actor: ActorRecord, actorType: ActorType): string {
@@ -383,307 +513,70 @@ export class AuthService {
   }
 
   // ============================================================================
-  // Guest Registration Flow Methods
+  // Supabase Config
   // ============================================================================
 
   /**
-   * Staff submits guest information after rental agreement
-   * Creates a pending registration that guest can complete via mobile app
+   * Return full Supabase Google OAuth login URL for frontend to open popup
    */
-  async submitGuestInfo(
-    submitGuestInfoDto: SubmitGuestInfoDto,
-    staffId: string,
-  ): Promise<{ message: string; pendingRegistrationId: string }> {
-    const {
-      phone,
-      email,
-      fullName,
-      dateOfBirth,
-      nationalId,
-      passportNumber,
-      emergencyContactName,
-      emergencyContactPhone,
-      notes,
-    } = submitGuestInfoDto;
+  getSupabaseUrl(): { url: string } {
+    const supabaseUrl = this.configService.get<string>('supabase.url');
+    const redirectUrl = this.configService.get<string>('supabase.redirectUrl') || '';
 
-    // Check if phone already registered as User
-    const existingUser = await this.prisma.user.findFirst({
-      where: { phone },
+    if (!supabaseUrl) {
+      throw new BadRequestException(
+        'Supabase is not configured on this server',
+      );
+    }
+
+    const url = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+
+    return { url };
+  }
+
+  // ============================================================================
+  // Registration
+  // ============================================================================
+
+  /**
+   * Register a new user account (web self-service)
+   * Default role = user
+   */
+  async register(registerDto: RegisterDto): Promise<AuthResponse> {
+    const { email, phone, fullName, password } = registerDto;
+
+    // Check if email already registered as User
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
     });
 
     if (existingUser) {
-      throw new ConflictException('This phone number is already registered');
+      throw new ConflictException('Email is already registered');
     }
 
-    // Check if email already registered (if provided)
-    if (email) {
-      const existingEmail = await this.prisma.user.findUnique({
-        where: { email },
+    // Check phone uniqueness if provided (search both 0xx and +84xx formats)
+    if (phone) {
+      const phoneVariants = this.getPhoneVariants(phone);
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phone: { in: phoneVariants } },
       });
-
-      if (existingEmail) {
-        throw new ConflictException('This email is already registered');
+      if (existingPhone) {
+        throw new ConflictException('Phone number is already registered');
       }
     }
 
-    // Check if there's already a pending registration for this phone
-    const existingPending =
-      await this.prisma.pendingGuestRegistration.findUnique({
-        where: { phone },
-      });
-
-    if (existingPending) {
-      // Update existing pending registration
-      const updated = await this.prisma.pendingGuestRegistration.update({
-        where: { id: existingPending.id },
-        data: {
-          email,
-          fullName,
-          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-          nationalId,
-          passportNumber,
-          emergencyContactName,
-          emergencyContactPhone,
-          notes,
-          submittedByStaffId: staffId,
-          status: PendingRegistrationStatus.pending,
-          expiresAt: new Date(
-            Date.now() +
-              this.PENDING_REGISTRATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-          ),
-          updatedAt: new Date(),
-        },
-      });
-
-      return {
-        message:
-          'Guest information updated. Guest can now register via mobile app.',
-        pendingRegistrationId: updated.id,
-      };
-    }
-
-    // Create new pending registration
-    const pendingRegistration =
-      await this.prisma.pendingGuestRegistration.create({
-        data: {
-          phone,
-          email,
-          fullName,
-          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-          nationalId,
-          passportNumber,
-          emergencyContactName,
-          emergencyContactPhone,
-          notes,
-          submittedByStaffId: staffId,
-          status: PendingRegistrationStatus.pending,
-          expiresAt: new Date(
-            Date.now() +
-              this.PENDING_REGISTRATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-          ),
-        },
-      });
-
-    return {
-      message:
-        'Guest information submitted. Guest can now register via mobile app.',
-      pendingRegistrationId: pendingRegistration.id,
-    };
-  }
-
-  /**
-   * Guest requests OTP via mobile app
-   * Phone must match a pending registration submitted by Staff
-   */
-  async requestOtp(
-    requestOtpDto: RequestOtpDto,
-  ): Promise<{ message: string; expiresIn: number; devOtpCode?: string }> {
-    const { phone } = requestOtpDto;
-
-    // Check if there's a pending registration for this phone
-    const pendingRegistration =
-      await this.prisma.pendingGuestRegistration.findUnique({
-        where: { phone },
-      });
-
-    if (!pendingRegistration) {
-      throw new NotFoundException(
-        'No pending registration found for this phone number. Please contact staff.',
-      );
-    }
-
-    // Check if pending registration is expired
-    if (pendingRegistration.expiresAt < new Date()) {
-      throw new BadRequestException(
-        'Registration has expired. Please contact staff to submit your information again.',
-      );
-    }
-
-    // Check if already completed
-    if (pendingRegistration.status === PendingRegistrationStatus.completed) {
-      throw new BadRequestException(
-        'Registration already completed. Please login.',
-      );
-    }
-
-    // Check rate limiting - max 1 OTP per minute
-    const recentOtp = await this.prisma.otpVerification.findFirst({
-      where: {
-        phone,
-        createdAt: { gt: new Date(Date.now() - 60 * 1000) },
-      },
-    });
-
-    if (recentOtp) {
-      throw new BadRequestException(
-        'Please wait 1 minute before requesting a new OTP.',
-      );
-    }
-
-    // Send OTP via Supabase Auth (Supabase generates and sends the OTP)
-    const result = await this.smsService.sendOtp(phone);
-
-    // Save OTP record for tracking (code is managed by Supabase in production)
-    const trackingCode = result.devOtpCode || 'SUPABASE_MANAGED';
-    const expiresAt = new Date(
-      Date.now() + this.OTP_EXPIRY_MINUTES * 60 * 1000,
-    );
-
-    await this.prisma.otpVerification.create({
-      data: {
-        phone,
-        code: trackingCode,
-        purpose: 'registration',
-        expiresAt,
-      },
-    });
-
-    // Update pending registration status
-    await this.prisma.pendingGuestRegistration.update({
-      where: { id: pendingRegistration.id },
-      data: { status: PendingRegistrationStatus.otp_sent },
-    });
-
-    const response: {
-      message: string;
-      expiresIn: number;
-      devOtpCode?: string;
-    } = {
-      message: 'OTP has been sent to your phone number.',
-      expiresIn: this.OTP_EXPIRY_MINUTES * 60, // in seconds
-    };
-
-    // Include dev OTP code in response for dev mode testing
-    if (result.devOtpCode) {
-      response.devOtpCode = result.devOtpCode;
-    }
-
-    return response;
-  }
-
-  /**
-   * Guest verifies OTP and completes registration
-   * After successful verification, Guest becomes User
-   */
-  async verifyOtpAndRegister(
-    verifyOtpDto: VerifyOtpDto,
-  ): Promise<AuthResponse> {
-    const { phone, otpCode, password } = verifyOtpDto;
-
-    // Find pending registration
-    const pendingRegistration =
-      await this.prisma.pendingGuestRegistration.findUnique({
-        where: { phone },
-      });
-
-    if (!pendingRegistration) {
-      throw new NotFoundException(
-        'No pending registration found for this phone number.',
-      );
-    }
-
-    if (pendingRegistration.status === PendingRegistrationStatus.completed) {
-      throw new BadRequestException(
-        'Registration already completed. Please login.',
-      );
-    }
-
-    if (pendingRegistration.expiresAt < new Date()) {
-      throw new BadRequestException(
-        'Registration has expired. Please contact staff.',
-      );
-    }
-
-    // Verify OTP via Supabase Auth (or dev mode)
-    try {
-      await this.smsService.verifyOtp(phone, otpCode);
-    } catch {
-      // Check attempts limit on our tracking record
-      const latestOtp = await this.prisma.otpVerification.findFirst({
-        where: { phone, purpose: 'registration', isUsed: false },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (latestOtp) {
-        await this.prisma.otpVerification.update({
-          where: { id: latestOtp.id },
-          data: { attempts: { increment: 1 } },
-        });
-
-        if (latestOtp.attempts + 1 >= this.MAX_OTP_ATTEMPTS) {
-          throw new BadRequestException(
-            'Too many failed attempts. Please request a new OTP.',
-          );
-        }
-      }
-
-      throw new BadRequestException('Invalid or expired OTP code.');
-    }
-
-    // Hash password
+    // Hash password and create user
     const passwordHash = await this.hashPassword(password);
 
-    // Create User and mark OTP as used in a transaction
-    const user = await this.prisma.$transaction(async (tx) => {
-      // Mark tracking OTP record as used
-      const latestOtp = await tx.otpVerification.findFirst({
-        where: { phone, purpose: 'registration', isUsed: false },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (latestOtp) {
-        await tx.otpVerification.update({
-          where: { id: latestOtp.id },
-          data: { isUsed: true, usedAt: new Date() },
-        });
-      }
-
-      // Update pending registration status
-      await tx.pendingGuestRegistration.update({
-        where: { id: pendingRegistration.id },
-        data: { status: PendingRegistrationStatus.completed },
-      });
-
-      // Create new User
-      const newUser = await tx.user.create({
-        data: {
-          phone: pendingRegistration.phone,
-          email:
-            pendingRegistration.email || `${phone}@temp.intellirentops.com`,
-          fullName: pendingRegistration.fullName,
-          dateOfBirth: pendingRegistration.dateOfBirth,
-          nationalId: pendingRegistration.nationalId,
-          passportNumber: pendingRegistration.passportNumber,
-          emergencyContactName: pendingRegistration.emergencyContactName,
-          emergencyContactPhone: pendingRegistration.emergencyContactPhone,
-          passwordHash,
-          isActive: true,
-          isVerified: true, // Phone verified via OTP
-          createdByStaffId: pendingRegistration.submittedByStaffId,
-        },
-      });
-
-      return newUser;
+    const user = await this.prisma.user.create({
+      data: {
+        email,
+        phone,
+        fullName,
+        passwordHash,
+        isActive: true,
+        isVerified: false,
+      },
     });
 
     // Generate tokens
@@ -704,95 +597,314 @@ export class AuthService {
         fullName: user.fullName,
         role: 'user',
         actorType: ActorType.user,
+        availableRoles: [ActorType.user],
       },
       tokens,
     };
   }
 
-  /**
-   * Resend OTP for guest registration
-   */
-  async resendOtp(
-    phone: string,
-  ): Promise<{ message: string; expiresIn: number }> {
-    // Invalidate old OTPs
-    await this.prisma.otpVerification.updateMany({
-      where: {
-        phone,
-        purpose: 'registration',
-        isUsed: false,
-      },
-      data: { isUsed: true },
-    });
-
-    // Request new OTP
-    return this.requestOtp({ phone });
-  }
+  // ============================================================================
+  // Google OAuth
+  // ============================================================================
 
   /**
-   * Send OTP directly to any phone number (bypass pending registration)
-   * For testing or simplified registration flow
+   * Login/Register via Google OAuth using Supabase access token.
+   * If user doesn't exist, creates a new user account.
    */
-  async sendDirectOtp(
-    phone: string,
-  ): Promise<{ message: string; devOtpCode?: string; expiresIn: number }> {
-    // Format phone number
-    const formattedPhone = this.smsService.formatPhoneNumber(phone);
+  async googleAuth(googleAuthDto: GoogleAuthDto): Promise<AuthResponse> {
+    const { accessToken } = googleAuthDto;
 
-    // Check rate limit (1 OTP per minute)
-    const recentOtp = await this.prisma.otpVerification.findFirst({
-      where: {
-        phone: formattedPhone,
-        purpose: 'registration',
-        createdAt: { gte: new Date(Date.now() - 60 * 1000) },
-      },
-    });
+    const supabaseUrl = this.configService.get<string>('supabase.url');
+    const supabaseKey = this.configService.get<string>('supabase.anonKey');
 
-    if (recentOtp) {
+    if (!supabaseUrl || !supabaseKey) {
+      throw new BadRequestException('Google OAuth is not configured');
+    }
+
+    // Verify the Supabase access token via REST API
+    let supabaseUser: {
+      id: string;
+      email: string;
+      user_metadata?: { full_name?: string; avatar_url?: string };
+    };
+    try {
+      const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          apikey: supabaseKey,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Invalid token');
+      }
+
+      supabaseUser = await response.json();
+    } catch {
+      throw new UnauthorizedException('Invalid or expired Google OAuth token');
+    }
+
+    if (!supabaseUser?.email) {
       throw new BadRequestException(
-        'Please wait 1 minute before requesting another OTP',
+        'Could not retrieve email from Google account',
       );
     }
 
-    // Invalidate old OTPs
-    await this.prisma.otpVerification.updateMany({
-      where: {
-        phone: formattedPhone,
-        purpose: 'registration',
-        isUsed: false,
+    // Find or create user in our database
+    let user = await this.prisma.user.findUnique({
+      where: { email: supabaseUser.email },
+    });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email: supabaseUser.email,
+          fullName:
+            supabaseUser.user_metadata?.full_name ||
+            supabaseUser.email.split('@')[0],
+          supabaseId: supabaseUser.id,
+          profileImageUrl: supabaseUser.user_metadata?.avatar_url,
+          isActive: true,
+          isVerified: true,
+        },
+      });
+    } else if (!user.supabaseId) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { supabaseId: supabaseUser.id },
+      });
+    }
+
+    const availableRoles = await this.findAllRolesForEmail(user.email);
+
+    const tokens = this.generateTokens({
+      sub: user.id,
+      email: user.email,
+      role: 'user',
+      actorType: ActorType.user,
+    });
+
+    await this.storeRefreshToken(user.id, ActorType.user, tokens.refreshToken);
+    await this.updateLastLogin(user.id, ActorType.user);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: 'user',
+        actorType: ActorType.user,
+        availableRoles,
       },
+      tokens,
+    };
+  }
+
+  // ============================================================================
+  // Password Management
+  // ============================================================================
+
+  /**
+   * Request a password reset token.
+   * In production, this would send an email with the reset link.
+   */
+  async forgotPassword(
+    forgotPasswordDto: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    const { email } = forgotPasswordDto;
+
+    const availableRoles = await this.findAllRolesForEmail(email);
+
+    if (availableRoles.length === 0) {
+      // Don't reveal that the email doesn't exist
+      return {
+        message:
+          'If a matching account was found, a password reset link has been sent to your email.',
+      };
+    }
+
+    // Invalidate previous reset tokens
+    await this.prisma.passwordResetToken.updateMany({
+      where: { email, isUsed: false },
       data: { isUsed: true },
     });
 
-    // Send OTP via Supabase Auth
-    const result = await this.smsService.sendOtp(formattedPhone);
+    const token = randomUUID();
+    const expiresAt = new Date(
+      Date.now() + this.PASSWORD_RESET_EXPIRY_HOURS * 60 * 60 * 1000,
+    );
 
-    // Save tracking record
-    const trackingCode = result.devOtpCode || 'SUPABASE_MANAGED';
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-
-    await this.prisma.otpVerification.create({
-      data: {
-        phone: formattedPhone,
-        code: trackingCode,
-        purpose: 'registration',
-        expiresAt,
-      },
+    await this.prisma.passwordResetToken.create({
+      data: { email, token, expiresAt },
     });
 
-    const response: {
-      message: string;
-      devOtpCode?: string;
-      expiresIn: number;
-    } = {
-      message: 'OTP has been sent to your phone number.',
-      expiresIn: 300, // 5 minutes in seconds
-    };
+    // TODO: Send email with reset link (integrate email service)
+    this.logger.log(`Password reset token generated for ${email}: ${token}`);
 
-    if (result.devOtpCode) {
-      response.devOtpCode = result.devOtpCode;
+    return {
+      message:
+        'If a matching account was found, a password reset link has been sent to your email.',
+    };
+  }
+
+  /**
+   * Reset password using a valid reset token
+   */
+  async resetPassword(
+    resetPasswordDto: ResetPasswordDto,
+  ): Promise<{ message: string }> {
+    const { token, newPassword } = resetPasswordDto;
+
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { token },
+    });
+
+    if (!resetToken) {
+      throw new BadRequestException('Invalid or expired reset token');
     }
 
-    return response;
+    if (resetToken.isUsed) {
+      throw new BadRequestException('This reset token has already been used');
+    }
+
+    if (resetToken.expiresAt < new Date()) {
+      throw new BadRequestException('Reset token has expired');
+    }
+
+    const passwordHash = await this.hashPassword(newPassword);
+    const email = resetToken.email;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Mark token as used
+      await tx.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { isUsed: true, usedAt: new Date() },
+      });
+
+      // Update password across all actor tables
+      const user = await tx.user.findUnique({ where: { email } });
+      if (user) {
+        await tx.user.update({ where: { email }, data: { passwordHash } });
+      }
+
+      const staff = await tx.staff.findUnique({ where: { email } });
+      if (staff) {
+        await tx.staff.update({ where: { email }, data: { passwordHash } });
+      }
+
+      const operator = await tx.operator.findUnique({ where: { email } });
+      if (operator) {
+        await tx.operator.update({
+          where: { email },
+          data: { passwordHash },
+        });
+      }
+
+      const admin = await tx.admin.findUnique({ where: { email } });
+      if (admin) {
+        await tx.admin.update({ where: { email }, data: { passwordHash } });
+      }
+
+      const partner = await tx.partner.findUnique({ where: { email } });
+      if (partner) {
+        await tx.partner.update({ where: { email }, data: { passwordHash } });
+      }
+    });
+
+    return { message: 'Password has been reset successfully' };
+  }
+
+  /**
+   * Change password for an authenticated user
+   */
+  async changePassword(
+    actorId: string,
+    actorType: ActorType,
+    changePasswordDto: ChangePasswordDto,
+  ): Promise<{ message: string }> {
+    const { currentPassword, newPassword } = changePasswordDto;
+
+    // Find actor
+    let actor: ActorRecord | null = null;
+
+    switch (actorType) {
+      case ActorType.user:
+        actor = await this.prisma.user.findUnique({ where: { id: actorId } });
+        break;
+      case ActorType.staff:
+        actor = await this.prisma.staff.findUnique({ where: { id: actorId } });
+        break;
+      case ActorType.operator:
+        actor = await this.prisma.operator.findUnique({
+          where: { id: actorId },
+        });
+        break;
+      case ActorType.admin:
+        actor = await this.prisma.admin.findUnique({ where: { id: actorId } });
+        break;
+      case ActorType.partner:
+        actor = await this.prisma.partner.findUnique({
+          where: { id: actorId },
+        });
+        break;
+    }
+
+    if (!actor) {
+      throw new NotFoundException('Account not found');
+    }
+
+    if (!actor.passwordHash) {
+      throw new BadRequestException(
+        'Cannot change password for social login accounts. Please set a password first.',
+      );
+    }
+
+    const isValid = await this.comparePassword(
+      currentPassword,
+      actor.passwordHash,
+    );
+    if (!isValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const passwordHash = await this.hashPassword(newPassword);
+
+    switch (actorType) {
+      case ActorType.user:
+        await this.prisma.user.update({
+          where: { id: actorId },
+          data: { passwordHash },
+        });
+        break;
+      case ActorType.staff:
+        await this.prisma.staff.update({
+          where: { id: actorId },
+          data: { passwordHash },
+        });
+        break;
+      case ActorType.operator:
+        await this.prisma.operator.update({
+          where: { id: actorId },
+          data: { passwordHash },
+        });
+        break;
+      case ActorType.admin:
+        await this.prisma.admin.update({
+          where: { id: actorId },
+          data: { passwordHash },
+        });
+        break;
+      case ActorType.partner:
+        await this.prisma.partner.update({
+          where: { id: actorId },
+          data: { passwordHash },
+        });
+        break;
+    }
+
+    // Revoke all tokens to force re-login
+    await this.revokeAllTokens(actorId, actorType);
+
+    return { message: 'Password changed successfully. Please login again.' };
   }
 }

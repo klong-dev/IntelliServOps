@@ -1,5 +1,5 @@
 export * from './auth';
-export * from './sms';
+export * from './staff-notes';
 export * from './apartments';
 export * from './contracts';
 export * from './invoices';
@@ -13,3 +13,4 @@ export * from './partners';
 export * from './notifications';
 export * from './policies';
 export * from './activity-logs';
+export * from './users';

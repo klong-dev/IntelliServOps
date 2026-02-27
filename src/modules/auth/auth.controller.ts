@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   HttpCode,
   HttpStatus,
@@ -15,17 +16,18 @@ import { AuthService } from './auth.service';
 import {
   LoginDto,
   RefreshTokenDto,
-  SubmitGuestInfoDto,
-  RequestOtpDto,
-  VerifyOtpDto,
+  RegisterDto,
+  GoogleAuthDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  ChangePasswordDto,
   AuthResponseDto,
   TokenPairDto,
-  OtpResponseDto,
-  SubmitGuestResponseDto,
+  MessageResponseDto,
 } from './dto';
-import { Roles, CurrentUser, Public } from '../../common/decorators';
-import { Role } from '../../common/enums/role.enum';
-import type { JwtPayload } from './auth.service';
+import { CurrentUser, Public } from '../../common/decorators';
+import type { RequestUser } from '../../common/types';
+import { ActorType } from '@prisma/client';
 import { ApiJsonResponse } from '../../common/dto';
 
 @ApiTags('Auth')
@@ -33,17 +35,61 @@ import { ApiJsonResponse } from '../../common/dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // ─── Public Endpoints ─────────────────────────────────────────────
+
+  @Post('register')
+  @Public()
+  @ApiOperation({
+    summary: 'Register',
+    description: 'Register a new user account with email, phone, fullName and password. Phone number can start with 0 or +84. Default role is user.',
+  })
+  @ApiJsonResponse(AuthResponseDto, { status: 201, description: 'Registration successful' })
+  @ApiResponse({ status: 409, description: 'Email or phone already registered' })
+  async register(@Body() registerDto: RegisterDto) {
+    return this.authService.register(registerDto);
+  }
+
   @Post('login')
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Login',
-    description: 'Login with email and password. Supports User, Staff, Operator, Admin, Partner.',
+    description:
+      'Login with email or phone number and password. Supports User, Staff, Operator, Admin, Partner. ' +
+      'Phone number can start with 0 or +84. ' +
+      'Optional actorType to select role (default: user if available). ' +
+      'Response includes list of all available roles for the account.',
   })
   @ApiJsonResponse(AuthResponseDto, { description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('google')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Google OAuth',
+    description: 'Login or register via Google OAuth using Supabase access token.',
+  })
+  @ApiJsonResponse(AuthResponseDto, { description: 'Google OAuth successful' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired Google OAuth token' })
+  async googleAuth(@Body() googleAuthDto: GoogleAuthDto) {
+    return this.authService.googleAuth(googleAuthDto);
+  }
+
+  @Get('supabaseUrl')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get Google OAuth login URL',
+    description: 'Returns the full Supabase Google OAuth URL for frontend to open login popup/redirect.',
+  })
+  @ApiResponse({ status: 200, description: 'Google OAuth URL returned' })
+  @ApiResponse({ status: 400, description: 'Supabase is not configured' })
+  getSupabaseUrl() {
+    return this.authService.getSupabaseUrl();
   }
 
   @Post('refresh')
@@ -72,71 +118,50 @@ export class AuthController {
     return { message: 'Logged out successfully' };
   }
 
-  // ─── Guest Registration Flow ──────────────────────────────────────
+  // ─── Password Management ──────────────────────────────────────────
 
-  @Post('guest/submit-info')
+  @Post('forgot-password')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Forgot password',
+    description: 'Request a password reset link sent to email.',
+  })
+  @ApiJsonResponse(MessageResponseDto, { description: 'Reset link sent (if account exists)' })
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto);
+  }
+
+  @Post('reset-password')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reset password',
+    description: 'Reset password using the token received via email.',
+  })
+  @ApiJsonResponse(MessageResponseDto, { description: 'Password reset successful' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired reset token' })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    return this.authService.resetPassword(resetPasswordDto);
+  }
+
+  @Post('change-password')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Submit guest information',
-    description: 'Staff submits guest info after rental agreement. Creates a pending registration.',
+    summary: 'Change password',
+    description: 'Change password for the currently authenticated user.',
   })
-  @ApiJsonResponse(SubmitGuestResponseDto, { status: 201, description: 'Guest info submitted' })
-  @ApiResponse({ status: 409, description: 'Phone/email already registered' })
-  async submitGuestInfo(
-    @Body() submitGuestInfoDto: SubmitGuestInfoDto,
-    @CurrentUser() currentUser: JwtPayload,
+  @ApiJsonResponse(MessageResponseDto, { description: 'Password changed' })
+  @ApiResponse({ status: 401, description: 'Current password is incorrect' })
+  async changePassword(
+    @Body() changePasswordDto: ChangePasswordDto,
+    @CurrentUser() currentUser: RequestUser,
   ) {
-    return this.authService.submitGuestInfo(submitGuestInfoDto, currentUser.sub);
-  }
-
-  @Post('guest/request-otp')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Request OTP',
-    description: 'Guest requests OTP for registration. Phone must match a pending registration.',
-  })
-  @ApiJsonResponse(OtpResponseDto, { description: 'OTP sent' })
-  @ApiResponse({ status: 404, description: 'No pending registration' })
-  async requestOtp(@Body() requestOtpDto: RequestOtpDto) {
-    return this.authService.requestOtp(requestOtpDto);
-  }
-
-  @Post('guest/verify-otp')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Verify OTP',
-    description: 'Guest verifies OTP and completes registration. Returns auth tokens.',
-  })
-  @ApiJsonResponse(AuthResponseDto, { description: 'OTP verified, registration complete' })
-  @ApiResponse({ status: 400, description: 'Invalid OTP' })
-  async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
-    return this.authService.verifyOtpAndRegister(verifyOtpDto);
-  }
-
-  @Post('send-otp')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Send OTP directly',
-    description: 'Send OTP to any phone number. For testing or simplified flow.',
-  })
-  @ApiJsonResponse(OtpResponseDto, { description: 'OTP sent' })
-  async sendDirectOtp(@Body() body: { phone: string }) {
-    return this.authService.sendDirectOtp(body.phone);
-  }
-
-  @Post('guest/resend-otp')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Resend OTP',
-    description: 'Resend OTP for guest registration',
-  })
-  @ApiJsonResponse(OtpResponseDto, { description: 'OTP resent' })
-  async resendOtp(@Body() body: { phone: string }) {
-    return this.authService.resendOtp(body.phone);
+    return this.authService.changePassword(
+      currentUser.id,
+      currentUser.actorType as ActorType,
+      changePasswordDto,
+    );
   }
 }
