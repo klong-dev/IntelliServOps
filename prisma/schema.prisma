@@ -126,6 +126,12 @@ enum MemberStatus {
   inactive
 }
 
+enum UserRoomStatus {
+  active
+  moved_out
+  inactive
+}
+
 enum PaymentMethodType {
   bank_transfer
   cash
@@ -346,11 +352,16 @@ enum ReadingType {
 
 // --- Document Enums ---
 enum PolicyType {
-  terms_of_service
-  privacy_policy
   rental_rules
+  building_regulations
+  pet_policy
+  parking_rules
+  noise_policy
+  maintenance_policy
+  security_policy
+  common_area_usage
   cancellation_policy
-  community_guidelines
+  move_in_out_rules
 }
 
 enum DocumentType {
@@ -445,6 +456,7 @@ model User {
   tickets               Ticket[]
   maintenanceRequests   MaintenanceRequest[]
   staffNotes            StaffNote[]
+  userRooms             UserRoom[]
 
   @@index([phone])
   @@index([supabaseId])
@@ -613,6 +625,7 @@ model Apartment {
   appointments      Appointment[]
   maintenanceReqs   MaintenanceRequest[]
   tasks             Task[]
+  apartmentPolicies ApartmentPolicy[]
 
   @@index([status])
   @@index([city])
@@ -644,6 +657,7 @@ model Room {
   apartment         Apartment            @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
   iotDevices        IoTDevice[]
   maintenanceReqs   MaintenanceRequest[]
+  userRooms         UserRoom[]
 
   @@unique([apartmentId, roomNumber])
   @@index([apartmentId])
@@ -688,6 +702,7 @@ model RentalContract {
   tickets             Ticket[]
   maintenanceRequests MaintenanceRequest[]
   utilityReadings     UtilityReading[]
+  userRooms           UserRoom[]
 
   @@index([apartmentId])
   @@index([status])
@@ -1204,8 +1219,9 @@ model Policy {
   updatedAt          DateTime   @updatedAt
 
   // Relations
-  createdByAdmin  Admin? @relation("PolicyCreatedByAdmin", fields: [createdByAdminId], references: [id])
-  approvedByAdmin Admin? @relation("PolicyApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  createdByAdmin    Admin?            @relation("PolicyCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  approvedByAdmin   Admin?            @relation("PolicyApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  apartmentPolicies ApartmentPolicy[]
 
   @@index([policyType])
   @@index([isActive])
@@ -1244,6 +1260,63 @@ model LegalDocument {
   @@index([isTemplate])
   @@index([language])
   @@map("legal_documents")
+}
+
+// ============================================================================
+// USER-ROOM ASSIGNMENT MODEL
+// ============================================================================
+
+model UserRoom {
+  id               String         @id @default(uuid())
+  userId           String
+  roomId           String
+  rentalContractId String
+  moveInDate       DateTime?
+  moveOutDate      DateTime?
+  isPrimary        Boolean        @default(true)
+  status           UserRoomStatus @default(active)
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room           Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId, rentalContractId])
+  @@index([userId])
+  @@index([roomId])
+  @@index([rentalContractId])
+  @@index([status])
+  @@map("user_rooms")
+}
+
+// ============================================================================
+// APARTMENT-POLICY ASSIGNMENT MODEL
+// ============================================================================
+
+model ApartmentPolicy {
+  id            String   @id @default(uuid())
+  apartmentId   String
+  policyId      String
+  isRequired    Boolean  @default(true)
+  effectiveDate DateTime @default(now())
+  expiryDate    DateTime?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  apartment Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  policy    Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([apartmentId, policyId])
+  @@index([apartmentId])
+  @@index([policyId])
+  @@index([isRequired])
+  @@index([effectiveDate])
+  @@map("apartment_policies")
 }
 
 // ============================================================================

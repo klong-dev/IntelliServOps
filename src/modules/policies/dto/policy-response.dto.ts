@@ -1,18 +1,99 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// ─── Policy Response DTO ────────────────────────────────────────────
+// ─── Nested DTOs ────────────────────────────────────────────────────
 
-export class PolicyResponseDto {
+class AdminSummaryDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 'terms_of_service' })
+  @ApiProperty({ example: 'Nguyễn Văn An' })
+  fullName: string;
+}
+
+class ApartmentPolicySummaryDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  apartmentId: string;
+
+  @ApiProperty({ example: true })
+  isRequired: boolean;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  effectiveDate: Date | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  expiryDate: Date | null;
+
+  @ApiPropertyOptional({
+    type: Object,
+    nullable: true,
+    description: 'Thông tin căn hộ',
+  })
+  apartment: {
+    id: string;
+    apartmentNumber: string;
+    buildingName: string | null;
+  } | null;
+}
+
+// ─── Policy Response DTOs ───────────────────────────────────────────
+
+export class PolicyListItemDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'building_regulations' })
   policyType: string;
 
-  @ApiProperty({ example: 'Điều khoản sử dụng' })
+  @ApiProperty({ example: 'Nội quy tòa nhà Saigon Pearl' })
   title: string;
 
-  @ApiProperty({ example: 'Nội dung điều khoản...' })
+  @ApiProperty({ example: '1.0' })
+  version: string;
+
+  @ApiProperty({ example: 'vi' })
+  language: string;
+
+  @ApiProperty()
+  effectiveDate: Date;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  expiryDate: Date | null;
+
+  @ApiProperty()
+  isActive: boolean;
+
+  @ApiProperty()
+  requiresAcceptance: boolean;
+
+  @ApiProperty({ example: 0 })
+  displayOrder: number;
+
+  @ApiProperty({
+    example: { apartmentPolicies: 2 },
+    description: 'Số căn hộ áp dụng',
+  })
+  _count: { apartmentPolicies: number };
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
+export class PolicyDetailDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'building_regulations' })
+  policyType: string;
+
+  @ApiProperty({ example: 'Nội quy tòa nhà Saigon Pearl' })
+  title: string;
+
+  @ApiProperty({
+    example: 'Cư dân phải tuân thủ giờ giấc sinh hoạt...',
+  })
   content: string;
 
   @ApiProperty({ example: '1.0' })
@@ -36,11 +117,49 @@ export class PolicyResponseDto {
   @ApiProperty({ example: 0 })
   displayOrder: number;
 
-  @ApiPropertyOptional({ type: String, nullable: true })
-  createdByAdminId: string | null;
+  @ApiPropertyOptional({
+    type: AdminSummaryDto,
+    nullable: true,
+  })
+  createdByAdmin: AdminSummaryDto | null;
 
-  @ApiPropertyOptional({ type: String, nullable: true })
-  approvedByAdminId: string | null;
+  @ApiPropertyOptional({
+    type: AdminSummaryDto,
+    nullable: true,
+  })
+  approvedByAdmin: AdminSummaryDto | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  approvedAt: Date | null;
+
+  @ApiProperty({
+    type: [ApartmentPolicySummaryDto],
+    description: 'Danh sách căn hộ áp dụng chính sách này',
+  })
+  apartmentPolicies: ApartmentPolicySummaryDto[];
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
+export class PolicyMutationResultDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'building_regulations' })
+  policyType: string;
+
+  @ApiProperty({ example: 'Nội quy tòa nhà' })
+  title: string;
+
+  @ApiProperty({ example: '1.0' })
+  version: string;
+
+  @ApiProperty()
+  isActive: boolean;
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   approvedAt: Date | null;
@@ -67,7 +186,9 @@ export class LegalDocumentResponseDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   description: string | null;
 
-  @ApiProperty({ example: 'https://storage.example.com/docs/template.pdf' })
+  @ApiProperty({
+    example: 'https://storage.example.com/docs/template.pdf',
+  })
   fileUrl: string;
 
   @ApiPropertyOptional({ type: String, nullable: true })

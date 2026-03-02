@@ -15,7 +15,7 @@ async function main() {
   // ============================================================================
   console.log('Creating admins...');
   const adminPassword = await hashPassword('Admin@123');
-  
+
   const admin1 = await prisma.admin.upsert({
     where: { email: 'superadmin@intellirentops.vn' },
     update: {},
@@ -290,7 +290,8 @@ async function main() {
       depositAmount: new Prisma.Decimal(50000000),
       furnishingStatus: 'fully_furnished',
       amenities: ['Hồ bơi', 'Gym', 'Công viên', 'Siêu thị', 'Bảo vệ 24/7'],
-      description: 'Căn hộ cao cấp view sông Sài Gòn, nội thất đầy đủ, tiện ích 5 sao',
+      description:
+        'Căn hộ cao cấp view sông Sài Gòn, nội thất đầy đủ, tiện ích 5 sao',
       status: 'available',
       partnerId: partner1.id,
       approvedByOperatorId: operator1.id,
@@ -338,7 +339,7 @@ async function main() {
       ward: 'Phường 22',
       district: 'Quận Bình Thạnh',
       city: 'Hồ Chí Minh',
-      latitude: new Prisma.Decimal(10.7880),
+      latitude: new Prisma.Decimal(10.788),
       longitude: new Prisma.Decimal(106.7195),
       baseRentPrice: new Prisma.Decimal(12000000),
       depositAmount: new Prisma.Decimal(24000000),
@@ -366,7 +367,7 @@ async function main() {
       district: 'Quận Bình Thạnh',
       city: 'Hồ Chí Minh',
       latitude: new Prisma.Decimal(10.7905),
-      longitude: new Prisma.Decimal(106.7190),
+      longitude: new Prisma.Decimal(106.719),
       baseRentPrice: new Prisma.Decimal(35000000),
       depositAmount: new Prisma.Decimal(70000000),
       furnishingStatus: 'fully_furnished',
@@ -386,12 +387,48 @@ async function main() {
 
   await prisma.room.createMany({
     data: [
-      { apartmentId: apt1.id, roomNumber: 'PN-01', roomType: 'bedroom', area: new Prisma.Decimal(25.0), status: 'available' },
-      { apartmentId: apt1.id, roomNumber: 'PN-02', roomType: 'bedroom', area: new Prisma.Decimal(15.0), status: 'available' },
-      { apartmentId: apt1.id, roomNumber: 'PK-01', roomType: 'living_room', area: new Prisma.Decimal(30.0), status: 'available' },
-      { apartmentId: apt1.id, roomNumber: 'BEP-01', roomType: 'kitchen', area: new Prisma.Decimal(10.0), status: 'available' },
-      { apartmentId: apt2.id, roomNumber: 'PN-01', roomType: 'bedroom', area: new Prisma.Decimal(20.0), status: 'occupied' },
-      { apartmentId: apt2.id, roomNumber: 'PK-01', roomType: 'living_room', area: new Prisma.Decimal(25.0), status: 'occupied' },
+      {
+        apartmentId: apt1.id,
+        roomNumber: 'PN-01',
+        roomType: 'bedroom',
+        area: new Prisma.Decimal(25.0),
+        status: 'available',
+      },
+      {
+        apartmentId: apt1.id,
+        roomNumber: 'PN-02',
+        roomType: 'bedroom',
+        area: new Prisma.Decimal(15.0),
+        status: 'available',
+      },
+      {
+        apartmentId: apt1.id,
+        roomNumber: 'PK-01',
+        roomType: 'living_room',
+        area: new Prisma.Decimal(30.0),
+        status: 'available',
+      },
+      {
+        apartmentId: apt1.id,
+        roomNumber: 'BEP-01',
+        roomType: 'kitchen',
+        area: new Prisma.Decimal(10.0),
+        status: 'available',
+      },
+      {
+        apartmentId: apt2.id,
+        roomNumber: 'PN-01',
+        roomType: 'bedroom',
+        area: new Prisma.Decimal(20.0),
+        status: 'occupied',
+      },
+      {
+        apartmentId: apt2.id,
+        roomNumber: 'PK-01',
+        roomType: 'living_room',
+        area: new Prisma.Decimal(25.0),
+        status: 'occupied',
+      },
     ],
   });
 
@@ -696,7 +733,8 @@ async function main() {
         apartmentId: apt2.id,
         userId: user1.id,
         title: 'Điều hòa không mát',
-        description: 'Điều hòa phòng khách bật lên nhưng không ra hơi lạnh, đã thử nhiều lần',
+        description:
+          'Điều hòa phòng khách bật lên nhưng không ra hơi lạnh, đã thử nhiều lần',
         category: 'hvac',
         urgency: 'medium',
         preferredDate: new Date('2026-02-12'),
@@ -712,7 +750,8 @@ async function main() {
         urgency: 'low',
         status: 'completed',
         completedAt: new Date('2026-02-01'),
-        completionNotes: 'Đã thông ống thoát, hướng dẫn khách sử dụng đúng cách',
+        completionNotes:
+          'Đã thông ống thoát, hướng dẫn khách sử dụng đúng cách',
         actualCost: new Prisma.Decimal(150000),
         costCoveredBy: 'landlord',
       },
@@ -731,7 +770,8 @@ async function main() {
         userId: user1.id,
         rentalContractId: contract1.id,
         subject: 'Hỏi về hóa đơn tháng 2',
-        description: 'Tiền điện tháng này cao hơn bình thường, xin kiểm tra lại',
+        description:
+          'Tiền điện tháng này cao hơn bình thường, xin kiểm tra lại',
         category: 'billing',
         priority: 'medium',
         status: 'open',
@@ -824,9 +864,10 @@ async function main() {
   await prisma.policy.createMany({
     data: [
       {
-        policyType: 'terms_of_service',
-        title: 'Điều khoản sử dụng dịch vụ',
-        content: 'Điều khoản sử dụng dịch vụ IntelliRentOps...',
+        policyType: 'building_regulations',
+        title: 'Nội quy tòa nhà',
+        content:
+          'Cư dân phải tuân thủ giờ giấc sinh hoạt chung. Không gây tiếng ồn lớn sau 22h. Giữ gìn vệ sinh khu vực chung. Không xả rác ngoài nơi quy định...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
@@ -838,13 +879,14 @@ async function main() {
         approvedAt: new Date('2025-12-20'),
       },
       {
-        policyType: 'privacy_policy',
-        title: 'Chính sách bảo mật',
-        content: 'Chính sách bảo mật thông tin cá nhân...',
+        policyType: 'parking_rules',
+        title: 'Quy định đỗ xe',
+        content:
+          'Mỗi căn hộ được phân bổ 1 chỗ đỗ xe ô tô và 2 chỗ đỗ xe máy. Đỗ đúng vị trí quy định. Tốc độ tối đa trong hầm 5km/h...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
-        requiresAcceptance: true,
+        requiresAcceptance: false,
         displayOrder: 2,
         isActive: true,
         createdByAdminId: admin1.id,
@@ -852,16 +894,47 @@ async function main() {
         approvedAt: new Date('2025-12-20'),
       },
       {
+        policyType: 'pet_policy',
+        title: 'Quy định nuôi thú cưng',
+        content:
+          'Cho phép nuôi thú cưng nhỏ (dưới 10kg). Phải đăng ký với ban quản lý. Khi ra khu vực chung phải có dây xích và túi dọn vệ sinh...',
+        version: '1.0',
+        language: 'vi',
+        effectiveDate: new Date('2026-01-01'),
+        requiresAcceptance: true,
+        displayOrder: 3,
+        isActive: true,
+        createdByAdminId: admin1.id,
+      },
+      {
         policyType: 'rental_rules',
-        title: 'Nội quy thuê nhà',
-        content: 'Các quy định về việc thuê và sử dụng căn hộ...',
+        title: 'Quy định cho thuê căn hộ',
+        content:
+          'Các quy định về việc thuê và sử dụng căn hộ. Cư dân không được tự ý sửa chữa kết cấu căn hộ. Báo ngay cho ban quản lý khi có sự cố...',
+        version: '1.0',
+        language: 'vi',
+        effectiveDate: new Date('2026-01-01'),
+        requiresAcceptance: true,
+        displayOrder: 4,
+        isActive: true,
+        createdByAdminId: admin1.id,
+        approvedByAdminId: admin1.id,
+        approvedAt: new Date('2025-12-20'),
+      },
+      {
+        policyType: 'noise_policy',
+        title: 'Quy định tiếng ồn',
+        content:
+          'Giờ yên tĩnh: 22h00 - 06h00. Không sử dụng thiết bị gây tiếng ồn lớn vào giờ yên tĩnh. Thi công sửa chữa chỉ được phép từ 08h-17h ngày thường...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
         requiresAcceptance: false,
-        displayOrder: 3,
+        displayOrder: 5,
         isActive: true,
         createdByAdminId: admin1.id,
+        approvedByAdminId: admin1.id,
+        approvedAt: new Date('2025-12-20'),
       },
     ],
   });
@@ -914,7 +987,8 @@ async function main() {
         recipientType: 'user',
         recipientId: user1.id,
         title: 'Hóa đơn mới',
-        message: 'Hóa đơn tháng 2/2026 đã được tạo. Vui lòng thanh toán trước ngày 05/03/2026.',
+        message:
+          'Hóa đơn tháng 2/2026 đã được tạo. Vui lòng thanh toán trước ngày 05/03/2026.',
         notificationType: 'info',
         channel: 'in_app',
         deliveryStatus: 'delivered',
@@ -924,7 +998,8 @@ async function main() {
         recipientType: 'user',
         recipientId: user1.id,
         title: 'Yêu cầu bảo trì đã tiếp nhận',
-        message: 'Yêu cầu sửa điều hòa của bạn đã được tiếp nhận. Kỹ thuật viên sẽ liên hệ sớm.',
+        message:
+          'Yêu cầu sửa điều hòa của bạn đã được tiếp nhận. Kỹ thuật viên sẽ liên hệ sớm.',
         notificationType: 'success',
         channel: 'in_app',
         deliveryStatus: 'delivered',

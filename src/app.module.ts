@@ -36,6 +36,8 @@ import { NotificationsModule } from './modules/notifications';
 import { PoliciesModule } from './modules/policies';
 import { ActivityLogsModule } from './modules/activity-logs';
 import { StaffNotesModule } from './modules/staff-notes';
+import { UserRoomsModule } from './modules/user-rooms';
+import { ApartmentPoliciesModule } from './modules/apartment-policies';
 
 // App Core
 import { AppController } from './app.controller';
@@ -78,6 +80,8 @@ import { AppService } from './app.service';
     PoliciesModule,
     ActivityLogsModule,
     StaffNotesModule,
+    UserRoomsModule,
+    ApartmentPoliciesModule,
   ],
   controllers: [AppController],
   providers: [
