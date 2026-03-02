@@ -2,9 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PoliciesService } from './policies.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { createPrismaMock, mockAdminJwtPayload } from '../../test-utils';
-import { CreatePolicyDto, UpdatePolicyDto, CreateLegalDocumentDto } from './dto';
+import {
+  CreatePolicyDto,
+  UpdatePolicyDto,
+  CreateLegalDocumentDto,
+} from './dto';
 import { PolicyType, DocumentType } from '@prisma/client';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('PoliciesService', () => {
   let service: PoliciesService;
@@ -12,24 +16,26 @@ describe('PoliciesService', () => {
 
   const mockPolicy = (overrides = {}) => ({
     id: 'policy-123',
-    policyType: PolicyType.terms_and_conditions,
-    title: 'Terms of Service',
-    content: 'Policy content...',
+    policyType: PolicyType.building_regulations,
+    title: 'Nội quy tòa nhà',
+    content: 'Cư dân phải tuân thủ giờ giấc sinh hoạt chung...',
     version: '1.0',
     language: 'vi',
     effectiveDate: new Date('2026-01-01'),
     isActive: true,
     requiresAcceptance: true,
     displayOrder: 1,
+    approvedAt: null,
     createdAt: new Date(),
+    updatedAt: new Date(),
     ...overrides,
   });
 
   const mockDocument = (overrides = {}) => ({
     id: 'doc-123',
-    documentType: DocumentType.contract,
-    title: 'Rental Contract Template',
-    description: 'Standard rental contract',
+    documentType: DocumentType.contract_template,
+    title: 'Mẫu hợp đồng thuê nhà',
+    description: 'Hợp đồng mẫu cho căn hộ chung cư',
     fileUrl: 'https://example.com/doc.pdf',
     fileType: 'pdf',
     isPublic: true,
@@ -57,25 +63,34 @@ describe('PoliciesService', () => {
     jest.clearAllMocks();
   });
 
+  // ─── findAllPolicies ───────────────────────────────────────────
+
   describe('findAllPolicies', () => {
-    it('should return all policies', async () => {
+    it('should return all policies with apartment count', async () => {
       const policies = [mockPolicy()];
       prisma.policy.findMany.mockResolvedValue(policies as any);
 
       const result = await service.findAllPolicies();
 
       expect(result).toEqual(policies);
+      expect(prisma.policy.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            _count: { select: { apartmentPolicies: true } },
+          }),
+        }),
+      );
     });
 
     it('should filter by policyType', async () => {
       prisma.policy.findMany.mockResolvedValue([]);
 
-      await service.findAllPolicies(PolicyType.privacy_policy);
+      await service.findAllPolicies(PolicyType.parking_rules);
 
       expect(prisma.policy.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { policyType: PolicyType.privacy_policy },
-        })
+          where: { policyType: PolicyType.parking_rules },
+        }),
       );
     });
 
@@ -87,49 +102,107 @@ describe('PoliciesService', () => {
       expect(prisma.policy.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { isActive: true },
-        })
+        }),
       );
     });
   });
 
-  describe('findActivePublicPolicies', () => {
-    it('should return active public policies', async () => {
-      const policies = [mockPolicy()];
+  // ─── findActivePolicies ────────────────────────────────────────
+
+  describe('findActivePolicies', () => {
+    it('should return active policies within effective dates', async () => {
+      const policies = [mockPolicy({ isActive: true })];
       prisma.policy.findMany.mockResolvedValue(policies as any);
 
-      const result = await service.findActivePublicPolicies();
+      const result = await service.findActivePolicies();
+
+      expect(result).toEqual(policies);
+      expect(prisma.policy.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            isActive: true,
+          }),
+        }),
+      );
+    });
+  });
+
+  // ─── findPoliciesByApartment ───────────────────────────────────
+
+  describe('findPoliciesByApartment', () => {
+    it('should throw NotFoundException if apartment not found', async () => {
+      prisma.apartment.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.findPoliciesByApartment('non-existent'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return policies for a specific apartment', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({
+        id: 'apt-1',
+        apartmentNumber: 'R1-801',
+      } as any);
+      const policies = [
+        {
+          id: 'ap-1',
+          isRequired: true,
+          policy: mockPolicy(),
+        },
+      ];
+      prisma.apartmentPolicy.findMany.mockResolvedValue(policies as any);
+
+      const result = await service.findPoliciesByApartment('apt-1');
 
       expect(result).toEqual(policies);
     });
   });
 
+  // ─── findOnePolicy ────────────────────────────────────────────
+
   describe('findOnePolicy', () => {
-    it('should return policy by ID', async () => {
-      const policy = mockPolicy();
+    it('should return policy with apartment associations', async () => {
+      const policy = {
+        ...mockPolicy(),
+        apartmentPolicies: [],
+        createdByAdmin: null,
+        approvedByAdmin: null,
+      };
       prisma.policy.findUnique.mockResolvedValue(policy as any);
 
       const result = await service.findOnePolicy('policy-123');
 
       expect(result).toEqual(policy);
+      expect(prisma.policy.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            apartmentPolicies: expect.any(Object),
+          }),
+        }),
+      );
     });
 
     it('should throw NotFoundException if not found', async () => {
       prisma.policy.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOnePolicy('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOnePolicy('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
+  // ─── createPolicy ────────────────────────────────────────────
+
   describe('createPolicy', () => {
     const createDto: CreatePolicyDto = {
-      policyType: PolicyType.terms_and_conditions,
-      title: 'New Policy',
-      content: 'Policy content',
+      policyType: PolicyType.building_regulations,
+      title: 'Nội quy tòa nhà mới',
+      content: 'Nội dung nội quy...',
       version: '1.0',
       effectiveDate: '2026-01-01',
     };
 
-    it('should create policy', async () => {
+    it('should create apartment policy', async () => {
       const admin = mockAdminJwtPayload();
       const created = mockPolicy();
       prisma.policy.create.mockResolvedValue(created as any);
@@ -137,12 +210,22 @@ describe('PoliciesService', () => {
       const result = await service.createPolicy(createDto, admin);
 
       expect(result).toEqual(created);
+      expect(prisma.policy.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            policyType: PolicyType.building_regulations,
+            title: 'Nội quy tòa nhà mới',
+          }),
+        }),
+      );
     });
   });
 
+  // ─── updatePolicy ────────────────────────────────────────────
+
   describe('updatePolicy', () => {
     const updateDto: UpdatePolicyDto = {
-      title: 'Updated Policy',
+      title: 'Nội quy tòa nhà (cập nhật)',
     };
 
     it('should update policy', async () => {
@@ -160,21 +243,54 @@ describe('PoliciesService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.policy.findUnique.mockResolvedValue(null);
 
-      await expect(service.updatePolicy('non-existent', updateDto)).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updatePolicy('non-existent', updateDto),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
+  // ─── approvePolicy ───────────────────────────────────────────
+
   describe('approvePolicy', () => {
-    it('should approve policy', async () => {
+    it('should approve policy and activate', async () => {
       const admin = mockAdminJwtPayload();
-      const approved = { ...mockPolicy(), approvedAt: new Date() };
+      const policy = mockPolicy({ approvedAt: null });
+      const approved = {
+        ...policy,
+        approvedAt: new Date(),
+        isActive: true,
+      };
+
+      prisma.policy.findUnique.mockResolvedValue(policy as any);
       prisma.policy.update.mockResolvedValue(approved as any);
 
       const result = await service.approvePolicy('policy-123', admin);
 
       expect(result.approvedAt).toBeDefined();
+      expect(result.isActive).toBe(true);
+    });
+
+    it('should throw NotFoundException if not found', async () => {
+      const admin = mockAdminJwtPayload();
+      prisma.policy.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.approvePolicy('non-existent', admin),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException if already approved', async () => {
+      const admin = mockAdminJwtPayload();
+      const policy = mockPolicy({ approvedAt: new Date() });
+      prisma.policy.findUnique.mockResolvedValue(policy as any);
+
+      await expect(service.approvePolicy('policy-123', admin)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
+
+  // ─── Legal Documents ──────────────────────────────────────────
 
   describe('findAllDocuments', () => {
     it('should return all documents', async () => {
@@ -211,14 +327,16 @@ describe('PoliciesService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.legalDocument.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOneDocument('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOneDocument('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('createDocument', () => {
     const createDto: CreateLegalDocumentDto = {
-      documentType: DocumentType.contract,
-      title: 'New Contract',
+      documentType: DocumentType.contract_template,
+      title: 'Mẫu hợp đồng mới',
       fileUrl: 'https://example.com/new.pdf',
       fileType: 'pdf',
       version: '1.0',
@@ -238,12 +356,14 @@ describe('PoliciesService', () => {
   describe('updateDocument', () => {
     it('should update document', async () => {
       const doc = mockDocument();
-      const updated = { ...doc, title: 'Updated' };
+      const updated = { ...doc, title: 'Cập nhật' };
 
       prisma.legalDocument.findUnique.mockResolvedValue(doc as any);
       prisma.legalDocument.update.mockResolvedValue(updated as any);
 
-      const result = await service.updateDocument('doc-123', { title: 'Updated' });
+      const result = await service.updateDocument('doc-123', {
+        title: 'Cập nhật',
+      });
 
       expect(result).toEqual(updated);
     });
@@ -251,7 +371,9 @@ describe('PoliciesService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.legalDocument.findUnique.mockResolvedValue(null);
 
-      await expect(service.updateDocument('non-existent', {})).rejects.toThrow(NotFoundException);
+      await expect(service.updateDocument('non-existent', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });
