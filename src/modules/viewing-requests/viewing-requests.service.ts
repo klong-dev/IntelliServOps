@@ -90,7 +90,12 @@ export class ViewingRequestsService {
         email: true,
         status: true,
         apartment: {
-          select: { apartmentNumber: true, address: true, city: true, district: true },
+          select: {
+            apartmentNumber: true,
+            address: true,
+            city: true,
+            district: true,
+          },
         },
       },
     });
@@ -98,7 +103,11 @@ export class ViewingRequestsService {
     return {
       ...contactRequest,
       assignedStaff: assignedStaff
-        ? { id: assignedStaff.id, fullName: assignedStaff.fullName, phone: assignedStaff.phone }
+        ? {
+            id: assignedStaff.id,
+            fullName: assignedStaff.fullName,
+            phone: assignedStaff.phone,
+          }
         : null,
       message: assignedStaff
         ? 'Request submitted. Staff will contact you soon.'
@@ -123,13 +132,16 @@ export class ViewingRequestsService {
 
     // Find contact requests in staff's working area
     const where: any = {
-      status: { in: [ContactRequestStatus.new, ContactRequestStatus.contacted] },
+      status: {
+        in: [ContactRequestStatus.new, ContactRequestStatus.contacted],
+      },
+      apartmentId: { not: null },
     };
 
     if (staff.workingDistrict) {
-      where.apartment = { district: staff.workingDistrict };
+      where.apartment = { is: { district: staff.workingDistrict } };
     } else if (staff.workingCity) {
-      where.apartment = { city: staff.workingCity };
+      where.apartment = { is: { city: staff.workingCity } };
     }
 
     return this.prisma.contactRequest.findMany({
@@ -188,7 +200,9 @@ export class ViewingRequestsService {
     }
 
     if (!contactRequest.apartment) {
-      throw new BadRequestException('Contact request has no associated apartment');
+      throw new BadRequestException(
+        'Contact request has no associated apartment',
+      );
     }
 
     // Parse appointment datetime
@@ -266,7 +280,9 @@ export class ViewingRequestsService {
           gte: targetDate,
           lt: nextDay,
         },
-        status: { in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed] },
+        status: {
+          in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
+        },
       },
       select: {
         id: true,
@@ -328,7 +344,9 @@ export class ViewingRequestsService {
     maxSlots: number,
   ) {
     const slotStart = appointmentTime;
-    const slotEnd = new Date(appointmentTime.getTime() + durationMinutes * 60000);
+    const slotEnd = new Date(
+      appointmentTime.getTime() + durationMinutes * 60000,
+    );
 
     // Build filter for same building and type
     const apartmentFilter: any = {};
@@ -345,7 +363,9 @@ export class ViewingRequestsService {
     const existingCount = await this.prisma.appointment.count({
       where: {
         apartment: apartmentFilter,
-        status: { in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed] },
+        status: {
+          in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
+        },
         OR: [
           {
             // Starts during our slot
