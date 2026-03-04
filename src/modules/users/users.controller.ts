@@ -20,10 +20,12 @@ import { UsersService } from './users.service';
 import {
   CreateUserDto,
   UpdateUserDto,
+  UpdateIdentityCardDto,
   UserListItemDto,
   UserDetailDto,
   UserCreatedDto,
   UserUpdatedDto,
+  UserVerifiedDto,
   UserDeletedDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
@@ -40,8 +42,15 @@ export class UsersController {
   @Get()
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'List all users' })
-  @ApiQuery({ name: 'search', required: false, description: 'Search by email, name, or phone' })
-  @ApiJsonResponse(UserListItemDto, { isArray: true, description: 'List of users' })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search by email, name, or phone',
+  })
+  @ApiJsonResponse(UserListItemDto, {
+    isArray: true,
+    description: 'List of users',
+  })
   async findAll(@Query('search') search?: string) {
     return this.usersService.findAll(search);
   }
@@ -51,6 +60,22 @@ export class UsersController {
   @ApiJsonResponse(UserDetailDto, { description: 'User profile' })
   async getProfile(@CurrentUser() currentUser: JwtPayload) {
     return this.usersService.getProfile(currentUser.sub);
+  }
+
+  @Patch('profile/identity-card')
+  @ApiOperation({ summary: 'Update identity card image (profileImageUrl)' })
+  @ApiJsonResponse(UserUpdatedDto, {
+    description: 'Identity card image updated',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateIdentityCard(
+    @Body() updateIdentityCardDto: UpdateIdentityCardDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return await this.usersService.updateIdentityCard(
+      currentUser.sub,
+      updateIdentityCardDto.profileImageUrl,
+    );
   }
 
   @Get(':id')
@@ -69,7 +94,10 @@ export class UsersController {
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Create user' })
   @ApiJsonResponse(UserCreatedDto, { status: 201, description: 'User created' })
-  @ApiResponse({ status: 409, description: 'Email or national ID already exists' })
+  @ApiResponse({
+    status: 409,
+    description: 'Email or national ID already exists',
+  })
   async create(
     @Body() createUserDto: CreateUserDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -88,6 +116,18 @@ export class UsersController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.usersService.update(id, updateUserDto, currentUser);
+  }
+
+  @Patch(':id/verify')
+  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @ApiOperation({ summary: 'Verify user identity (staff confirms user info)' })
+  @ApiJsonResponse(UserVerifiedDto, {
+    description: 'User verified successfully',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 409, description: 'User is already verified' })
+  async verifyUser(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.usersService.verifyUser(id);
   }
 
   @Delete(':id')

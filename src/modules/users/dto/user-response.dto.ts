@@ -18,7 +18,10 @@ export class UserListItemDto {
   @ApiPropertyOptional({ example: '1990-05-15T00:00:00.000Z', nullable: true })
   dateOfBirth: Date | null;
 
-  @ApiPropertyOptional({ example: 'https://example.com/avatar.jpg', nullable: true })
+  @ApiPropertyOptional({
+    example: 'https://example.com/avatar.jpg',
+    nullable: true,
+  })
   profileImageUrl: string | null;
 
   @ApiProperty({ example: true })
@@ -189,6 +192,28 @@ export class UserUpdatedDto {
   isActive: boolean;
 
   @ApiProperty()
+  isVerified: boolean;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
+// ─── User Verified DTO (verify response) ────────────────────────────
+
+export class UserVerifiedDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'user@example.com' })
+  email: string;
+
+  @ApiProperty({ example: 'Nguyen Van A' })
+  fullName: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  profileImageUrl: string | null;
+
+  @ApiProperty({ example: true })
   isVerified: boolean;
 
   @ApiProperty()

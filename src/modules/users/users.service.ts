@@ -108,10 +108,7 @@ export class UsersService {
 
     // Check access: USER can only view their own profile
     const actorType = currentUser.actorType;
-    if (
-      actorType === 'user' &&
-      currentUser.sub !== id
-    ) {
+    if (actorType === 'user' && currentUser.sub !== id) {
       throw new ForbiddenException('You can only view your own profile');
     }
 
@@ -144,7 +141,9 @@ export class UsersService {
     }
 
     // Hash password
-    const passwordHash = await this.authService.hashPassword(createUserDto.password);
+    const passwordHash = await this.authService.hashPassword(
+      createUserDto.password,
+    );
 
     // Create user
     const user = await this.prisma.user.create({
@@ -183,7 +182,11 @@ export class UsersService {
    * USER can update their own profile (limited fields)
    * ADMIN, OPERATOR can update any user
    */
-  async update(id: string, updateUserDto: UpdateUserDto, currentUser: JwtPayload) {
+  async update(
+    id: string,
+    updateUserDto: UpdateUserDto,
+    currentUser: JwtPayload,
+  ) {
     // Check if user exists
     const existingUser = await this.prisma.user.findUnique({
       where: { id },
@@ -220,7 +223,9 @@ export class UsersService {
 
     // Handle password update
     if (updateUserDto.password) {
-      updateData.passwordHash = await this.authService.hashPassword(updateUserDto.password);
+      updateData.passwordHash = await this.authService.hashPassword(
+        updateUserDto.password,
+      );
       delete updateData.password;
     }
 
@@ -272,9 +277,69 @@ export class UsersService {
   }
 
   /**
+   * Verify user identity
+   * Only STAFF, OPERATOR, ADMIN can verify users
+   */
+  async verifyUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.isVerified) {
+      throw new ConflictException('User is already verified');
+    }
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isVerified: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        profileImageUrl: true,
+        isVerified: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  /**
+   * Update user's identity card (profileImageUrl)
+   * User can only update their own profile image
+   */
+  async updateIdentityCard(userId: string, profileImageUrl: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { profileImageUrl },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        profileImageUrl: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  /**
    * Get current user's profile
    */
   async getProfile(userId: string) {
-    return this.findOne(userId, { sub: userId, actorType: 'user' } as JwtPayload);
+    return this.findOne(userId, {
+      sub: userId,
+      actorType: 'user',
+    } as JwtPayload);
   }
 }
