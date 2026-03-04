@@ -167,6 +167,13 @@ enum BookingStatus {
   expired
 }
 
+enum ReservationStatus {
+  pending
+  confirmed
+  cancelled
+  expired
+}
+
 enum AppointmentType {
   physical_viewing
   virtual_tour
@@ -457,6 +464,7 @@ model User {
   maintenanceRequests   MaintenanceRequest[]
   staffNotes            StaffNote[]
   userRooms             UserRoom[]
+  reservations          Reservation[]
 
   @@index([phone])
   @@index([supabaseId])
@@ -626,6 +634,7 @@ model Apartment {
   maintenanceReqs   MaintenanceRequest[]
   tasks             Task[]
   apartmentPolicies ApartmentPolicy[]
+  reservations      Reservation[]
 
   @@index([status])
   @@index([city])
@@ -815,6 +824,30 @@ model BookingRequest {
   @@index([status])
   @@index([contactRequestId])
   @@map("booking_requests")
+}
+
+model Reservation {
+  id              String            @id @default(uuid())
+  userId          String
+  apartmentId     String
+  desiredStartDate DateTime
+  desiredEndDate   DateTime
+  numberOfOccupants Int?
+  specialRequests String?
+  status          ReservationStatus @default(pending)
+  cancelReason    String?
+  expiresAt       DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+
+  @@index([userId])
+  @@index([apartmentId])
+  @@index([status])
+  @@map("reservations")
 }
 
 model Appointment {
