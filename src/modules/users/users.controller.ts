@@ -27,6 +27,7 @@ import {
   UserUpdatedDto,
   UserVerifiedDto,
   UserDeletedDto,
+  UserIdentityCardDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
@@ -40,7 +41,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'List all users' })
   @ApiQuery({
     name: 'search',
@@ -63,9 +64,9 @@ export class UsersController {
   }
 
   @Patch('profile/identity-card')
-  @ApiOperation({ summary: 'Update identity card image (profileImageUrl)' })
-  @ApiJsonResponse(UserUpdatedDto, {
-    description: 'Identity card image updated',
+  @ApiOperation({ summary: 'Update identity card images (front and back)' })
+  @ApiJsonResponse(UserIdentityCardDto, {
+    description: 'Identity card images updated',
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   async updateIdentityCard(
@@ -74,7 +75,8 @@ export class UsersController {
   ) {
     return await this.usersService.updateIdentityCard(
       currentUser.sub,
-      updateIdentityCardDto.profileImageUrl,
+      updateIdentityCardDto.identityCardFrontUrl,
+      updateIdentityCardDto.identityCardBackUrl,
     );
   }
 
@@ -106,7 +108,7 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER, Role.STAFF)
   @ApiOperation({ summary: 'Update user' })
   @ApiJsonResponse(UserUpdatedDto, { description: 'User updated' })
   @ApiResponse({ status: 404, description: 'User not found' })
