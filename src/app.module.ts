@@ -11,6 +11,7 @@ import {
   payosConfig,
   tuyaConfig,
   supabaseConfig,
+  fptAiConfig,
 } from './config';
 
 // Shared Infrastructure
@@ -57,6 +58,7 @@ import { AppService } from './app.service';
         payosConfig,
         tuyaConfig,
         supabaseConfig,
+        fptAiConfig,
       ],
       envFilePath: ['.env'],
     }),

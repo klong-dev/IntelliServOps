@@ -2,6 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { PrismaModule } from '../prisma';
 import { RedisModule } from '../redis';
 import { QueueModule } from '../queue';
+import { FptAiService } from './services/fpt-ai.service';
 
 /**
  * SharedModule contains all shared infrastructure modules
@@ -13,6 +14,7 @@ import { QueueModule } from '../queue';
 @Global()
 @Module({
   imports: [PrismaModule, RedisModule, QueueModule],
-  exports: [PrismaModule, RedisModule, QueueModule],
+  providers: [FptAiService],
+  exports: [PrismaModule, RedisModule, QueueModule, FptAiService],
 })
 export class SharedModule {}
