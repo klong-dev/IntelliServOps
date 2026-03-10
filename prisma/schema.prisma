@@ -437,24 +437,26 @@ model Guest {
 }
 
 model User {
-  id                    String    @id @default(uuid())
-  email                 String    @unique
-  phone                 String?
-  fullName              String
-  dateOfBirth           DateTime?
-  nationalId            String?   @unique
-  passportNumber        String?
-  profileImageUrl       String?
-  emergencyContactName  String?
-  emergencyContactPhone String?
-  passwordHash          String?
-  supabaseId            String?   @unique
-  isActive              Boolean   @default(true)
-  isVerified            Boolean   @default(false)
-  lastLoginAt           DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  createdByStaffId      String?
+  id                       String    @id @default(uuid())
+  email                    String    @unique
+  phone                    String?
+  fullName                 String
+  dateOfBirth              DateTime?
+  nationalId               String?   @unique
+  passportNumber           String?
+  profileImageUrl          String?
+  identityCardFrontUrl     String?
+  identityCardBackUrl      String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  passwordHash             String?
+  supabaseId               String?   @unique
+  isActive                 Boolean   @default(true)
+  isVerified               Boolean   @default(false)
+  lastLoginAt              DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  createdByStaffId         String?
 
   // Relations
   createdByStaff        Staff?                @relation("UserCreatedByStaff", fields: [createdByStaffId], references: [id])

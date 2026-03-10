@@ -41,6 +41,8 @@ export class UsersService {
         fullName: true,
         dateOfBirth: true,
         profileImageUrl: true,
+        identityCardFrontUrl: true,
+        identityCardBackUrl: true,
         isActive: true,
         isVerified: true,
         createdAt: true,
@@ -311,7 +313,11 @@ export class UsersService {
    * Update user's identity card (profileImageUrl)
    * User can only update their own profile image
    */
-  async updateIdentityCard(userId: string, profileImageUrl: string) {
+  async updateIdentityCard(
+    userId: string,
+    identityCardFrontUrl: string,
+    identityCardBackUrl?: string,
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -320,14 +326,23 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    const updateData: { identityCardFrontUrl: string; identityCardBackUrl?: string } = {
+      identityCardFrontUrl,
+    };
+
+    if (identityCardBackUrl) {
+      updateData.identityCardBackUrl = identityCardBackUrl;
+    }
+
     return this.prisma.user.update({
       where: { id: userId },
-      data: { profileImageUrl },
+      data: updateData,
       select: {
         id: true,
         email: true,
         fullName: true,
-        profileImageUrl: true,
+        identityCardFrontUrl: true,
+        identityCardBackUrl: true,
         updatedAt: true,
       },
     });
