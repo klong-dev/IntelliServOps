@@ -50,6 +50,101 @@ class ContractMembershipDto {
   rentalContract: ContractSummaryDto;
 }
 
+// ─── User Identity DTO (nested in User responses) ────────────────────
+
+export class UserIdentityDetailDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  id: string;
+
+  @ApiPropertyOptional({ example: '012345678901', nullable: true })
+  nationalId: string | null;
+
+  @ApiPropertyOptional({ example: 'A12345678', nullable: true })
+  passportNumber: string | null;
+
+  @ApiPropertyOptional({
+    example: 'https://example.com/identity-card-front.jpg',
+    nullable: true,
+  })
+  identityCardFrontUrl: string | null;
+
+  @ApiPropertyOptional({
+    example: 'https://example.com/identity-card-back.jpg',
+    nullable: true,
+  })
+  identityCardBackUrl: string | null;
+
+  @ApiPropertyOptional({ example: 'M', nullable: true })
+  sex: string | null;
+
+  @ApiPropertyOptional({ example: 'VN', nullable: true })
+  nationality: string | null;
+
+  @ApiPropertyOptional({ example: 'Ha Noi', nullable: true })
+  home: string | null;
+
+  @ApiPropertyOptional({
+    example: '123 Tran Hung Dao, Hoan Kiem, Ha Noi',
+    nullable: true,
+  })
+  address: string | null;
+
+  @ApiPropertyOptional({ example: 'Ha Noi', nullable: true })
+  province: string | null;
+
+  @ApiPropertyOptional({ example: 'Hoan Kiem', nullable: true })
+  district: string | null;
+
+  @ApiPropertyOptional({ example: 'Hoan Kiem', nullable: true })
+  ward: string | null;
+
+  @ApiPropertyOptional({ example: '123 Tran Hung Dao', nullable: true })
+  street: string | null;
+
+  @ApiProperty({ example: false })
+  isVerified: boolean;
+
+  @ApiPropertyOptional({ example: '2026-03-10T10:30:00.000Z', nullable: true })
+  verifiedAt: Date | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
+// ─── AI Verification Result ─────────────────────────────────────────
+
+class AiVerificationResultDto {
+  @ApiProperty({ example: true })
+  success: boolean;
+
+  @ApiPropertyOptional({
+    example: '012345678901',
+    nullable: true,
+  })
+  extractedId: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: {
+      id: '012345678901',
+      name: 'Nguyen Van A',
+      dob: '15/05/1990',
+      sex: 'M',
+      nationality: 'VN',
+      home: 'Ha Noi',
+      address: '123 Tran Hung Dao',
+      province: 'Ha Noi',
+      district: 'Hoan Kiem',
+      ward: 'Hoan Kiem',
+      street: '123 Tran Hung Dao',
+    },
+  })
+  extractedInfo: Record<string, any> | null;
+}
+
 // ─── User List Item DTO (findAll) ────────────────────────────────────
 
 export class UserListItemDto {
@@ -75,16 +170,10 @@ export class UserListItemDto {
   profileImageUrl: string | null;
 
   @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-front.jpg',
+    type: UserIdentityDetailDto,
     nullable: true,
   })
-  identityCardFrontUrl: string | null;
-
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-back.jpg',
-    nullable: true,
-  })
-  identityCardBackUrl: string | null;
+  identity?: UserIdentityDetailDto | null;
 
   @ApiProperty({ example: true })
   isActive: boolean;
@@ -117,29 +206,11 @@ export class UserDetailDto {
   @ApiPropertyOptional({ example: '1990-05-15T00:00:00.000Z', nullable: true })
   dateOfBirth: Date | null;
 
-  @ApiPropertyOptional({ example: '012345678901', nullable: true })
-  nationalId: string | null;
-
-  @ApiPropertyOptional({ example: 'A12345678', nullable: true })
-  passportNumber: string | null;
-
   @ApiPropertyOptional({
     example: 'https://example.com/avatar.jpg',
     nullable: true,
   })
   profileImageUrl: string | null;
-
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-front.jpg',
-    nullable: true,
-  })
-  identityCardFrontUrl: string | null;
-
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-back.jpg',
-    nullable: true,
-  })
-  identityCardBackUrl: string | null;
 
   @ApiPropertyOptional({ example: 'Tran Thi B', nullable: true })
   emergencyContactName: string | null;
@@ -155,6 +226,12 @@ export class UserDetailDto {
 
   @ApiPropertyOptional({ example: '2026-03-10T10:30:00.000Z', nullable: true })
   lastLoginAt: Date | null;
+
+  @ApiPropertyOptional({
+    type: UserIdentityDetailDto,
+    nullable: true,
+  })
+  identity?: UserIdentityDetailDto | null;
 
   @ApiProperty()
   createdAt: Date;
@@ -183,12 +260,6 @@ export class UserCreatedDto {
 
   @ApiPropertyOptional({ example: '1990-05-15T00:00:00.000Z', nullable: true })
   dateOfBirth: Date | null;
-
-  @ApiPropertyOptional({ example: '012345678901', nullable: true })
-  nationalId: string | null;
-
-  @ApiPropertyOptional({ example: 'A12345678', nullable: true })
-  passportNumber: string | null;
 
   @ApiPropertyOptional({
     example: 'https://example.com/avatar.jpg',
@@ -227,29 +298,11 @@ export class UserUpdatedDto {
   @ApiPropertyOptional({ example: '1990-05-15T00:00:00.000Z', nullable: true })
   dateOfBirth: Date | null;
 
-  @ApiPropertyOptional({ example: '012345678901', nullable: true })
-  nationalId: string | null;
-
-  @ApiPropertyOptional({ example: 'A12345678', nullable: true })
-  passportNumber: string | null;
-
   @ApiPropertyOptional({
     example: 'https://example.com/avatar.jpg',
     nullable: true,
   })
   profileImageUrl: string | null;
-
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-front.jpg',
-    nullable: true,
-  })
-  identityCardFrontUrl: string | null;
-
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-back.jpg',
-    nullable: true,
-  })
-  identityCardBackUrl: string | null;
 
   @ApiPropertyOptional({ example: 'Tran Thi B', nullable: true })
   emergencyContactName: string | null;
@@ -280,16 +333,19 @@ export class UserIdentityCardDto {
   fullName: string;
 
   @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-front.jpg',
+    type: UserIdentityDetailDto,
     nullable: true,
   })
-  identityCardFrontUrl: string | null;
+  identity?: UserIdentityDetailDto | null;
+
+  @ApiProperty({ example: false })
+  isVerified: boolean;
 
   @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-back.jpg',
+    type: AiVerificationResultDto,
     nullable: true,
   })
-  identityCardBackUrl: string | null;
+  aiVerification?: AiVerificationResultDto | null;
 
   @ApiProperty()
   updatedAt: Date;
@@ -307,23 +363,14 @@ export class UserVerifiedDto {
   @ApiProperty({ example: 'Nguyen Van A' })
   fullName: string;
 
-  @ApiPropertyOptional({ example: '012345678901', nullable: true })
-  nationalId: string | null;
-
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-front.jpg',
-    nullable: true,
-  })
-  identityCardFrontUrl: string | null;
-
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-back.jpg',
-    nullable: true,
-  })
-  identityCardBackUrl: string | null;
-
   @ApiProperty({ example: true })
   isVerified: boolean;
+
+  @ApiPropertyOptional({
+    type: UserIdentityDetailDto,
+    nullable: true,
+  })
+  identity?: UserIdentityDetailDto | null;
 
   @ApiProperty()
   updatedAt: Date;
