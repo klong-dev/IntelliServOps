@@ -20,21 +20,21 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script_stop: true
           script: |
-            cd /c/apps/IntelliServOps
-            echo ">>> Git pull..."
-            git pull origin dev
+               cd /d C:\apps\IntelliServOps
+               echo ">>> Git pull..."
+               git pull origin dev
 
-            echo ">>> Install dependencies..."
-            npm install
+               echo ">>> Install dependencies..."
+               npm install
 
-            echo ">>> Prisma generate..."
-            npx prisma generate
+               echo ">>> Prisma generate..."
+               npx prisma generate
 
-            echo ">>> Build..."
-            npm run build
+               echo ">>> Build..."
+               npm run build
 
-            echo ">>> Restarting app..."
-            pm2 restart IntelliServOps
-            pm2 save
+               echo ">>> Restarting app..."
+               pm2 restart IntelliServOps
+               pm2 save
 
-            echo ">>> Done!"
+               echo ">>> Done!"
