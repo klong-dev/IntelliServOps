@@ -22,6 +22,16 @@ export class SearchApartmentDto {
   @IsOptional()
   district?: string;
 
+  @ApiPropertyOptional({
+    example: 'new',
+    enum: ['new', 'old', 'both'],
+    description:
+      'Address type to search: new (post-merger), old (pre-merger), both (default: both)',
+  })
+  @IsString()
+  @IsOptional()
+  addressType?: 'new' | 'old' | 'both';
+
   @ApiPropertyOptional({ example: 'Vinhomes' })
   @IsString()
   @IsOptional()

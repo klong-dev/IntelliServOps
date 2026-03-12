@@ -663,13 +663,15 @@ model Apartment {
   id                    String           @id @default(uuid())
   buildingName          String?
   apartmentNumber       String
-  apartmentType         String?          // VIP, NORMAL, STANDARD, etc.
   maxConcurrentViewings Int              @default(2)
   floorNumber           Int?
   address               String
-  city                  String
-  district              String
-  ward                  String?
+  city                  String           // Tỉnh/Thành phố (sau sáp nhập)
+  district              String           // Quận/Huyện (sau sáp nhập)
+  ward                  String?          // Phường/Xã (sau sáp nhập)
+  oldCity               String?          // Tỉnh/Thành phố (trước sáp nhập)
+  oldDistrict           String?          // Quận/Huyện (trước sáp nhập)
+  oldWard               String?          // Phường/Xã (trước sáp nhập)
   latitude              Decimal?         @db.Decimal(10, 8)
   longitude             Decimal?         @db.Decimal(11, 8)
   totalArea             Decimal          @db.Decimal(10, 2)
@@ -709,6 +711,8 @@ model Apartment {
   @@index([status])
   @@index([city])
   @@index([district])
+  @@index([oldCity])
+  @@index([oldDistrict])
   @@index([partnerId])
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])

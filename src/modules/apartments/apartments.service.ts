@@ -17,6 +17,7 @@ export class ApartmentsService {
       city,
       district,
       keyword,
+      addressType = 'both',
       minBedrooms,
       maxBedrooms,
       minPrice,
@@ -31,17 +32,69 @@ export class ApartmentsService {
       sortOrder = 'desc',
     } = searchDto;
 
+    // Build address filter based on addressType
+    const addressFilters: Prisma.ApartmentWhereInput[] = [];
+
+    if (city || district) {
+      if (addressType === 'new' || addressType === 'both') {
+        addressFilters.push({
+          ...(city && {
+            city: { contains: city, mode: 'insensitive' as const },
+          }),
+          ...(district && {
+            district: { contains: district, mode: 'insensitive' as const },
+          }),
+        });
+      }
+      if (addressType === 'old' || addressType === 'both') {
+        addressFilters.push({
+          ...(city && {
+            oldCity: { contains: city, mode: 'insensitive' as const },
+          }),
+          ...(district && {
+            oldDistrict: {
+              contains: district,
+              mode: 'insensitive' as const,
+            },
+          }),
+        });
+      }
+    }
+
+    // Combine all AND conditions
+    const andConditions: Prisma.ApartmentWhereInput[] = [];
+
+    if (addressFilters.length === 1) {
+      andConditions.push(addressFilters[0]);
+    } else if (addressFilters.length > 1) {
+      andConditions.push({ OR: addressFilters });
+    }
+
+    if (keyword) {
+      andConditions.push({
+        OR: [
+          {
+            buildingName: {
+              contains: keyword,
+              mode: 'insensitive' as const,
+            },
+          },
+          {
+            address: { contains: keyword, mode: 'insensitive' as const },
+          },
+          {
+            description: {
+              contains: keyword,
+              mode: 'insensitive' as const,
+            },
+          },
+        ],
+      });
+    }
+
     const where: Prisma.ApartmentWhereInput = {
       status,
-      ...(city && { city: { equals: city, mode: 'insensitive' } }),
-      ...(district && { district: { equals: district, mode: 'insensitive' } }),
-      ...(keyword && {
-        OR: [
-          { buildingName: { contains: keyword, mode: 'insensitive' } },
-          { address: { contains: keyword, mode: 'insensitive' } },
-          { description: { contains: keyword, mode: 'insensitive' } },
-        ],
-      }),
+      ...(andConditions.length > 0 && { AND: andConditions }),
       ...((minBedrooms !== undefined || maxBedrooms !== undefined) && {
         numberOfBedrooms: {
           ...(minBedrooms !== undefined && { gte: minBedrooms }),
@@ -65,27 +118,38 @@ export class ApartmentsService {
 
     const skip = (page - 1) * limit;
 
+    // Build dynamic select based on addressType
+    const apartmentSelect: Prisma.ApartmentSelect = {
+      id: true,
+      buildingName: true,
+      apartmentNumber: true,
+      floorNumber: true,
+      address: true,
+      totalArea: true,
+      numberOfBedrooms: true,
+      numberOfBathrooms: true,
+      furnishingStatus: true,
+      baseRentPrice: true,
+      depositAmount: true,
+      status: true,
+      images: true,
+      createdAt: true,
+    };
+
+    // Include only relevant address fields based on addressType
+    if (addressType === 'new' || addressType === 'both') {
+      apartmentSelect.city = true;
+      apartmentSelect.district = true;
+    }
+    if (addressType === 'old' || addressType === 'both') {
+      apartmentSelect.oldCity = true;
+      apartmentSelect.oldDistrict = true;
+    }
+
     const [apartments, total] = await Promise.all([
       this.prisma.apartment.findMany({
         where,
-        select: {
-          id: true,
-          buildingName: true,
-          apartmentNumber: true,
-          floorNumber: true,
-          address: true,
-          city: true,
-          district: true,
-          totalArea: true,
-          numberOfBedrooms: true,
-          numberOfBathrooms: true,
-          furnishingStatus: true,
-          baseRentPrice: true,
-          depositAmount: true,
-          status: true,
-          images: true,
-          createdAt: true,
-        },
+        select: apartmentSelect,
         orderBy: { [sortBy]: sortOrder },
         skip,
         take: limit,
@@ -166,6 +230,9 @@ export class ApartmentsService {
       city: createDto.city,
       district: createDto.district,
       ward: createDto.ward,
+      oldCity: createDto.oldCity,
+      oldDistrict: createDto.oldDistrict,
+      oldWard: createDto.oldWard,
       latitude: createDto.latitude,
       longitude: createDto.longitude,
       totalArea: createDto.totalArea,

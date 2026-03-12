@@ -134,7 +134,6 @@ describe('ViewingRequestsService', () => {
         apartment: {
           id: 'apt-123',
           buildingName: 'Building A',
-          apartmentType: 'Type A',
           maxConcurrentViewings: 3,
         },
         guest: { id: 'guest-123' },
@@ -158,7 +157,6 @@ describe('ViewingRequestsService', () => {
         apartment: {
           id: 'apt-123',
           buildingName: 'Building A',
-          apartmentType: 'Type A',
           maxConcurrentViewings: 3,
         },
         guest: null,
