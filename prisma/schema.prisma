@@ -611,12 +611,48 @@ model Partner {
   updatedAt         DateTime  @updatedAt
 
   // Relations
+  identity        PartnerIdentity?
   apartments      Apartment[]
   partnerRequests PartnerRequest[]
 
   @@index([isVerified])
   @@index([isActive])
   @@map("partners")
+}
+
+// ─── Partner Identity (căn cước / hộ chiếu) ─────────────────────────────────
+
+model PartnerIdentity {
+  id                       String    @id @default(uuid())
+  partnerId                String    @unique
+  nationalId               String?   @unique  // Số căn cước công dân
+  passportNumber           String?   @unique  // Hộ chiếu
+  name                     String?              // Tên trên CCCD
+  dob                      String?              // Ngày sinh
+  sex                      String?              // Giới tính
+  nationality              String?              // Quốc tịch
+  ethnicity                String?              // Dân tộc
+  home                     String?              // Nguyên quán
+  address                  String?              // Địa chỉ đầy đủ
+  province                 String?              // Tỉnh/Thành phố
+  district                 String?              // Quận/Huyện
+  ward                     String?              // Phường/Xã
+  street                   String?              // Số nhà, đường
+  features                 String?              // Đặc điểm nhận dạng
+  issueDate                String?              // Ngày cấp
+  doe                      String?              // Ngày hết hạn
+  isVerified               Boolean   @default(false) // AI đã xác minh?
+  verifiedAt               DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  // Relations
+  partner                  Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@index([nationalId])
+  @@index([isVerified])
+  @@map("partner_identities")
 }
 
 // ============================================================================
