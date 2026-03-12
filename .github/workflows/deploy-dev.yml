@@ -20,7 +20,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script_stop: true
           script: |
-            cd /C/apps/IntelliServOps
+            cd 'C:\apps\IntelliServOps'
             echo ">>> Git pull..."
             git pull origin dev
             echo ">>> Install dependencies..."
