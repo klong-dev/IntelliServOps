@@ -388,53 +388,53 @@ export class UsersService {
     const backInfo = this.fptAiService.extractUserInfo(backResult) || {};
     const extractedInfo = { ...frontInfo, ...backInfo };
 
-    // Prepare UserIdentity update data
+    // Prepare UserIdentity update data - always update with latest AI recognition
     const identityUpdateData: any = {};
 
     if (Object.keys(extractedInfo).length > 0) {
-      if (extractedInfo.id && !user.identity?.nationalId) {
+      if (extractedInfo.id) {
         identityUpdateData.nationalId = extractedInfo.id;
       }
-      if (extractedInfo.name && !user.identity?.name) {
+      if (extractedInfo.name) {
         identityUpdateData.name = extractedInfo.name;
       }
-      if (extractedInfo.dob && !user.identity?.dob) {
+      if (extractedInfo.dob) {
         identityUpdateData.dob = extractedInfo.dob;
       }
-      if (extractedInfo.sex && !user.identity?.sex) {
+      if (extractedInfo.sex) {
         identityUpdateData.sex = extractedInfo.sex;
       }
-      if (extractedInfo.nationality && !user.identity?.nationality) {
+      if (extractedInfo.nationality) {
         identityUpdateData.nationality = extractedInfo.nationality;
       }
-      if (extractedInfo.ethnicity && !user.identity?.ethnicity) {
+      if (extractedInfo.ethnicity) {
         identityUpdateData.ethnicity = extractedInfo.ethnicity;
       }
-      if (extractedInfo.home && !user.identity?.home) {
+      if (extractedInfo.home) {
         identityUpdateData.home = extractedInfo.home;
       }
-      if (extractedInfo.address && !user.identity?.address) {
+      if (extractedInfo.address) {
         identityUpdateData.address = extractedInfo.address;
       }
-      if (extractedInfo.features && !user.identity?.features) {
+      if (extractedInfo.features) {
         identityUpdateData.features = extractedInfo.features;
       }
-      if (extractedInfo.issueDate && !user.identity?.issueDate) {
+      if (extractedInfo.issueDate) {
         identityUpdateData.issueDate = extractedInfo.issueDate;
       }
-      if (extractedInfo.doe && !user.identity?.doe) {
+      if (extractedInfo.doe) {
         identityUpdateData.doe = extractedInfo.doe;
       }
-      if (extractedInfo.province && !user.identity?.province) {
+      if (extractedInfo.province) {
         identityUpdateData.province = extractedInfo.province;
       }
-      if (extractedInfo.district && !user.identity?.district) {
+      if (extractedInfo.district) {
         identityUpdateData.district = extractedInfo.district;
       }
-      if (extractedInfo.ward && !user.identity?.ward) {
+      if (extractedInfo.ward) {
         identityUpdateData.ward = extractedInfo.ward;
       }
-      if (extractedInfo.street && !user.identity?.street) {
+      if (extractedInfo.street) {
         identityUpdateData.street = extractedInfo.street;
       }
 
