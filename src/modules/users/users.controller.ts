@@ -9,7 +9,7 @@ import {
   Query,
   ParseUUIDPipe,
   UseInterceptors,
-  UploadedFiles,
+  UploadedFile,
   BadRequestException,
   UsePipes,
 } from '@nestjs/common';
@@ -18,24 +18,21 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
   ApiConsumes,
   ApiBody,
 } from '@nestjs/swagger';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import type { Express } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import {
   CreateUserDto,
   UpdateUserDto,
-  UpdateIdentityCardDto,
+  SearchUserDto,
   UserListItemDto,
   UserDetailDto,
   UserCreatedDto,
   UserUpdatedDto,
   UserVerifiedDto,
   UserDeletedDto,
-  UserIdentityCardDto,
   UserIdentityDetailDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
@@ -53,112 +50,82 @@ export class UsersController {
   @Get()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'List all users' })
-  @ApiQuery({
-    name: 'search',
-    required: false,
-    description: 'Search by email, name, or phone',
-  })
   @ApiJsonResponse(UserListItemDto, {
     isArray: true,
-    description: 'List of users',
+    isPaginated: true,
+    description: 'Paginated list of users',
   })
-  async findAll(@Query('search') search?: string) {
-    return this.usersService.findAll(search);
+  async findAll(@Query() query: SearchUserDto) {
+    return this.usersService.findAll(query);
   }
 
   @Get('profile')
   @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Get my profile' })
-  @ApiJsonResponse(UserDetailDto, { description: 'User profile' })
+  @ApiResponse({
+    status: 200,
+    description: 'User/Staff/Operator/Admin profile',
+  })
   async getProfile(@CurrentUser() currentUser: JwtPayload) {
-    return this.usersService.getProfile(currentUser.sub);
+    return this.usersService.getProfile(currentUser);
   }
 
   @Get('profile/identity')
-  @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @Roles(Role.USER)
   @ApiOperation({ summary: 'Get my identity information' })
   @ApiJsonResponse(UserIdentityDetailDto, {
     description: 'User identity information',
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   async getProfileIdentity(@CurrentUser() currentUser: JwtPayload) {
-    const user = await this.usersService.getProfile(currentUser.sub);
+    const user = await this.usersService.findOne(currentUser.sub, currentUser);
     return user?.identity || null;
   }
 
-  @Patch('profile/identity-card')
+  @Post('profile/verify-identity')
   @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @UsePipes(FileUploadPipe)
-  @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'identityCardFront', maxCount: 1 },
-      { name: 'identityCardBack', maxCount: 1 },
-    ]),
-  )
+  @UseInterceptors(FileInterceptor('identityCardFront'))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    description: 'Identity card images upload (front and back) - JPEG, PNG, or WebP format',
+    description:
+      'Upload front identity card image for AI to extract information - JPEG, PNG, or WebP format. Image is NOT stored.',
     schema: {
       type: 'object',
       properties: {
         identityCardFront: {
           type: 'string',
           format: 'binary',
-          description: 'Front image of identity card (required) - JPEG, PNG, or WebP',
-        },
-        identityCardBack: {
-          type: 'string',
-          format: 'binary',
-          description: 'Back image of identity card (optional) - JPEG, PNG, or WebP',
+          description:
+            'Front image of identity card (required) - JPEG, PNG, or WebP',
         },
       },
       required: ['identityCardFront'],
     },
   })
   @ApiOperation({
-    summary: 'Update identity card images (front and back)',
+    summary: 'Verify identity card via AI',
     description:
-      'Upload identity card front and back images in JPEG, PNG, or WebP format. AI will verify the ID card and extract information.',
+      'Upload front identity card image. AI will extract information (name, ID number, address, etc.) and store extracted data. Image is NOT saved.',
   })
   @ApiResponse({
-    status: 200,
-    description: 'Identity card images uploaded and verified',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', example: 'user-123' },
-        identity: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            nationalId: { type: 'string' },
-            isVerified: { type: 'boolean' },
-            verifiedAt: { type: 'string', format: 'date-time' },
-          },
-        },
-      },
-    },
+    status: 201,
+    description: 'Identity card verified and info extracted',
   })
-  @ApiResponse({ status: 400, description: 'Invalid image files or unsupported format' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid image file or unsupported format',
+  })
   @ApiResponse({ status: 404, description: 'User not found' })
-  async updateIdentityCard(
-    @UploadedFiles()
-    files: {
-      identityCardFront?: any[];
-      identityCardBack?: any[];
-    },
+  async verifyIdentityCard(
+    @UploadedFile() file: any,
     @CurrentUser() currentUser: JwtPayload,
   ) {
-    // Files validation happens in service layer
-    if (!files || !files.identityCardFront || !files.identityCardFront[0]) {
+    if (!file) {
       throw new BadRequestException('Front identity card image is required');
     }
 
-    return await this.usersService.updateIdentityCard(
-      currentUser.sub,
-      files.identityCardFront?.[0],
-      files.identityCardBack?.[0],
-    );
+    return await this.usersService.updateIdentityCard(currentUser.sub, file);
   }
 
   @Get(':id')

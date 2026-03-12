@@ -1,8 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
-import { mockUser, mockUserJwtPayload, mockStaffJwtPayload, mockAdminJwtPayload } from '../../test-utils';
-import { CreateUserDto, UpdateUserDto } from './dto';
+import {
+  mockUser,
+  mockUserJwtPayload,
+  mockStaffJwtPayload,
+  mockAdminJwtPayload,
+} from '../../test-utils';
+import { CreateUserDto, UpdateUserDto, SearchUserDto } from './dto';
 import { ActorType } from '@prisma/client';
 
 describe('UsersController', () => {
@@ -39,10 +44,13 @@ describe('UsersController', () => {
 
   describe('findAll', () => {
     it('should return all users', async () => {
-      const users = [mockUser(), mockUser({ id: 'user-2', email: 'user2@example.com' })];
+      const users = [
+        mockUser(),
+        mockUser({ id: 'user-2', email: 'user2@example.com' }),
+      ];
       mockUsersService.findAll.mockResolvedValue(users);
 
-      const result = await controller.findAll();
+      const result = await controller.findAll({});
 
       expect(result).toEqual(users);
       expect(usersService.findAll).toHaveBeenCalled();
@@ -52,10 +60,11 @@ describe('UsersController', () => {
       const users = [mockUser({ fullName: 'John Doe' })];
       mockUsersService.findAll.mockResolvedValue(users);
 
-      const result = await controller.findAll('John');
+      const query: SearchUserDto = { search: 'John' };
+      const result = await controller.findAll(query);
 
       expect(result).toEqual(users);
-      expect(usersService.findAll).toHaveBeenCalledWith('John');
+      expect(usersService.findAll).toHaveBeenCalledWith(query);
     });
   });
 
@@ -89,7 +98,10 @@ describe('UsersController', () => {
       const result = await controller.create(createDto, currentUser);
 
       expect(result).toEqual(createdUser);
-      expect(usersService.create).toHaveBeenCalledWith(createDto, currentUser.sub);
+      expect(usersService.create).toHaveBeenCalledWith(
+        createDto,
+        currentUser.sub,
+      );
     });
   });
 
@@ -108,7 +120,11 @@ describe('UsersController', () => {
       const result = await controller.update(user.id, updateDto, currentUser);
 
       expect(result).toEqual(updatedUser);
-      expect(usersService.update).toHaveBeenCalledWith(user.id, updateDto, currentUser);
+      expect(usersService.update).toHaveBeenCalledWith(
+        user.id,
+        updateDto,
+        currentUser,
+      );
     });
   });
 
