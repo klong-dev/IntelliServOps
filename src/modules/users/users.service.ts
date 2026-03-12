@@ -324,20 +324,24 @@ export class UsersService {
   }
 
   /**
-   * Update user's identity card by uploading image files
-   * AI extracts info from images - images are NOT stored in DB
+   * Update user's identity card by uploading front + back images
+   * AI extracts info from both sides - images are NOT stored in DB
    */
-  async updateIdentityCard(userId: string, identityCardFrontFile?: any) {
-    // Validate front file is provided
-    if (!identityCardFrontFile) {
-      throw new BadRequestException('Front identity card image is required');
-    }
-
+  async updateIdentityCard(
+    userId: string,
+    identityCardFrontFile: any,
+    identityCardBackFile: any,
+  ) {
     // Validate file types
     const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validMimeTypes.includes(identityCardFrontFile.mimetype)) {
       throw new BadRequestException(
-        `Invalid front image format. Allowed formats: JPEG, PNG, WebP. Received: ${identityCardFrontFile.mimetype}`,
+        `Invalid front image format. Allowed: JPEG, PNG, WebP. Received: ${identityCardFrontFile.mimetype}`,
+      );
+    }
+    if (!validMimeTypes.includes(identityCardBackFile.mimetype)) {
+      throw new BadRequestException(
+        `Invalid back image format. Allowed: JPEG, PNG, WebP. Received: ${identityCardBackFile.mimetype}`,
       );
     }
 
@@ -351,103 +355,96 @@ export class UsersService {
     }
 
     let autoVerified = false;
-    let aiVerificationResult = null;
+    let frontResult = null;
+    let backResult = null;
 
-    // Convert file to base64 for AI verification
-    const frontFileBase64 = identityCardFrontFile.buffer.toString('base64');
+    // Call FPT AI for both sides in parallel
+    const frontBase64 = identityCardFrontFile.buffer.toString('base64');
+    const backBase64 = identityCardBackFile.buffer.toString('base64');
 
-    // Call FPT AI to verify ID card using base64
     try {
-      this.logger.log(`Verifying ID card for user: ${userId}`);
-      const aiResponse =
-        await this.fptAiService.verifyIdCardFromBase64(frontFileBase64);
+      this.logger.log(`Verifying ID card (front + back) for user: ${userId}`);
+      [frontResult, backResult] = await Promise.all([
+        this.fptAiService.verifyIdCardFromBase64(frontBase64),
+        this.fptAiService.verifyIdCardFromBase64(backBase64),
+      ]);
 
-      aiVerificationResult = aiResponse;
-
-      // If verification successful, auto-verify user
-      if (this.fptAiService.isVerificationSuccessful(aiResponse)) {
+      if (this.fptAiService.isVerificationSuccessful(frontResult)) {
         autoVerified = true;
-        this.logger.log(`ID card verified via AI for user: ${userId}`);
+        this.logger.log(`Front ID card verified via AI for user: ${userId}`);
       } else {
         this.logger.warn(
-          `ID card verification failed for user: ${userId}, Error: ${aiResponse.errorMessage}`,
+          `Front ID card verification failed for user: ${userId}, Error: ${frontResult.errorMessage}`,
         );
       }
     } catch (error) {
-      // Log error but don't fail the update
       this.logger.error(
         `FPT AI verification error for user ${userId}: ${error.message}`,
       );
-      // Continue with update even if AI verification fails
     }
 
-    // Prepare UserIdentity update data (only AI-extracted info, no image storage)
+    // Merge extracted info from front and back
+    const frontInfo = this.fptAiService.extractUserInfo(frontResult) || {};
+    const backInfo = this.fptAiService.extractUserInfo(backResult) || {};
+    const extractedInfo = { ...frontInfo, ...backInfo };
+
+    // Prepare UserIdentity update data
     const identityUpdateData: any = {};
 
-    // Extract and save user information from AI response to UserIdentity
-    if (
-      aiVerificationResult &&
-      this.fptAiService.isVerificationSuccessful(aiVerificationResult)
-    ) {
-      const extractedInfo =
-        this.fptAiService.extractUserInfo(aiVerificationResult);
+    if (Object.keys(extractedInfo).length > 0) {
+      if (extractedInfo.id && !user.identity?.nationalId) {
+        identityUpdateData.nationalId = extractedInfo.id;
+      }
+      if (extractedInfo.name && !user.identity?.name) {
+        identityUpdateData.name = extractedInfo.name;
+      }
+      if (extractedInfo.dob && !user.identity?.dob) {
+        identityUpdateData.dob = extractedInfo.dob;
+      }
+      if (extractedInfo.sex && !user.identity?.sex) {
+        identityUpdateData.sex = extractedInfo.sex;
+      }
+      if (extractedInfo.nationality && !user.identity?.nationality) {
+        identityUpdateData.nationality = extractedInfo.nationality;
+      }
+      if (extractedInfo.ethnicity && !user.identity?.ethnicity) {
+        identityUpdateData.ethnicity = extractedInfo.ethnicity;
+      }
+      if (extractedInfo.home && !user.identity?.home) {
+        identityUpdateData.home = extractedInfo.home;
+      }
+      if (extractedInfo.address && !user.identity?.address) {
+        identityUpdateData.address = extractedInfo.address;
+      }
+      if (extractedInfo.features && !user.identity?.features) {
+        identityUpdateData.features = extractedInfo.features;
+      }
+      if (extractedInfo.issueDate && !user.identity?.issueDate) {
+        identityUpdateData.issueDate = extractedInfo.issueDate;
+      }
+      if (extractedInfo.doe && !user.identity?.doe) {
+        identityUpdateData.doe = extractedInfo.doe;
+      }
+      if (extractedInfo.province && !user.identity?.province) {
+        identityUpdateData.province = extractedInfo.province;
+      }
+      if (extractedInfo.district && !user.identity?.district) {
+        identityUpdateData.district = extractedInfo.district;
+      }
+      if (extractedInfo.ward && !user.identity?.ward) {
+        identityUpdateData.ward = extractedInfo.ward;
+      }
+      if (extractedInfo.street && !user.identity?.street) {
+        identityUpdateData.street = extractedInfo.street;
+      }
 
-      if (extractedInfo) {
-        if (extractedInfo.id && !user.identity?.nationalId) {
-          identityUpdateData.nationalId = extractedInfo.id;
-        }
-        if (extractedInfo.name && !user.identity?.name) {
-          identityUpdateData.name = extractedInfo.name;
-        }
-        if (extractedInfo.dob && !user.identity?.dob) {
-          identityUpdateData.dob = extractedInfo.dob;
-        }
-        if (extractedInfo.sex && !user.identity?.sex) {
-          identityUpdateData.sex = extractedInfo.sex;
-        }
-        if (extractedInfo.nationality && !user.identity?.nationality) {
-          identityUpdateData.nationality = extractedInfo.nationality;
-        }
-        if (extractedInfo.ethnicity && !user.identity?.ethnicity) {
-          identityUpdateData.ethnicity = extractedInfo.ethnicity;
-        }
-        if (extractedInfo.home && !user.identity?.home) {
-          identityUpdateData.home = extractedInfo.home;
-        }
-        if (extractedInfo.address && !user.identity?.address) {
-          identityUpdateData.address = extractedInfo.address;
-        }
-        if (extractedInfo.features && !user.identity?.features) {
-          identityUpdateData.features = extractedInfo.features;
-        }
-        if (extractedInfo.issueDate && !user.identity?.issueDate) {
-          identityUpdateData.issueDate = extractedInfo.issueDate;
-        }
-        if (extractedInfo.doe && !user.identity?.doe) {
-          identityUpdateData.doe = extractedInfo.doe;
-        }
-        if (extractedInfo.province && !user.identity?.province) {
-          identityUpdateData.province = extractedInfo.province;
-        }
-        if (extractedInfo.district && !user.identity?.district) {
-          identityUpdateData.district = extractedInfo.district;
-        }
-        if (extractedInfo.ward && !user.identity?.ward) {
-          identityUpdateData.ward = extractedInfo.ward;
-        }
-        if (extractedInfo.street && !user.identity?.street) {
-          identityUpdateData.street = extractedInfo.street;
-        }
+      this.logger.log(
+        `Extracted ${Object.keys(extractedInfo).length} fields from ID card (front + back)`,
+      );
 
-        this.logger.log(
-          `Extracted ${Object.keys(extractedInfo).length} fields from ID card`,
-        );
-
-        // Mark as verified if AI succeeded
-        if (autoVerified) {
-          identityUpdateData.isVerified = true;
-          identityUpdateData.verifiedAt = new Date();
-        }
+      if (autoVerified) {
+        identityUpdateData.isVerified = true;
+        identityUpdateData.verifiedAt = new Date();
       }
     }
 
@@ -483,19 +480,23 @@ export class UsersService {
       }
     }
 
-    // Attach AI verification metadata to response if available
+    // Attach AI verification metadata to response
     return {
       ...updatedUser,
-      aiVerification: aiVerificationResult
-        ? {
-            success:
-              this.fptAiService.isVerificationSuccessful(aiVerificationResult),
-            extractedId:
-              this.fptAiService.extractIdNumber(aiVerificationResult),
-            extractedInfo:
-              this.fptAiService.extractUserInfo(aiVerificationResult),
-          }
-        : null,
+      aiVerification: {
+        front: frontResult
+          ? {
+              success: this.fptAiService.isVerificationSuccessful(frontResult),
+              extractedInfo: this.fptAiService.extractUserInfo(frontResult),
+            }
+          : null,
+        back: backResult
+          ? {
+              success: this.fptAiService.isVerificationSuccessful(backResult),
+              extractedInfo: this.fptAiService.extractUserInfo(backResult),
+            }
+          : null,
+      },
     };
   }
 
