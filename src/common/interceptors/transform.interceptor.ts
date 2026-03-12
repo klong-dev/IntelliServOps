@@ -3,6 +3,7 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  StreamableFile,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -15,9 +16,10 @@ export interface JsonApiResponse<T> {
 }
 
 @Injectable()
-export class TransformInterceptor<T>
-  implements NestInterceptor<T, JsonApiResponse<T>>
-{
+export class TransformInterceptor<T> implements NestInterceptor<
+  T,
+  JsonApiResponse<T>
+> {
   intercept(
     context: ExecutionContext,
     next: CallHandler,
@@ -27,6 +29,11 @@ export class TransformInterceptor<T>
 
     return next.handle().pipe(
       map((responseData) => {
+        // Skip wrapping for StreamableFile (binary responses like PDF)
+        if (responseData instanceof StreamableFile) {
+          return responseData as any;
+        }
+
         const statusCode = response.statusCode;
         const timestamp = new Date().toISOString();
 

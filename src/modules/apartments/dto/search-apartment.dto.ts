@@ -1,4 +1,12 @@
-import { IsOptional, IsString, IsNumber, IsEnum, IsInt, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsEnum,
+  IsInt,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { ApartmentStatus, FurnishingStatus } from '@prisma/client';
@@ -61,7 +69,7 @@ export class SearchApartmentDto {
   @IsOptional()
   furnishingStatus?: FurnishingStatus;
 
-  @ApiPropertyOptional({ enum: ApartmentStatus, default: 'available' })
+  @ApiPropertyOptional({ enum: ApartmentStatus })
   @IsEnum(ApartmentStatus)
   @IsOptional()
   status?: ApartmentStatus;

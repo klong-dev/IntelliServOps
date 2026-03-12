@@ -3,15 +3,96 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto, UpdateContractDto } from './dto';
-import { ContractStatus, ApartmentStatus, MemberStatus, Prisma } from '@prisma/client';
+import {
+  ContractStatus,
+  ApartmentStatus,
+  MemberStatus,
+  Prisma,
+} from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class ContractsService {
+  private readonly PDF_TOKEN_SECRET =
+    process.env.JWT_SECRET || 'pdf-token-secret';
+  private readonly PDF_TOKEN_EXPIRY = 5 * 60 * 1000; // 5 minutes
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Generate a signed token for PDF access (valid for 5 minutes)
+   */
+  generatePdfToken(contractId: string): string {
+    const expiry = Date.now() + this.PDF_TOKEN_EXPIRY;
+    const data = `${contractId}:${expiry}`;
+    const signature = crypto
+      .createHmac('sha256', this.PDF_TOKEN_SECRET)
+      .update(data)
+      .digest('hex');
+    return Buffer.from(`${data}:${signature}`).toString('base64url');
+  }
+
+  /**
+   * Verify PDF token and return contractId if valid
+   */
+  verifyPdfToken(token: string): string {
+    try {
+      const decoded = Buffer.from(token, 'base64url').toString();
+      const [contractId, expiryStr, signature] = decoded.split(':');
+      const expiry = parseInt(expiryStr, 10);
+
+      if (Date.now() > expiry) {
+        throw new UnauthorizedException('PDF token expired');
+      }
+
+      const expectedSignature = crypto
+        .createHmac('sha256', this.PDF_TOKEN_SECRET)
+        .update(`${contractId}:${expiryStr}`)
+        .digest('hex');
+
+      if (signature !== expectedSignature) {
+        throw new UnauthorizedException('Invalid PDF token');
+      }
+
+      return contractId;
+    } catch {
+      throw new UnauthorizedException('Invalid PDF token');
+    }
+  }
+
+  /**
+   * Get contract PDF for public access (with valid token)
+   */
+  async getContractPdfPublic(token: string) {
+    const contractId = this.verifyPdfToken(token);
+
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        contractPdfData: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (!contract.contractPdfData) {
+      throw new NotFoundException('Contract PDF not generated yet');
+    }
+
+    return {
+      buffer: Buffer.from(contract.contractPdfData),
+      contractNumber: contract.contractNumber,
+    };
+  }
 
   /**
    * Get all contracts with filters
@@ -122,13 +203,68 @@ export class ContractsService {
 
     // Users can only see their own contracts
     if (currentUser.actorType === 'user') {
-      const isMember = contract.members.some(m => m.user.id === currentUser.sub);
+      const isMember = contract.members.some(
+        (m) => m.user.id === currentUser.sub,
+      );
       if (!isMember) {
         throw new NotFoundException('Contract not found');
       }
     }
 
-    return contract;
+    // Convert binary PDF to base64 for JSON response
+    const { contractPdfData, landlordSignature, tenantSignature, ...rest } =
+      contract as any;
+
+    // Generate signed PDF URL token if PDF exists
+    const pdfToken = contractPdfData ? this.generatePdfToken(id) : null;
+
+    return {
+      ...rest,
+      hasPdf: !!contractPdfData,
+      pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+      hasLandlordSignature: !!landlordSignature,
+      hasTenantSignature: !!tenantSignature,
+    };
+  }
+
+  /**
+   * Get contract PDF data for download
+   */
+  async getContractPdf(id: string, currentUser: JwtPayload) {
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        contractNumber: true,
+        contractPdfData: true,
+        members: {
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    // Users can only access their own contracts
+    if (currentUser.actorType === 'user') {
+      const isMember = contract.members.some(
+        (m) => m.userId === currentUser.sub,
+      );
+      if (!isMember) {
+        throw new NotFoundException('Contract not found');
+      }
+    }
+
+    if (!contract.contractPdfData) {
+      throw new NotFoundException('Contract PDF has not been generated yet');
+    }
+
+    return {
+      buffer: contract.contractPdfData,
+      contractNumber: contract.contractNumber,
+    };
   }
 
   /**
@@ -168,7 +304,9 @@ export class ContractsService {
     }
 
     // Validate at least one primary member
-    const hasPrimary = createDto.members.some(m => m.memberType === 'primary');
+    const hasPrimary = createDto.members.some(
+      (m) => m.memberType === 'primary',
+    );
     if (!hasPrimary) {
       throw new BadRequestException('At least one primary tenant is required');
     }
@@ -193,9 +331,10 @@ export class ContractsService {
           contractTerms: createDto.contractTerms,
           specialConditions: createDto.specialConditions,
           status: ContractStatus.draft,
-          createdByStaff: currentUser.actorType === 'staff'
-            ? { connect: { id: currentUser.sub } }
-            : undefined,
+          createdByStaff:
+            currentUser.actorType === 'staff'
+              ? { connect: { id: currentUser.sub } }
+              : undefined,
         },
         select: {
           id: true,
@@ -205,11 +344,11 @@ export class ContractsService {
 
       // Create contract members
       await tx.userContractMember.createMany({
-        data: createDto.members.map(m => ({
+        data: createDto.members.map((m) => ({
           userId: m.userId,
           rentalContractId: contract.id,
           memberType: m.memberType,
-          isPrimaryContact: m.isPrimaryContact ?? (m.memberType === 'primary'),
+          isPrimaryContact: m.isPrimaryContact ?? m.memberType === 'primary',
           sharePercentage: m.sharePercentage,
           status: MemberStatus.active,
         })),

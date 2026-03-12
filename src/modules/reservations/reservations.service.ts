@@ -1,15 +1,28 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateReservationDto } from './dto';
+import {
+  ContractPdfService,
+  ContractPdfData,
+} from '../contracts/contract-pdf.service';
+import { ContractsService } from '../contracts/contracts.service';
+import { ContractStatus, MemberStatus } from '@prisma/client';
 
 @Injectable()
 export class ReservationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReservationsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly contractPdfService: ContractPdfService,
+    private readonly contractsService: ContractsService,
+  ) {}
 
   /**
    * Create a reservation
@@ -85,7 +98,20 @@ export class ReservationsService {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 48);
 
-    // 6. Create reservation + set apartment status to reserved (transaction)
+    // 6. Fetch full user + apartment info for contract PDF
+    const fullUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { identity: true },
+    });
+
+    const fullApartment = await this.prisma.apartment.findUnique({
+      where: { id: createReservationDto.apartmentId },
+    });
+
+    // 7. Generate contract number
+    const contractNumber = await this.generateContractNumber();
+
+    // 8. Create reservation + draft contract in transaction
     const reservation = await this.prisma.$transaction(async (tx) => {
       // Update apartment status to reserved
       await tx.apartment.update({
@@ -94,7 +120,7 @@ export class ReservationsService {
       });
 
       // Create the reservation
-      return tx.reservation.create({
+      const newReservation = await tx.reservation.create({
         data: {
           userId,
           apartmentId: createReservationDto.apartmentId,
@@ -127,7 +153,109 @@ export class ReservationsService {
           },
         },
       });
+
+      // Create draft contract
+      const contract = await tx.rentalContract.create({
+        data: {
+          contractNumber,
+          apartment: { connect: { id: createReservationDto.apartmentId } },
+          startDate: desiredStart,
+          endDate: desiredEnd,
+          monthlyRent: fullApartment?.baseRentPrice ?? 0,
+          depositAmount: fullApartment?.depositAmount ?? 0,
+          paymentDueDay: 5,
+          paymentMethod: 'bank_transfer',
+          specialConditions: createReservationDto.specialRequests,
+          status: ContractStatus.draft,
+        },
+      });
+
+      // Link contract to reservation
+      await tx.reservation.update({
+        where: { id: newReservation.id },
+        data: { createdContractId: contract.id },
+      });
+
+      // Add user as primary contract member
+      await tx.userContractMember.create({
+        data: {
+          userId,
+          rentalContractId: contract.id,
+          memberType: 'primary',
+          isPrimaryContact: true,
+          status: MemberStatus.active,
+        },
+      });
+
+      return { ...newReservation, contractId: contract.id, contractNumber };
     });
+
+    // 9. Generate contract PDF (async, after transaction)
+    try {
+      const formatDate = (d: Date) =>
+        `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+
+      const formatCurrency = (amount: any) => {
+        const num =
+          typeof amount === 'object' && amount.toNumber
+            ? amount.toNumber()
+            : Number(amount);
+        return num.toLocaleString('vi-VN');
+      };
+
+      const pdfData: ContractPdfData = {
+        contractNumber: contractNumber,
+        // Tenant info from user + identity
+        tenantName: fullUser?.fullName || undefined,
+        tenantIdNumber: fullUser?.identity?.nationalId || undefined,
+        tenantIdIssueDate: fullUser?.identity?.issueDate || undefined,
+        tenantAddress: fullUser?.identity?.address || undefined,
+        tenantPhone: fullUser?.phone || undefined,
+        tenantEmail: fullUser?.email || undefined,
+        // Apartment info
+        apartmentAddress: fullApartment?.address || undefined,
+        apartmentNumber: fullApartment?.apartmentNumber || undefined,
+        apartmentArea: fullApartment?.totalArea?.toString() || undefined,
+        apartmentUsableArea: fullApartment?.usableArea?.toString() || undefined,
+        apartmentBedrooms: fullApartment?.numberOfBedrooms,
+        apartmentBathrooms: fullApartment?.numberOfBathrooms,
+        apartmentCity: fullApartment?.city || undefined,
+        apartmentDistrict: fullApartment?.district || undefined,
+        // Contract terms
+        startDate: formatDate(desiredStart),
+        endDate: formatDate(desiredEnd),
+        monthlyRent: fullApartment?.baseRentPrice
+          ? formatCurrency(fullApartment.baseRentPrice)
+          : undefined,
+        depositAmount: fullApartment?.depositAmount
+          ? formatCurrency(fullApartment.depositAmount)
+          : undefined,
+        paymentDueDay: 5,
+        paymentMethod: 'bank_transfer',
+        specialConditions: createReservationDto.specialRequests,
+        // Signatures blank
+        landlordSignature: null,
+        tenantSignature: null,
+      };
+
+      const pdfBuffer =
+        await this.contractPdfService.generateContractPdf(pdfData);
+
+      // Update contract with PDF data
+      await this.prisma.rentalContract.updateMany({
+        where: { contractNumber },
+        data: { contractPdfData: new Uint8Array(pdfBuffer) },
+      });
+
+      this.logger.log(
+        `Draft contract ${contractNumber} created with PDF for reservation ${reservation.id}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate contract PDF for reservation ${reservation.id}: ${error.message}`,
+      );
+      // Don't fail the reservation if PDF generation fails
+    }
 
     return reservation;
   }
@@ -136,12 +264,13 @@ export class ReservationsService {
    * Get all reservations for the current user
    */
   async findMyReservations(userId: string) {
-    return this.prisma.reservation.findMany({
+    const reservations = await this.prisma.reservation.findMany({
       where: { userId },
       select: {
         id: true,
         userId: true,
         apartmentId: true,
+        createdContractId: true,
         desiredStartDate: true,
         desiredEndDate: true,
         numberOfOccupants: true,
@@ -158,8 +287,36 @@ export class ReservationsService {
             baseRentPrice: true,
           },
         },
+        createdContract: {
+          select: {
+            id: true,
+            contractNumber: true,
+            status: true,
+            contractPdfData: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    // Transform to include pdfUrl with signed token
+    return reservations.map((reservation) => {
+      const { createdContract, ...rest } = reservation;
+      const pdfToken = createdContract?.contractPdfData
+        ? this.contractsService.generatePdfToken(createdContract.id)
+        : null;
+      return {
+        ...rest,
+        createdContract: createdContract
+          ? {
+              id: createdContract.id,
+              contractNumber: createdContract.contractNumber,
+              status: createdContract.status,
+              hasPdf: !!createdContract.contractPdfData,
+              pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+            }
+          : null,
+      };
     });
   }
 
@@ -173,6 +330,7 @@ export class ReservationsService {
         id: true,
         userId: true,
         apartmentId: true,
+        createdContractId: true,
         desiredStartDate: true,
         desiredEndDate: true,
         numberOfOccupants: true,
@@ -190,6 +348,14 @@ export class ReservationsService {
             baseRentPrice: true,
           },
         },
+        createdContract: {
+          select: {
+            id: true,
+            contractNumber: true,
+            status: true,
+            contractPdfData: true,
+          },
+        },
       },
     });
 
@@ -201,7 +367,24 @@ export class ReservationsService {
       throw new NotFoundException('Reservation not found');
     }
 
-    return reservation;
+    // Transform to include pdfUrl with signed token
+    const { createdContract, ...restData } = reservation;
+    const pdfToken = createdContract?.contractPdfData
+      ? this.contractsService.generatePdfToken(createdContract.id)
+      : null;
+
+    return {
+      ...restData,
+      createdContract: createdContract
+        ? {
+            id: createdContract.id,
+            contractNumber: createdContract.contractNumber,
+            status: createdContract.status,
+            hasPdf: !!createdContract.contractPdfData,
+            pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+          }
+        : null,
+    };
   }
 
   /**
@@ -263,5 +446,15 @@ export class ReservationsService {
         },
       });
     });
+  }
+
+  private async generateContractNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const count = await this.prisma.rentalContract.count({
+      where: {
+        contractNumber: { startsWith: `CTR-${year}` },
+      },
+    });
+    return `CTR-${year}-${String(count + 1).padStart(5, '0')}`;
   }
 }
