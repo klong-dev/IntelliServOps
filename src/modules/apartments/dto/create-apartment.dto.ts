@@ -55,6 +55,33 @@ export class CreateApartmentDto {
   @MaxLength(100)
   ward?: string;
 
+  @ApiPropertyOptional({
+    example: 'Thành phố Hồ Chí Minh',
+    description: 'Tỉnh/Thành phố (trước sáp nhập)',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  oldCity?: string;
+
+  @ApiPropertyOptional({
+    example: 'Quận 9',
+    description: 'Quận/Huyện (trước sáp nhập)',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  oldDistrict?: string;
+
+  @ApiPropertyOptional({
+    example: 'Phường Long Thạnh Mỹ',
+    description: 'Phường/Xã (trước sáp nhập)',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  oldWard?: string;
+
   @ApiPropertyOptional({ example: 10.8012 })
   @IsNumber()
   @IsOptional()

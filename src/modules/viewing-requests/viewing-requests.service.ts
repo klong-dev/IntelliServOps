@@ -162,7 +162,6 @@ export class ViewingRequestsService {
             address: true,
             city: true,
             district: true,
-            apartmentType: true,
           },
         },
       },
@@ -186,7 +185,6 @@ export class ViewingRequestsService {
         apartment: {
           select: {
             id: true,
-            apartmentType: true,
             maxConcurrentViewings: true,
             buildingName: true,
           },
@@ -216,7 +214,6 @@ export class ViewingRequestsService {
     await this.checkSlotAvailability(
       contactRequest.apartment.id,
       contactRequest.apartment.buildingName,
-      contactRequest.apartment.apartmentType,
       appointmentTime,
       createDto.durationMinutes || 30,
       slotLimit,
@@ -338,7 +335,6 @@ export class ViewingRequestsService {
   private async checkSlotAvailability(
     apartmentId: string,
     buildingName: string | null,
-    apartmentType: string | null,
     appointmentTime: Date,
     durationMinutes: number,
     maxSlots: number,
@@ -348,14 +344,13 @@ export class ViewingRequestsService {
       appointmentTime.getTime() + durationMinutes * 60000,
     );
 
-    // Build filter for same building and type
+    // Build filter for same building
     const apartmentFilter: any = {};
 
-    if (buildingName && apartmentType) {
+    if (buildingName) {
       apartmentFilter.buildingName = buildingName;
-      apartmentFilter.apartmentType = apartmentType;
     } else {
-      // No building/type grouping, check only the specific apartment
+      // No building grouping, check only the specific apartment
       apartmentFilter.id = apartmentId;
     }
 

@@ -65,20 +65,43 @@ export class ApartmentListItemDto {
   @ApiProperty({ example: 'R1-801' })
   apartmentNumber: string;
 
-  @ApiPropertyOptional({ type: String, example: 'STANDARD', nullable: true })
-  apartmentType: string | null;
-
   @ApiPropertyOptional({ type: Number, example: 8, nullable: true })
   floorNumber: number | null;
 
   @ApiProperty({ example: '92 Nguyễn Hữu Cảnh' })
   address: string;
 
-  @ApiProperty({ example: 'Hồ Chí Minh' })
-  city: string;
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Hồ Chí Minh',
+    nullable: true,
+    description: 'Tỉnh/Thành phố (sau sáp nhập)',
+  })
+  city?: string | null;
 
-  @ApiProperty({ example: 'Quận Bình Thạnh' })
-  district: string;
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Quận Bình Thạnh',
+    nullable: true,
+    description: 'Quận/Huyện (sau sáp nhập)',
+  })
+  district?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Tỉnh/Thành phố (trước sáp nhập)',
+  })
+  oldCity?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Quận 9',
+    nullable: true,
+    description: 'Quận/Huyện (trước sáp nhập)',
+  })
+  oldDistrict?: string | null;
 
   @ApiProperty({ example: '55' })
   totalArea: string;
@@ -126,9 +149,6 @@ export class ApartmentDetailDto {
   @ApiProperty({ example: 'R1-801' })
   apartmentNumber: string;
 
-  @ApiPropertyOptional({ type: String, example: 'STANDARD', nullable: true })
-  apartmentType: string | null;
-
   @ApiProperty({ type: Number, example: 2 })
   maxConcurrentViewings: number;
 
@@ -145,7 +165,31 @@ export class ApartmentDetailDto {
   district: string;
 
   @ApiPropertyOptional({ type: String, example: 'Phường 22', nullable: true })
-  ward: string | null;
+  ward?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Tỉnh/Thành phố (trước sáp nhập)',
+  })
+  oldCity?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Quận 9',
+    nullable: true,
+    description: 'Quận/Huyện (trước sáp nhập)',
+  })
+  oldDistrict?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Long Thạnh Mỹ',
+    nullable: true,
+    description: 'Phường/Xã (trước sáp nhập)',
+  })
+  oldWard?: string | null;
 
   @ApiPropertyOptional({ type: String, example: '10.788', nullable: true })
   latitude: string | null;
