@@ -9,7 +9,7 @@ import {
   Query,
   ParseUUIDPipe,
   UseInterceptors,
-  UploadedFile,
+  UploadedFiles,
   BadRequestException,
   UsePipes,
 } from '@nestjs/common';
@@ -21,7 +21,7 @@ import {
   ApiConsumes,
   ApiBody,
 } from '@nestjs/swagger';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import {
   CreateUserDto,
@@ -85,11 +85,16 @@ export class UsersController {
   @Post('profile/verify-identity')
   @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @UsePipes(FileUploadPipe)
-  @UseInterceptors(FileInterceptor('identityCardFront'))
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'identityCardFront', maxCount: 1 },
+      { name: 'identityCardBack', maxCount: 1 },
+    ]),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     description:
-      'Upload front identity card image for AI to extract information - JPEG, PNG, or WebP format. Image is NOT stored.',
+      'Upload front and back identity card images for AI to extract information. Images are NOT stored.',
     schema: {
       type: 'object',
       properties: {
@@ -99,33 +104,50 @@ export class UsersController {
           description:
             'Front image of identity card (required) - JPEG, PNG, or WebP',
         },
+        identityCardBack: {
+          type: 'string',
+          format: 'binary',
+          description:
+            'Back image of identity card (required) - JPEG, PNG, or WebP',
+        },
       },
-      required: ['identityCardFront'],
+      required: ['identityCardFront', 'identityCardBack'],
     },
   })
   @ApiOperation({
-    summary: 'Verify identity card via AI',
+    summary: 'Verify identity card via AI (front + back)',
     description:
-      'Upload front identity card image. AI will extract information (name, ID number, address, etc.) and store extracted data. Image is NOT saved.',
+      'Upload front and back identity card images. AI will extract information from both sides and store extracted data. Images are NOT saved.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Identity card verified and info extracted',
+    description: 'Identity card verified and info extracted from both sides',
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid image file or unsupported format',
+    description: 'Invalid image files or unsupported format',
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   async verifyIdentityCard(
-    @UploadedFile() file: any,
+    @UploadedFiles()
+    files: {
+      identityCardFront?: any[];
+      identityCardBack?: any[];
+    },
     @CurrentUser() currentUser: JwtPayload,
   ) {
-    if (!file) {
+    if (!files?.identityCardFront?.[0]) {
       throw new BadRequestException('Front identity card image is required');
     }
+    if (!files?.identityCardBack?.[0]) {
+      throw new BadRequestException('Back identity card image is required');
+    }
 
-    return await this.usersService.updateIdentityCard(currentUser.sub, file);
+    return await this.usersService.updateIdentityCard(
+      currentUser.sub,
+      files.identityCardFront[0],
+      files.identityCardBack[0],
+    );
   }
 
   @Get(':id')
