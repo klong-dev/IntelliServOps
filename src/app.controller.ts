@@ -18,7 +18,7 @@ export class AppController {
 
   @Get('health')
   @Public()
-  @ApiOperation({ summary: 'Health Check Backend' })
+  @ApiOperation({ summary: 'Health Check Backend Test' })
   @ApiResponse({ status: 200, description: 'Returns health status' })
   healthCheck(): { status: string; timestamp: string } {
     return {
