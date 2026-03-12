@@ -37,9 +37,15 @@ export class ReservationsController {
     status: 201,
     description: 'Reservation created successfully',
   })
-  @ApiResponse({ status: 400, description: 'User not verified or invalid data' })
+  @ApiResponse({
+    status: 400,
+    description: 'User not verified or invalid data',
+  })
   @ApiResponse({ status: 404, description: 'User or apartment not found' })
-  @ApiResponse({ status: 409, description: 'Apartment not available or duplicate reservation' })
+  @ApiResponse({
+    status: 409,
+    description: 'Apartment not available or duplicate reservation',
+  })
   async create(
     @Body() createReservationDto: CreateReservationDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -79,12 +85,16 @@ export class ReservationsController {
   @Roles(Role.USER)
   @ApiOperation({
     summary: 'Cancel a reservation',
-    description: 'Cancels the reservation and sets apartment status back to available.',
+    description:
+      'Cancels the reservation and sets apartment status back to available.',
   })
   @ApiJsonResponse(ReservationResponseDto, {
     description: 'Reservation cancelled',
   })
-  @ApiResponse({ status: 400, description: 'Reservation already cancelled or expired' })
+  @ApiResponse({
+    status: 400,
+    description: 'Reservation already cancelled or expired',
+  })
   @ApiResponse({ status: 404, description: 'Reservation not found' })
   async cancel(
     @Param('id', ParseUUIDPipe) id: string,

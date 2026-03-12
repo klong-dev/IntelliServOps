@@ -442,6 +442,20 @@ export class UsersService {
         `Extracted ${Object.keys(extractedInfo).length} fields from ID card (front + back)`,
       );
 
+      // Check if the national ID is already used by another account
+      if (identityUpdateData.nationalId) {
+        const existingIdentity = await this.prisma.userIdentity.findUnique({
+          where: { nationalId: identityUpdateData.nationalId },
+          select: { userId: true },
+        });
+
+        if (existingIdentity && existingIdentity.userId !== userId) {
+          throw new ConflictException(
+            'Số CCCD này đã được sử dụng bởi tài khoản khác',
+          );
+        }
+      }
+
       if (autoVerified) {
         identityUpdateData.isVerified = true;
         identityUpdateData.verifiedAt = new Date();
