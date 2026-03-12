@@ -451,7 +451,20 @@ export class UsersService {
 
         if (existingIdentity && existingIdentity.userId !== userId) {
           throw new ConflictException(
-            'Số CCCD này đã được sử dụng bởi tài khoản khác',
+            'Số CCCD này đã được sử dụng bởi tài khoản user khác',
+          );
+        }
+
+        // Also check against partner identities
+        const existingPartnerIdentity =
+          await this.prisma.partnerIdentity.findUnique({
+            where: { nationalId: identityUpdateData.nationalId },
+            select: { partnerId: true },
+          });
+
+        if (existingPartnerIdentity) {
+          throw new ConflictException(
+            'Số CCCD này đã được sử dụng bởi tài khoản partner khác',
           );
         }
       }

@@ -127,10 +127,6 @@ export class UsersController {
     status: 400,
     description: 'Invalid image files or unsupported format',
   })
-  @ApiResponse({
-    status: 409,
-    description: 'National ID already used by another account',
-  })
   @ApiResponse({ status: 404, description: 'User not found' })
   async verifyIdentityCard(
     @UploadedFiles()
