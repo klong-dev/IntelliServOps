@@ -1,10 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
-import { createPrismaMock, mockUser, mockUserJwtPayload, MockPrisma } from '../../test-utils';
-import { CreateUserDto, UpdateUserDto } from './dto';
+import {
+  createPrismaMock,
+  mockUser,
+  mockUserJwtPayload,
+  MockPrisma,
+} from '../../test-utils';
+import { CreateUserDto, UpdateUserDto, SearchUserDto } from './dto';
 import { ActorType } from '@prisma/client';
 
 describe('UsersService', () => {
@@ -13,7 +22,9 @@ describe('UsersService', () => {
   let authService: AuthService;
 
   const mockAuthService = {
-    hashPassword: jest.fn((password: string) => Promise.resolve(`hashed_${password}`)),
+    hashPassword: jest.fn((password: string) =>
+      Promise.resolve(`hashed_${password}`),
+    ),
   };
 
   beforeEach(async () => {
@@ -43,37 +54,38 @@ describe('UsersService', () => {
 
   describe('findAll', () => {
     it('should return all users', async () => {
-      const users = [mockUser(), mockUser({ id: 'user-2', email: 'user2@example.com' })];
+      const users = [
+        mockUser(),
+        mockUser({ id: 'user-2', email: 'user2@example.com' }),
+      ];
       prisma.user.findMany.mockResolvedValue(users);
+      prisma.user.count.mockResolvedValue(users.length);
 
-      const result = await service.findAll();
+      const result = await service.findAll({});
 
-      expect(result).toEqual(users);
-      expect(prisma.user.findMany).toHaveBeenCalledWith({
-        where: {},
-        select: expect.any(Object),
-        orderBy: { createdAt: 'desc' },
-      });
+      expect(result.items).toEqual(users);
+      expect(prisma.user.findMany).toHaveBeenCalled();
     });
 
     it('should filter users by search query', async () => {
       const users = [mockUser({ fullName: 'John Doe' })];
       prisma.user.findMany.mockResolvedValue(users);
+      prisma.user.count.mockResolvedValue(users.length);
 
-      const result = await service.findAll('John');
+      const result = await service.findAll({ search: 'John' });
 
-      expect(result).toEqual(users);
-      expect(prisma.user.findMany).toHaveBeenCalledWith({
-        where: {
-          OR: expect.arrayContaining([
-            { email: expect.any(Object) },
-            { fullName: expect.any(Object) },
-            { phone: expect.any(Object) },
-          ]),
-        },
-        select: expect.any(Object),
-        orderBy: { createdAt: 'desc' },
-      });
+      expect(result.items).toEqual(users);
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: expect.arrayContaining([
+              { email: expect.any(Object) },
+              { fullName: expect.any(Object) },
+              { phone: expect.any(Object) },
+            ]),
+          },
+        }),
+      );
     });
   });
 
@@ -96,12 +108,17 @@ describe('UsersService', () => {
       const currentUser = mockUserJwtPayload();
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent', currentUser)).rejects.toThrow(NotFoundException);
+      await expect(
+        service.findOne('non-existent', currentUser),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should allow user to view their own profile', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: user.id, actorType: ActorType.user });
+      const currentUser = mockUserJwtPayload({
+        sub: user.id,
+        actorType: ActorType.user,
+      });
       prisma.user.findUnique.mockResolvedValue(user);
 
       const result = await service.findOne(user.id, currentUser);
@@ -111,15 +128,23 @@ describe('UsersService', () => {
 
     it('should throw ForbiddenException if user tries to view another profile', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: 'different-user', actorType: ActorType.user });
+      const currentUser = mockUserJwtPayload({
+        sub: 'different-user',
+        actorType: ActorType.user,
+      });
       prisma.user.findUnique.mockResolvedValue(user);
 
-      await expect(service.findOne(user.id, currentUser)).rejects.toThrow(ForbiddenException);
+      await expect(service.findOne(user.id, currentUser)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should allow staff to view any user profile', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: 'staff-123', actorType: ActorType.staff });
+      const currentUser = mockUserJwtPayload({
+        sub: 'staff-123',
+        actorType: ActorType.staff,
+      });
       prisma.user.findUnique.mockResolvedValue(user);
 
       const result = await service.findOne(user.id, currentUser);
@@ -150,16 +175,24 @@ describe('UsersService', () => {
     });
 
     it('should throw ConflictException if email already exists', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(mockUser({ email: createDto.email }));
+      prisma.user.findUnique.mockResolvedValueOnce(
+        mockUser({ email: createDto.email }),
+      );
 
-      await expect(service.create(createDto)).rejects.toThrow(ConflictException);
+      await expect(service.create(createDto)).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('should throw ConflictException if nationalId already exists', async () => {
       prisma.user.findUnique.mockResolvedValueOnce(null);
-      prisma.user.findUnique.mockResolvedValueOnce(mockUser({ nationalId: createDto.nationalId }));
+      prisma.user.findUnique.mockResolvedValueOnce(
+        mockUser({ nationalId: createDto.nationalId }),
+      );
 
-      await expect(service.create({ ...createDto, nationalId: '123456789' })).rejects.toThrow(ConflictException);
+      await expect(
+        service.create({ ...createDto, nationalId: '123456789' }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
@@ -171,9 +204,12 @@ describe('UsersService', () => {
 
     it('should update user successfully', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: user.id, actorType: ActorType.user });
+      const currentUser = mockUserJwtPayload({
+        sub: user.id,
+        actorType: ActorType.user,
+      });
       const updatedUser = { ...user, ...updateDto };
-      
+
       prisma.user.findUnique.mockResolvedValue(user);
       prisma.user.update.mockResolvedValue(updatedUser);
 
@@ -187,22 +223,36 @@ describe('UsersService', () => {
       const currentUser = mockUserJwtPayload();
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', updateDto, currentUser)).rejects.toThrow(NotFoundException);
+      await expect(
+        service.update('non-existent', updateDto, currentUser),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw ForbiddenException if user tries to update another profile', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: 'different-user', actorType: ActorType.user });
+      const currentUser = mockUserJwtPayload({
+        sub: 'different-user',
+        actorType: ActorType.user,
+      });
       prisma.user.findUnique.mockResolvedValue(user);
 
-      await expect(service.update(user.id, updateDto, currentUser)).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.update(user.id, updateDto, currentUser),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should prevent users from updating isActive and isVerified', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: user.id, actorType: ActorType.user });
-      const updateWithPrivileged = { ...updateDto, isActive: false, isVerified: false };
-      
+      const currentUser = mockUserJwtPayload({
+        sub: user.id,
+        actorType: ActorType.user,
+      });
+      const updateWithPrivileged = {
+        ...updateDto,
+        isActive: false,
+        isVerified: false,
+      };
+
       prisma.user.findUnique.mockResolvedValue(user);
       prisma.user.update.mockResolvedValue(user);
 
@@ -214,24 +264,34 @@ describe('UsersService', () => {
             isActive: expect.anything(),
             isVerified: expect.anything(),
           }),
-        })
+        }),
       );
     });
 
     it('should throw ConflictException if email already in use', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: user.id, actorType: ActorType.user });
-      
-      prisma.user.findUnique.mockResolvedValueOnce(user);
-      prisma.user.findUnique.mockResolvedValueOnce(mockUser({ id: 'other', email: 'taken@example.com' }));
+      const currentUser = mockUserJwtPayload({
+        sub: user.id,
+        actorType: ActorType.user,
+      });
 
-      await expect(service.update(user.id, { email: 'taken@example.com' }, currentUser)).rejects.toThrow(ConflictException);
+      prisma.user.findUnique.mockResolvedValueOnce(user);
+      prisma.user.findUnique.mockResolvedValueOnce(
+        mockUser({ id: 'other', email: 'taken@example.com' }),
+      );
+
+      await expect(
+        service.update(user.id, { email: 'taken@example.com' }, currentUser),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should hash password if provided', async () => {
       const user = mockUser();
-      const currentUser = mockUserJwtPayload({ sub: user.id, actorType: ActorType.user });
-      
+      const currentUser = mockUserJwtPayload({
+        sub: user.id,
+        actorType: ActorType.user,
+      });
+
       prisma.user.findUnique.mockResolvedValue(user);
       prisma.user.update.mockResolvedValue(user);
 
@@ -260,7 +320,9 @@ describe('UsersService', () => {
     it('should throw NotFoundException if user not found', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

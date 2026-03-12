@@ -12,7 +12,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { FptAiService } from '../../shared/services/fpt-ai.service';
 import type { JwtPayload } from '../auth/auth.service';
-import { CreateUserDto, UpdateUserDto } from './dto';
+import { CreateUserDto, UpdateUserDto, SearchUserDto } from './dto';
 import { Role } from '../../common/enums/role.enum';
 
 @Injectable()
@@ -30,7 +30,9 @@ export class UsersService {
    * Find all users with optional search/filter
    * Only accessible by ADMIN, OPERATOR
    */
-  async findAll(search?: string) {
+  async findAll(query: SearchUserDto) {
+    const { search, page = 1, limit = 20 } = query;
+
     const where = search
       ? {
           OR: [
@@ -41,13 +43,36 @@ export class UsersService {
         }
       : {};
 
-    return this.prisma.user.findMany({
-      where,
-      include: {
-        identity: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: {
+          identity: {
+            select: {
+              id: true,
+              nationalId: true,
+
+              isVerified: true,
+              verifiedAt: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
@@ -59,7 +84,32 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: {
-        identity: true,
+        identity: {
+          select: {
+            id: true,
+            userId: true,
+            nationalId: true,
+            passportNumber: true,
+            name: true,
+            dob: true,
+            sex: true,
+            nationality: true,
+            ethnicity: true,
+            home: true,
+            address: true,
+            province: true,
+            district: true,
+            ward: true,
+            street: true,
+            features: true,
+            issueDate: true,
+            doe: true,
+            isVerified: true,
+            verifiedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
         contractMemberships: {
           where: { status: 'active' },
           select: {
@@ -275,14 +325,9 @@ export class UsersService {
 
   /**
    * Update user's identity card by uploading image files
-   * Files are stored directly in database as binary data
-   * AI extracts info from images and auto-verifies if valid
+   * AI extracts info from images - images are NOT stored in DB
    */
-  async updateIdentityCard(
-    userId: string,
-    identityCardFrontFile?: any,
-    identityCardBackFile?: any,
-  ) {
+  async updateIdentityCard(userId: string, identityCardFrontFile?: any) {
     // Validate front file is provided
     if (!identityCardFrontFile) {
       throw new BadRequestException('Front identity card image is required');
@@ -293,12 +338,6 @@ export class UsersService {
     if (!validMimeTypes.includes(identityCardFrontFile.mimetype)) {
       throw new BadRequestException(
         `Invalid front image format. Allowed formats: JPEG, PNG, WebP. Received: ${identityCardFrontFile.mimetype}`,
-      );
-    }
-
-    if (identityCardBackFile && !validMimeTypes.includes(identityCardBackFile.mimetype)) {
-      throw new BadRequestException(
-        `Invalid back image format. Allowed formats: JPEG, PNG, WebP. Received: ${identityCardBackFile.mimetype}`,
       );
     }
 
@@ -320,9 +359,8 @@ export class UsersService {
     // Call FPT AI to verify ID card using base64
     try {
       this.logger.log(`Verifying ID card for user: ${userId}`);
-      const aiResponse = await this.fptAiService.verifyIdCardFromBase64(
-        frontFileBase64,
-      );
+      const aiResponse =
+        await this.fptAiService.verifyIdCardFromBase64(frontFileBase64);
 
       aiVerificationResult = aiResponse;
 
@@ -343,78 +381,78 @@ export class UsersService {
       // Continue with update even if AI verification fails
     }
 
-    // Prepare UserIdentity update data with binary file data
-    const identityUpdateData: any = {
-      identityCardFrontData: identityCardFrontFile.buffer,
-    };
-
-    if (identityCardBackFile) {
-      identityUpdateData.identityCardBackData = identityCardBackFile.buffer;
-    }
+    // Prepare UserIdentity update data (only AI-extracted info, no image storage)
+    const identityUpdateData: any = {};
 
     // Extract and save user information from AI response to UserIdentity
-    if (aiVerificationResult && this.fptAiService.isVerificationSuccessful(aiVerificationResult)) {
-      const extractedInfo = this.fptAiService.extractUserInfo(aiVerificationResult);
+    if (
+      aiVerificationResult &&
+      this.fptAiService.isVerificationSuccessful(aiVerificationResult)
+    ) {
+      const extractedInfo =
+        this.fptAiService.extractUserInfo(aiVerificationResult);
 
       if (extractedInfo) {
-        // Map AI field names to UserIdentity field names
         if (extractedInfo.id && !user.identity?.nationalId) {
           identityUpdateData.nationalId = extractedInfo.id;
-          this.logger.debug(`Applied nationalId: ${extractedInfo.id}`);
         }
-
+        if (extractedInfo.name && !user.identity?.name) {
+          identityUpdateData.name = extractedInfo.name;
+        }
+        if (extractedInfo.dob && !user.identity?.dob) {
+          identityUpdateData.dob = extractedInfo.dob;
+        }
         if (extractedInfo.sex && !user.identity?.sex) {
           identityUpdateData.sex = extractedInfo.sex;
-          this.logger.debug(`Applied sex: ${extractedInfo.sex}`);
         }
-
         if (extractedInfo.nationality && !user.identity?.nationality) {
           identityUpdateData.nationality = extractedInfo.nationality;
-          this.logger.debug(`Applied nationality: ${extractedInfo.nationality}`);
         }
-
+        if (extractedInfo.ethnicity && !user.identity?.ethnicity) {
+          identityUpdateData.ethnicity = extractedInfo.ethnicity;
+        }
         if (extractedInfo.home && !user.identity?.home) {
           identityUpdateData.home = extractedInfo.home;
-          this.logger.debug(`Applied home: ${extractedInfo.home}`);
         }
-
         if (extractedInfo.address && !user.identity?.address) {
           identityUpdateData.address = extractedInfo.address;
-          this.logger.debug(`Applied address: ${extractedInfo.address}`);
         }
-
-        // Save address entities to UserIdentity
+        if (extractedInfo.features && !user.identity?.features) {
+          identityUpdateData.features = extractedInfo.features;
+        }
+        if (extractedInfo.issueDate && !user.identity?.issueDate) {
+          identityUpdateData.issueDate = extractedInfo.issueDate;
+        }
+        if (extractedInfo.doe && !user.identity?.doe) {
+          identityUpdateData.doe = extractedInfo.doe;
+        }
         if (extractedInfo.province && !user.identity?.province) {
           identityUpdateData.province = extractedInfo.province;
-          this.logger.debug(`Applied province: ${extractedInfo.province}`);
         }
         if (extractedInfo.district && !user.identity?.district) {
           identityUpdateData.district = extractedInfo.district;
-          this.logger.debug(`Applied district: ${extractedInfo.district}`);
         }
         if (extractedInfo.ward && !user.identity?.ward) {
           identityUpdateData.ward = extractedInfo.ward;
-          this.logger.debug(`Applied ward: ${extractedInfo.ward}`);
         }
         if (extractedInfo.street && !user.identity?.street) {
           identityUpdateData.street = extractedInfo.street;
-          this.logger.debug(`Applied street: ${extractedInfo.street}`);
         }
 
-        this.logger.log(`Extracted ${Object.keys(extractedInfo).length} fields from ID card`);
+        this.logger.log(
+          `Extracted ${Object.keys(extractedInfo).length} fields from ID card`,
+        );
 
         // Mark as verified if AI succeeded
         if (autoVerified) {
           identityUpdateData.isVerified = true;
           identityUpdateData.verifiedAt = new Date();
-          this.logger.log(`Identity card verified at ${identityUpdateData.verifiedAt}`);
         }
       }
     }
 
-    // Create or update UserIdentity record with binary file data
-    // Using raw SQL due to Prisma client generation issue on Windows
-    const identity = await (this.prisma.userIdentity.upsert as any)({
+    // Create or update UserIdentity record
+    await (this.prisma.userIdentity.upsert as any)({
       where: { userId },
       create: {
         userId,
@@ -425,7 +463,10 @@ export class UsersService {
 
     // Auto-verify user if AI confirms valid ID
     let updatedUser: any;
-    if (autoVerified && this.configService.get<boolean>('fptAi.autoVerifyOnSuccess')) {
+    if (
+      autoVerified &&
+      this.configService.get<boolean>('fptAi.autoVerifyOnSuccess')
+    ) {
       updatedUser = await this.prisma.user.update({
         where: { id: userId },
         data: { isVerified: true },
@@ -433,7 +474,6 @@ export class UsersService {
       });
       this.logger.log(`User ${userId} auto-verified after ID card check`);
     } else {
-      // Refresh user data with identity
       updatedUser = await this.prisma.user.findUnique({
         where: { id: userId },
         include: { identity: true },
@@ -443,34 +483,52 @@ export class UsersService {
       }
     }
 
-    // Don't return binary data in response - it's too large
-    if (updatedUser.identity?.identityCardFrontData) {
-      delete updatedUser.identity.identityCardFrontData;
-    }
-    if (updatedUser.identity?.identityCardBackData) {
-      delete updatedUser.identity.identityCardBackData;
-    }
-
     // Attach AI verification metadata to response if available
     return {
       ...updatedUser,
       aiVerification: aiVerificationResult
         ? {
-            success: this.fptAiService.isVerificationSuccessful(aiVerificationResult),
-            extractedId: this.fptAiService.extractIdNumber(aiVerificationResult),
-            extractedInfo: this.fptAiService.extractUserInfo(aiVerificationResult),
+            success:
+              this.fptAiService.isVerificationSuccessful(aiVerificationResult),
+            extractedId:
+              this.fptAiService.extractIdNumber(aiVerificationResult),
+            extractedInfo:
+              this.fptAiService.extractUserInfo(aiVerificationResult),
           }
         : null,
     };
   }
 
   /**
-   * Get current user's profile
+   * Get current user's profile based on actorType
    */
-  async getProfile(userId: string) {
-    return this.findOne(userId, {
-      sub: userId,
-      actorType: 'user',
-    } as JwtPayload);
+  async getProfile(currentUser: JwtPayload) {
+    const { sub, actorType } = currentUser;
+
+    switch (actorType) {
+      case 'staff': {
+        const staff = await this.prisma.staff.findUnique({
+          where: { id: sub },
+        });
+        if (!staff) throw new NotFoundException('Staff not found');
+        return staff;
+      }
+      case 'operator': {
+        const operator = await this.prisma.operator.findUnique({
+          where: { id: sub },
+        });
+        if (!operator) throw new NotFoundException('Operator not found');
+        return operator;
+      }
+      case 'admin': {
+        const admin = await this.prisma.admin.findUnique({
+          where: { id: sub },
+        });
+        if (!admin) throw new NotFoundException('Admin not found');
+        return admin;
+      }
+      default:
+        return this.findOne(sub, currentUser);
+    }
   }
 }

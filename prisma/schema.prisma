@@ -476,20 +476,22 @@ model User {
 model UserIdentity {
   id                       String    @id @default(uuid())
   userId                   String    @unique
-  nationalId               String?   @unique  // Căn cước công dân (CMND/CCCD)
+  nationalId               String?   @unique  // Số căn cước công dân
   passportNumber           String?   @unique  // Hộ chiếu
-  identityCardFrontUrl     String?              // Ảnh mặt trước CMND/CCCD (URL - deprecated, use identityCardFrontData)
-  identityCardBackUrl      String?              // Ảnh mặt sau CMND/CCCD (URL - deprecated, use identityCardBackData)
-  identityCardFrontData    Bytes?               // Ảnh mặt trước CMND/CCCD (binary data stored in DB)
-  identityCardBackData     Bytes?               // Ảnh mặt sau CMND/CCCD (binary data stored in DB)
-  sex                      String?              // M, F
+  name                     String?              // Tên trên CCCD
+  dob                      String?              // Ngày sinh
+  sex                      String?              // Giới tính
   nationality              String?              // Quốc tịch
-  home                     String?              // Quê quán
+  ethnicity                String?              // Dân tộc
+  home                     String?              // Nguyên quán
   address                  String?              // Địa chỉ đầy đủ
   province                 String?              // Tỉnh/Thành phố
   district                 String?              // Quận/Huyện
   ward                     String?              // Phường/Xã
   street                   String?              // Số nhà, đường
+  features                 String?              // Đặc điểm nhận dạng
+  issueDate                String?              // Ngày cấp
+  doe                      String?              // Ngày hết hạn
   isVerified               Boolean   @default(false) // AI đã xác minh?
   verifiedAt               DateTime?
   createdAt                DateTime  @default(now())

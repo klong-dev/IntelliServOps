@@ -62,23 +62,20 @@ export class UserIdentityDetailDto {
   @ApiPropertyOptional({ example: 'A12345678', nullable: true })
   passportNumber: string | null;
 
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-front.jpg',
-    nullable: true,
-  })
-  identityCardFrontUrl: string | null;
+  @ApiPropertyOptional({ example: 'Nguyen Van A', nullable: true })
+  name: string | null;
 
-  @ApiPropertyOptional({
-    example: 'https://example.com/identity-card-back.jpg',
-    nullable: true,
-  })
-  identityCardBackUrl: string | null;
+  @ApiPropertyOptional({ example: '01/01/1990', nullable: true })
+  dob: string | null;
 
   @ApiPropertyOptional({ example: 'M', nullable: true })
   sex: string | null;
 
-  @ApiPropertyOptional({ example: 'VN', nullable: true })
+  @ApiPropertyOptional({ example: 'Việt Nam', nullable: true })
   nationality: string | null;
+
+  @ApiPropertyOptional({ example: 'Kinh', nullable: true })
+  ethnicity: string | null;
 
   @ApiPropertyOptional({ example: 'Ha Noi', nullable: true })
   home: string | null;
@@ -100,6 +97,15 @@ export class UserIdentityDetailDto {
 
   @ApiPropertyOptional({ example: '123 Tran Hung Dao', nullable: true })
   street: string | null;
+
+  @ApiPropertyOptional({ example: 'Sẹo 2cm trán phải', nullable: true })
+  features: string | null;
+
+  @ApiPropertyOptional({ example: '01/01/2020', nullable: true })
+  issueDate: string | null;
+
+  @ApiPropertyOptional({ example: '01/01/2030', nullable: true })
+  doe: string | null;
 
   @ApiProperty({ example: false })
   isVerified: boolean;

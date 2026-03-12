@@ -92,9 +92,13 @@ export class FptAiService {
       const formData = new FormData();
       formData.append('image_url', imageUrl);
 
-      const response = await this.axios.post<FptAiResponse>(this.apiUrl, formData, {
-        headers: formData.getHeaders(),
-      });
+      const response = await this.axios.post<FptAiResponse>(
+        this.apiUrl,
+        formData,
+        {
+          headers: formData.getHeaders(),
+        },
+      );
 
       return response.data;
     } catch (error) {
@@ -124,9 +128,13 @@ export class FptAiService {
       const formData = new FormData();
       formData.append('image_base64', base64Data);
 
-      const response = await this.axios.post<FptAiResponse>(this.apiUrl, formData, {
-        headers: formData.getHeaders(),
-      });
+      const response = await this.axios.post<FptAiResponse>(
+        this.apiUrl,
+        formData,
+        {
+          headers: formData.getHeaders(),
+        },
+      );
 
       return response.data;
     } catch (error) {
@@ -160,9 +168,13 @@ export class FptAiService {
       const formData = new FormData();
       formData.append('image', fs.createReadStream(filePath));
 
-      const response = await this.axios.post<FptAiResponse>(this.apiUrl, formData, {
-        headers: formData.getHeaders(),
-      });
+      const response = await this.axios.post<FptAiResponse>(
+        this.apiUrl,
+        formData,
+        {
+          headers: formData.getHeaders(),
+        },
+      );
 
       return response.data;
     } catch (error) {
@@ -178,8 +190,14 @@ export class FptAiService {
    * @param response FPT AI API response
    * @returns true if no errors and data exists
    */
-  isVerificationSuccessful(response: FptAiResponse | null | undefined): boolean {
-    if (!response || !Array.isArray(response.data) || response.data.length === 0) {
+  isVerificationSuccessful(
+    response: FptAiResponse | null | undefined,
+  ): boolean {
+    if (
+      !response ||
+      !Array.isArray(response.data) ||
+      response.data.length === 0
+    ) {
       return false;
     }
 
@@ -195,7 +213,12 @@ export class FptAiService {
    * @returns ID number or null
    */
   extractIdNumber(response: FptAiResponse | null | undefined): string | null {
-    if (response && response.data && response.data.length > 0 && response.data[0].id) {
+    if (
+      response &&
+      response.data &&
+      response.data.length > 0 &&
+      response.data[0].id
+    ) {
       return response.data[0].id !== 'N/A' ? response.data[0].id : null;
     }
     return null;
@@ -206,20 +229,22 @@ export class FptAiService {
    * @param response FPT AI API response
    * @returns Object containing extracted user info for database
    */
-  extractUserInfo(
-    response: FptAiResponse | null | undefined,
-  ): {
+  extractUserInfo(response: FptAiResponse | null | undefined): {
     id?: string;
     name?: string;
     dob?: string;
     sex?: string;
     nationality?: string;
+    ethnicity?: string;
     home?: string;
     address?: string;
     province?: string;
     district?: string;
     ward?: string;
     street?: string;
+    features?: string;
+    issueDate?: string;
+    doe?: string;
     type?: string;
   } | null {
     if (!this.isVerificationSuccessful(response)) {
@@ -256,6 +281,22 @@ export class FptAiService {
 
     if (data.address && data.address !== 'N/A') {
       result.address = data.address;
+    }
+
+    if (data.ethnicity && data.ethnicity !== 'N/A') {
+      result.ethnicity = data.ethnicity;
+    }
+
+    if (data.features && data.features !== 'N/A') {
+      result.features = data.features;
+    }
+
+    if (data.issue_date && data.issue_date !== 'N/A') {
+      result.issueDate = data.issue_date;
+    }
+
+    if (data.doe && data.doe !== 'N/A') {
+      result.doe = data.doe;
     }
 
     // Extract address entities
