@@ -6,7 +6,10 @@ import {
   Patch,
   Param,
   Query,
+  Res,
   ParseUUIDPipe,
+  NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -14,7 +17,9 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiProduces,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { ContractsService } from './contracts.service';
 import {
   CreateContractDto,
@@ -22,7 +27,7 @@ import {
   ContractListItemDto,
   ContractDetailDto,
 } from './dto';
-import { Roles, CurrentUser } from '../../common/decorators';
+import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
@@ -38,12 +43,41 @@ export class ContractsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List contracts' })
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
-  @ApiJsonResponse(ContractListItemDto, { isArray: true, description: 'List of contracts' })
+  @ApiJsonResponse(ContractListItemDto, {
+    isArray: true,
+    description: 'List of contracts',
+  })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: ContractStatus,
   ) {
     return this.contractsService.findAll(currentUser, status);
+  }
+
+  @Get('pdf/view')
+  @Public()
+  @ApiOperation({
+    summary: 'View contract PDF (public with token)',
+    description:
+      'View contract PDF using a signed token. Token is valid for 5 minutes.',
+  })
+  @ApiQuery({ name: 'token', required: true, description: 'Signed PDF token' })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'Contract PDF file' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  @ApiResponse({ status: 404, description: 'Contract or PDF not found' })
+  async viewPdfPublic(
+    @Query('token') token: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfData = await this.contractsService.getContractPdfPublic(token);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="contract-${pdfData.contractNumber}.pdf"`,
+    });
+
+    return new StreamableFile(pdfData.buffer);
   }
 
   @Get(':id')
@@ -58,10 +92,37 @@ export class ContractsController {
     return this.contractsService.findOne(id, currentUser);
   }
 
+  @Get(':id/pdf')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({
+    summary: 'Download contract PDF',
+    description: 'Download the generated PDF document for a contract.',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'Contract PDF file' })
+  @ApiResponse({ status: 404, description: 'Contract or PDF not found' })
+  async downloadPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfData = await this.contractsService.getContractPdf(id, currentUser);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="contract-${pdfData.contractNumber}.pdf"`,
+    });
+
+    return new StreamableFile(pdfData.buffer);
+  }
+
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Create contract' })
-  @ApiJsonResponse(ContractDetailDto, { status: 201, description: 'Contract created' })
+  @ApiJsonResponse(ContractDetailDto, {
+    status: 201,
+    description: 'Contract created',
+  })
   async create(
     @Body() createDto: CreateContractDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -99,6 +160,10 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { reason: string; terminationFee?: number },
   ) {
-    return this.contractsService.terminate(id, body.reason, body.terminationFee);
+    return this.contractsService.terminate(
+      id,
+      body.reason,
+      body.terminationFee,
+    );
   }
 }
