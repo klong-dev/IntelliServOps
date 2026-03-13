@@ -146,11 +146,17 @@ export class ContractsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return contracts.map(({ contractPdfData, ...contract }) => ({
-      ...contract,
-      hasPdf: !!contractPdfData,
-      pdfUrl: `/contracts/${contract.id}/pdf`,
-    }));
+    return contracts.map(({ contractPdfData, ...contract }) => {
+      const pdfToken = contractPdfData
+        ? this.generatePdfToken(contract.id)
+        : null;
+
+      return {
+        ...contract,
+        hasPdf: !!contractPdfData,
+        pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+      };
+    });
   }
 
   /**
