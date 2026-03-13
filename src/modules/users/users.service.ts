@@ -381,6 +381,9 @@ export class UsersService {
       this.logger.error(
         `FPT AI verification error for user ${userId}: ${error.message}`,
       );
+      throw new BadRequestException(
+        error?.message || 'Không thể xác thực CCCD bằng AI lúc này',
+      );
     }
 
     // Merge extracted info from front and back

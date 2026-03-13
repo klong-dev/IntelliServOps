@@ -73,20 +73,45 @@ export class FptAiService {
     });
   }
 
+  private buildHeaders(formData: FormData) {
+    return {
+      ...formData.getHeaders(),
+      'api-key': this.apiKey,
+    };
+  }
+
+  private sanitizeBase64(base64Data: string): string {
+    const marker = 'base64,';
+    const markerIndex = base64Data.indexOf(marker);
+
+    if (markerIndex >= 0) {
+      return base64Data.substring(markerIndex + marker.length);
+    }
+
+    return base64Data;
+  }
+
+  private ensureConfigured() {
+    if (!this.enabled) {
+      throw new BadRequestException(
+        'FPT AI is disabled (FPT_AI_ENABLED=false)',
+      );
+    }
+
+    if (!this.apiKey) {
+      throw new BadRequestException(
+        'FPT AI API key is missing (FPT_AI_API_KEY is not configured)',
+      );
+    }
+  }
+
   /**
    * Verify ID card from image URL
    * @param imageUrl URL of the ID card image
    * @returns FPT AI API response with extracted data
    */
   async verifyIdCardFromUrl(imageUrl: string): Promise<FptAiResponse> {
-    if (!this.enabled || !this.apiKey) {
-      this.logger.warn('FPT AI is disabled or API key not configured');
-      return {
-        errorCode: 0,
-        errorMessage: '',
-        data: [],
-      };
-    }
+    this.ensureConfigured();
 
     try {
       const formData = new FormData();
@@ -96,7 +121,7 @@ export class FptAiService {
         this.apiUrl,
         formData,
         {
-          headers: formData.getHeaders(),
+          headers: this.buildHeaders(formData),
         },
       );
 
@@ -115,30 +140,47 @@ export class FptAiService {
    * @returns FPT AI API response with extracted data
    */
   async verifyIdCardFromBase64(base64Data: string): Promise<FptAiResponse> {
-    if (!this.enabled || !this.apiKey) {
-      this.logger.warn('FPT AI is disabled or API key not configured');
-      return {
-        errorCode: 0,
-        errorMessage: '',
-        data: [],
-      };
-    }
+    this.ensureConfigured();
 
     try {
-      const formData = new FormData();
-      formData.append('image_base64', base64Data);
+      const normalizedBase64 = this.sanitizeBase64(base64Data);
 
-      const response = await this.axios.post<FptAiResponse>(
+      const formData = new FormData();
+      formData.append('image_base64', normalizedBase64);
+
+      let response = await this.axios.post<FptAiResponse>(
         this.apiUrl,
         formData,
         {
-          headers: formData.getHeaders(),
+          headers: this.buildHeaders(formData),
         },
       );
 
+      if (!this.isVerificationSuccessful(response.data)) {
+        const fallbackFormData = new FormData();
+        fallbackFormData.append(
+          'image',
+          Buffer.from(normalizedBase64, 'base64'),
+          {
+            filename: 'identity-card.jpg',
+            contentType: 'image/jpeg',
+          },
+        );
+
+        response = await this.axios.post<FptAiResponse>(
+          this.apiUrl,
+          fallbackFormData,
+          {
+            headers: this.buildHeaders(fallbackFormData),
+          },
+        );
+      }
+
       return response.data;
     } catch (error) {
-      this.logger.error('FPT AI Base64 Error:', error.message);
+      this.logger.error(
+        `FPT AI Base64 Error: ${error.response?.data?.errorMessage || error.message}`,
+      );
       throw new BadRequestException(
         `FPT AI verification failed: ${error.response?.data?.errorMessage || error.message}`,
       );
@@ -151,14 +193,7 @@ export class FptAiService {
    * @returns FPT AI API response with extracted data
    */
   async verifyIdCardFromFile(filePath: string): Promise<FptAiResponse> {
-    if (!this.enabled || !this.apiKey) {
-      this.logger.warn('FPT AI is disabled or API key not configured');
-      return {
-        errorCode: 0,
-        errorMessage: '',
-        data: [],
-      };
-    }
+    this.ensureConfigured();
 
     try {
       if (!fs.existsSync(filePath)) {
@@ -172,7 +207,7 @@ export class FptAiService {
         this.apiUrl,
         formData,
         {
-          headers: formData.getHeaders(),
+          headers: this.buildHeaders(formData),
         },
       );
 
