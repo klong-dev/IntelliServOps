@@ -127,8 +127,9 @@ export class UsersService {
                 apartment: {
                   select: {
                     id: true,
-                    address: true,
                     apartmentNumber: true,
+                    newWardCode: true,
+                    oldWardCode: true,
                   },
                 },
               },

@@ -54,7 +54,13 @@ export class ReservationsService {
     // 2. Check apartment exists and is available
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: createReservationDto.apartmentId },
-      select: { id: true, status: true, apartmentNumber: true, address: true },
+      select: {
+        id: true,
+        status: true,
+        apartmentNumber: true,
+        newWardCode: true,
+        oldWardCode: true,
+      },
     });
 
     if (!apartment) {
@@ -147,7 +153,8 @@ export class ReservationsService {
             select: {
               id: true,
               apartmentNumber: true,
-              address: true,
+              newWardCode: true,
+              oldWardCode: true,
               baseRentPrice: true,
             },
           },
@@ -213,14 +220,19 @@ export class ReservationsService {
         tenantPhone: fullUser?.phone || undefined,
         tenantEmail: fullUser?.email || undefined,
         // Apartment info
-        apartmentAddress: fullApartment?.address || undefined,
+        apartmentAddress:
+          fullApartment?.buildingName || fullApartment?.apartmentNumber
+            ? [fullApartment?.buildingName, fullApartment?.apartmentNumber]
+                .filter(Boolean)
+                .join(' - ')
+            : undefined,
         apartmentNumber: fullApartment?.apartmentNumber || undefined,
         apartmentArea: fullApartment?.totalArea?.toString() || undefined,
         apartmentUsableArea: fullApartment?.usableArea?.toString() || undefined,
         apartmentBedrooms: fullApartment?.numberOfBedrooms,
         apartmentBathrooms: fullApartment?.numberOfBathrooms,
-        apartmentCity: fullApartment?.city || undefined,
-        apartmentDistrict: fullApartment?.district || undefined,
+        apartmentCity: undefined,
+        apartmentDistrict: undefined,
         // Contract terms
         startDate: formatDate(desiredStart),
         endDate: formatDate(desiredEnd),
@@ -283,7 +295,8 @@ export class ReservationsService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
+            newWardCode: true,
+            oldWardCode: true,
             baseRentPrice: true,
           },
         },
@@ -344,7 +357,8 @@ export class ReservationsService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
+            newWardCode: true,
+            oldWardCode: true,
             baseRentPrice: true,
           },
         },
@@ -439,7 +453,8 @@ export class ReservationsService {
             select: {
               id: true,
               apartmentNumber: true,
-              address: true,
+              newWardCode: true,
+              oldWardCode: true,
               baseRentPrice: true,
             },
           },

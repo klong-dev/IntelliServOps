@@ -665,13 +665,8 @@ model Apartment {
   apartmentNumber       String
   maxConcurrentViewings Int              @default(2)
   floorNumber           Int?
-  address               String
-  city                  String           // Tỉnh/Thành phố (sau sáp nhập)
-  district              String           // Quận/Huyện (sau sáp nhập)
-  ward                  String?          // Phường/Xã (sau sáp nhập)
-  oldCity               String?          // Tỉnh/Thành phố (trước sáp nhập)
-  oldDistrict           String?          // Quận/Huyện (trước sáp nhập)
-  oldWard               String?          // Phường/Xã (trước sáp nhập)
+  newWardCode           Int?             // Mã phường/xã sau sáp nhập (v2)
+  oldWardCode           Int?             // Mã phường/xã trước sáp nhập (v1)
   latitude              Decimal?         @db.Decimal(10, 8)
   longitude             Decimal?         @db.Decimal(11, 8)
   totalArea             Decimal          @db.Decimal(10, 2)
@@ -709,10 +704,8 @@ model Apartment {
   reservations      Reservation[]
 
   @@index([status])
-  @@index([city])
-  @@index([district])
-  @@index([oldCity])
-  @@index([oldDistrict])
+  @@index([newWardCode])
+  @@index([oldWardCode])
   @@index([partnerId])
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])

@@ -3,10 +3,174 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateApartmentDto, UpdateApartmentDto, SearchApartmentDto } from './dto';
 import { ApartmentStatus, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+import axios from 'axios';
 
 @Injectable()
 export class ApartmentsService {
+  private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
+
   constructor(private readonly prisma: PrismaService) {}
+
+  async getAddressDivisions(
+    version: 'v1' | 'v2' = 'v2',
+    depth = 2,
+    search?: string,
+  ) {
+    const endpoint =
+      search && search.trim().length > 0
+        ? `${this.provincesBaseUrl}/api/${version}/p/`
+        : `${this.provincesBaseUrl}/api/${version}/`;
+
+    const response = await axios.get(endpoint, {
+      params: {
+        ...(search && search.trim().length > 0
+          ? { search: search.trim() }
+          : { depth }),
+      },
+      timeout: 15000,
+    });
+
+    return response.data;
+  }
+
+  async lookupNewWardFromLegacy(legacyName?: string, legacyCode?: number) {
+    if (!legacyName && !legacyCode) {
+      return [];
+    }
+
+    const response = await axios.get(
+      `${this.provincesBaseUrl}/api/v2/w/from-legacy/`,
+      {
+        params: {
+          ...(legacyName ? { legacy_name: legacyName } : {}),
+          ...(legacyCode ? { legacy_code: legacyCode } : {}),
+        },
+        timeout: 15000,
+      },
+    );
+
+    return response.data;
+  }
+
+  async lookupLegacyWardsFromNew(newWardCode: number) {
+    const response = await axios.get(
+      `${this.provincesBaseUrl}/api/v2/w/${newWardCode}/to-legacies/`,
+      {
+        timeout: 15000,
+      },
+    );
+
+    return response.data;
+  }
+
+  private async resolveNewWardAddress(
+    wardCode: number,
+    cache: Map<string, any>,
+  ) {
+    const wardKey = `v2:w:${wardCode}`;
+    let ward = cache.get(wardKey);
+    if (!ward) {
+      const wardResponse = await axios.get(`${this.provincesBaseUrl}/api/v2/w/${wardCode}`, {
+        timeout: 15000,
+      });
+      ward = wardResponse.data;
+      cache.set(wardKey, ward);
+    }
+
+    let provinceName: string | null = null;
+    if (ward?.province_code) {
+      const provinceKey = `v2:p:${ward.province_code}`;
+      let province = cache.get(provinceKey);
+      if (!province) {
+        const provinceResponse = await axios.get(
+          `${this.provincesBaseUrl}/api/v2/p/${ward.province_code}`,
+          {
+            timeout: 15000,
+          },
+        );
+        province = provinceResponse.data;
+        cache.set(provinceKey, province);
+      }
+      provinceName = province?.name ?? null;
+    }
+
+    const wardName = ward?.name ?? null;
+    const fullAddress = [wardName, provinceName].filter(Boolean).join(', ');
+
+    return {
+      wardCode,
+      wardName,
+      districtCode: null,
+      districtName: null,
+      provinceCode: ward?.province_code ?? null,
+      provinceName,
+      fullAddress,
+    };
+  }
+
+  private async resolveOldWardAddress(
+    wardCode: number,
+    cache: Map<string, any>,
+  ) {
+    const wardKey = `v1:w:${wardCode}`;
+    let ward = cache.get(wardKey);
+    if (!ward) {
+      const wardResponse = await axios.get(`${this.provincesBaseUrl}/api/v1/w/${wardCode}`, {
+        timeout: 15000,
+      });
+      ward = wardResponse.data;
+      cache.set(wardKey, ward);
+    }
+
+    let district: any = null;
+    if (ward?.district_code) {
+      const districtKey = `v1:d:${ward.district_code}`;
+      district = cache.get(districtKey);
+      if (!district) {
+        const districtResponse = await axios.get(
+          `${this.provincesBaseUrl}/api/v1/d/${ward.district_code}`,
+          {
+            timeout: 15000,
+          },
+        );
+        district = districtResponse.data;
+        cache.set(districtKey, district);
+      }
+    }
+
+    let province: any = null;
+    if (district?.province_code) {
+      const provinceKey = `v1:p:${district.province_code}`;
+      province = cache.get(provinceKey);
+      if (!province) {
+        const provinceResponse = await axios.get(
+          `${this.provincesBaseUrl}/api/v1/p/${district.province_code}`,
+          {
+            timeout: 15000,
+          },
+        );
+        province = provinceResponse.data;
+        cache.set(provinceKey, province);
+      }
+    }
+
+    const wardName = ward?.name ?? null;
+    const districtName = district?.name ?? null;
+    const provinceName = province?.name ?? null;
+    const fullAddress = [wardName, districtName, provinceName]
+      .filter(Boolean)
+      .join(', ');
+
+    return {
+      wardCode,
+      wardName,
+      districtCode: ward?.district_code ?? null,
+      districtName,
+      provinceCode: district?.province_code ?? null,
+      provinceName,
+      fullAddress,
+    };
+  }
 
   /**
    * Search apartments with filters and pagination
@@ -14,8 +178,7 @@ export class ApartmentsService {
    */
   async search(searchDto: SearchApartmentDto) {
     const {
-      city,
-      district,
+      wardCode,
       keyword,
       addressType = 'both',
       minBedrooms,
@@ -32,31 +195,18 @@ export class ApartmentsService {
       sortOrder = 'desc',
     } = searchDto;
 
-    // Build address filter based on addressType
+    // Build ward-code filter based on addressType
     const addressFilters: Prisma.ApartmentWhereInput[] = [];
 
-    if (city || district) {
+    if (wardCode !== undefined) {
       if (addressType === 'new' || addressType === 'both') {
         addressFilters.push({
-          ...(city && {
-            city: { contains: city, mode: 'insensitive' as const },
-          }),
-          ...(district && {
-            district: { contains: district, mode: 'insensitive' as const },
-          }),
+          newWardCode: wardCode,
         });
       }
       if (addressType === 'old' || addressType === 'both') {
         addressFilters.push({
-          ...(city && {
-            oldCity: { contains: city, mode: 'insensitive' as const },
-          }),
-          ...(district && {
-            oldDistrict: {
-              contains: district,
-              mode: 'insensitive' as const,
-            },
-          }),
+          oldWardCode: wardCode,
         });
       }
     }
@@ -80,7 +230,10 @@ export class ApartmentsService {
             },
           },
           {
-            address: { contains: keyword, mode: 'insensitive' as const },
+            apartmentNumber: {
+              contains: keyword,
+              mode: 'insensitive' as const,
+            },
           },
           {
             description: {
@@ -124,7 +277,6 @@ export class ApartmentsService {
       buildingName: true,
       apartmentNumber: true,
       floorNumber: true,
-      address: true,
       totalArea: true,
       numberOfBedrooms: true,
       numberOfBathrooms: true,
@@ -138,12 +290,10 @@ export class ApartmentsService {
 
     // Include only relevant address fields based on addressType
     if (addressType === 'new' || addressType === 'both') {
-      apartmentSelect.city = true;
-      apartmentSelect.district = true;
+      apartmentSelect.newWardCode = true;
     }
     if (addressType === 'old' || addressType === 'both') {
-      apartmentSelect.oldCity = true;
-      apartmentSelect.oldDistrict = true;
+      apartmentSelect.oldWardCode = true;
     }
 
     const [apartments, total] = await Promise.all([
@@ -157,8 +307,40 @@ export class ApartmentsService {
       this.prisma.apartment.count({ where }),
     ]);
 
+    const lookupCache = new Map<string, any>();
+    const items = await Promise.all(
+      apartments.map(async (apartment: any) => {
+        const includeNew = addressType === 'new' || addressType === 'both';
+        const includeOld = addressType === 'old' || addressType === 'both';
+
+        const newAddress =
+          includeNew && apartment.newWardCode != null
+            ? await this.resolveNewWardAddress(apartment.newWardCode, lookupCache)
+            : null;
+
+        const oldAddress =
+          includeOld && apartment.oldWardCode != null
+            ? await this.resolveOldWardAddress(apartment.oldWardCode, lookupCache)
+            : null;
+
+        const displayAddress =
+          addressType === 'new'
+            ? (newAddress?.fullAddress ?? null)
+            : addressType === 'old'
+              ? (oldAddress?.fullAddress ?? null)
+              : (newAddress?.fullAddress ?? oldAddress?.fullAddress ?? null);
+
+        return {
+          ...apartment,
+          newAddress,
+          oldAddress,
+          displayAddress,
+        };
+      }),
+    );
+
     return {
-      items: apartments,
+      items,
       total,
       page,
       limit,
@@ -226,13 +408,8 @@ export class ApartmentsService {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
       floorNumber: createDto.floorNumber,
-      address: createDto.address,
-      city: createDto.city,
-      district: createDto.district,
-      ward: createDto.ward,
-      oldCity: createDto.oldCity,
-      oldDistrict: createDto.oldDistrict,
-      oldWard: createDto.oldWard,
+      newWardCode: createDto.newWardCode,
+      oldWardCode: createDto.oldWardCode,
       latitude: createDto.latitude,
       longitude: createDto.longitude,
       totalArea: createDto.totalArea,
@@ -262,9 +439,8 @@ export class ApartmentsService {
       select: {
         id: true,
         apartmentNumber: true,
-        address: true,
-        city: true,
-        district: true,
+        newWardCode: true,
+        oldWardCode: true,
         baseRentPrice: true,
         status: true,
         createdAt: true,
@@ -300,9 +476,8 @@ export class ApartmentsService {
       select: {
         id: true,
         apartmentNumber: true,
-        address: true,
-        city: true,
-        district: true,
+        newWardCode: true,
+        oldWardCode: true,
         baseRentPrice: true,
         status: true,
         updatedAt: true,
@@ -344,9 +519,8 @@ export class ApartmentsService {
         id: true,
         buildingName: true,
         apartmentNumber: true,
-        address: true,
-        city: true,
-        district: true,
+        newWardCode: true,
+        oldWardCode: true,
         numberOfBedrooms: true,
         baseRentPrice: true,
         status: true,

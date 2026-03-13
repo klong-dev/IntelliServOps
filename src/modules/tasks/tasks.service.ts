@@ -47,7 +47,12 @@ export class TasksService {
           select: { id: true, fullName: true },
         },
         apartment: {
-          select: { id: true, apartmentNumber: true, address: true },
+          select: {
+            id: true,
+            apartmentNumber: true,
+            newWardCode: true,
+            oldWardCode: true,
+          },
         },
       },
       orderBy: [
@@ -72,8 +77,8 @@ export class TasksService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
-            city: true,
+            newWardCode: true,
+            oldWardCode: true,
           },
         },
         maintenanceRequest: {

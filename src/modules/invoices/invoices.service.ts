@@ -38,7 +38,11 @@ export class InvoicesService {
             id: true,
             contractNumber: true,
             apartment: {
-              select: { apartmentNumber: true, address: true },
+              select: {
+                apartmentNumber: true,
+                newWardCode: true,
+                oldWardCode: true,
+              },
             },
           },
         },
@@ -54,7 +58,11 @@ export class InvoicesService {
         rentalContract: {
           include: {
             apartment: {
-              select: { apartmentNumber: true, address: true, city: true },
+              select: {
+                apartmentNumber: true,
+                newWardCode: true,
+                oldWardCode: true,
+              },
             },
             members: {
               include: {
@@ -82,7 +90,7 @@ export class InvoicesService {
     // Restrict users to their own invoices
     if (currentUser.actorType === 'user') {
       const isMember = invoice.rentalContract.members.some(
-        m => m.user.id === currentUser.sub,
+        (m) => m.user.id === currentUser.sub,
       );
       if (!isMember) {
         throw new NotFoundException('Invoice not found');
@@ -160,7 +168,9 @@ export class InvoicesService {
     const now = new Date();
     return this.prisma.invoice.updateMany({
       where: {
-        status: { in: [InvoiceStatus.draft, InvoiceStatus.issued, InvoiceStatus.sent] },
+        status: {
+          in: [InvoiceStatus.draft, InvoiceStatus.issued, InvoiceStatus.sent],
+        },
         dueDate: { lt: now },
       },
       data: { status: InvoiceStatus.overdue },

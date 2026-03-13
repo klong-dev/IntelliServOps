@@ -42,7 +42,12 @@ export class IoTService {
         isControllableByTenant: true,
         lastOnlineAt: true,
         apartment: {
-          select: { id: true, apartmentNumber: true, address: true },
+          select: {
+            id: true,
+            apartmentNumber: true,
+            newWardCode: true,
+            oldWardCode: true,
+          },
         },
         room: {
           select: { id: true, roomNumber: true, roomType: true },
@@ -60,8 +65,8 @@ export class IoTService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
-            city: true,
+            newWardCode: true,
+            oldWardCode: true,
           },
         },
         room: {
@@ -278,7 +283,12 @@ export class IoTService {
         ratePerUnit: true,
         status: true,
         apartment: {
-          select: { id: true, apartmentNumber: true, address: true },
+          select: {
+            id: true,
+            apartmentNumber: true,
+            newWardCode: true,
+            oldWardCode: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -290,7 +300,12 @@ export class IoTService {
       where: { id },
       include: {
         apartment: {
-          select: { id: true, apartmentNumber: true, address: true },
+          select: {
+            id: true,
+            apartmentNumber: true,
+            newWardCode: true,
+            oldWardCode: true,
+          },
         },
         readings: {
           take: 12,

@@ -125,8 +125,8 @@ export class ContractsService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
-            city: true,
+            newWardCode: true,
+            oldWardCode: true,
           },
         },
         members: {
@@ -170,9 +170,8 @@ export class ContractsService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
-            city: true,
-            district: true,
+            newWardCode: true,
+            oldWardCode: true,
             numberOfBedrooms: true,
             numberOfBathrooms: true,
             totalArea: true,

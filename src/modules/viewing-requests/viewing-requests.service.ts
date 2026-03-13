@@ -29,8 +29,6 @@ export class ViewingRequestsService {
       select: {
         id: true,
         apartmentNumber: true,
-        city: true,
-        district: true,
         status: true,
       },
     });
@@ -59,11 +57,8 @@ export class ViewingRequestsService {
       });
     }
 
-    // Find best matching staff (same district > same city > any active)
-    const assignedStaff = await this.findBestMatchingStaff(
-      apartment.city,
-      apartment.district,
-    );
+    // Find active staff (location-based matching removed after address schema refactor)
+    const assignedStaff = await this.findBestMatchingStaff();
 
     // Create contact request
     const contactRequest = await this.prisma.contactRequest.create({
@@ -92,9 +87,8 @@ export class ViewingRequestsService {
         apartment: {
           select: {
             apartmentNumber: true,
-            address: true,
-            city: true,
-            district: true,
+            newWardCode: true,
+            oldWardCode: true,
           },
         },
       },
@@ -130,19 +124,13 @@ export class ViewingRequestsService {
       throw new NotFoundException('Staff not found');
     }
 
-    // Find contact requests in staff's working area
+    // Find contact requests to be handled by staff
     const where: any = {
       status: {
         in: [ContactRequestStatus.new, ContactRequestStatus.contacted],
       },
       apartmentId: { not: null },
     };
-
-    if (staff.workingDistrict) {
-      where.apartment = { is: { district: staff.workingDistrict } };
-    } else if (staff.workingCity) {
-      where.apartment = { is: { city: staff.workingCity } };
-    }
 
     return this.prisma.contactRequest.findMany({
       where,
@@ -159,9 +147,8 @@ export class ViewingRequestsService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
-            city: true,
-            district: true,
+            newWardCode: true,
+            oldWardCode: true,
           },
         },
       },
@@ -242,7 +229,11 @@ export class ViewingRequestsService {
         durationMinutes: true,
         status: true,
         apartment: {
-          select: { apartmentNumber: true, address: true },
+          select: {
+            apartmentNumber: true,
+            newWardCode: true,
+            oldWardCode: true,
+          },
         },
         assignedStaff: {
           select: { fullName: true, phone: true },
@@ -295,33 +286,9 @@ export class ViewingRequestsService {
   }
 
   /**
-   * Find best matching staff based on proximity to apartment location.
-   * Priority: Same district > Same city > Any active staff
+   * Find available active staff
    */
-  private async findBestMatchingStaff(city: string, district: string) {
-    // First try: Same district
-    let staff = await this.prisma.staff.findFirst({
-      where: {
-        isActive: true,
-        workingDistrict: district,
-      },
-      select: { id: true, fullName: true, phone: true },
-    });
-
-    if (staff) return staff;
-
-    // Second try: Same city
-    staff = await this.prisma.staff.findFirst({
-      where: {
-        isActive: true,
-        workingCity: city,
-      },
-      select: { id: true, fullName: true, phone: true },
-    });
-
-    if (staff) return staff;
-
-    // Fallback: Any active staff
+  private async findBestMatchingStaff() {
     return this.prisma.staff.findFirst({
       where: { isActive: true },
       select: { id: true, fullName: true, phone: true },

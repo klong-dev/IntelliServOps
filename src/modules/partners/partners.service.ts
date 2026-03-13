@@ -61,8 +61,8 @@ export class PartnersService {
           select: {
             id: true,
             apartmentNumber: true,
-            address: true,
-            city: true,
+            newWardCode: true,
+            oldWardCode: true,
             status: true,
           },
         },

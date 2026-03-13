@@ -31,7 +31,11 @@ export class MaintenanceService {
         createdAt: true,
         preferredDate: true,
         apartment: {
-          select: { apartmentNumber: true, address: true },
+          select: {
+            apartmentNumber: true,
+            newWardCode: true,
+            oldWardCode: true,
+          },
         },
       },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'desc' }],
@@ -43,7 +47,11 @@ export class MaintenanceService {
       where: { id },
       include: {
         apartment: {
-          select: { apartmentNumber: true, address: true, city: true },
+          select: {
+            apartmentNumber: true,
+            newWardCode: true,
+            oldWardCode: true,
+          },
         },
         room: {
           select: { roomNumber: true, roomType: true },
@@ -72,7 +80,9 @@ export class MaintenanceService {
     });
 
     if (!activeContract && currentUser.actorType === 'user') {
-      throw new NotFoundException('No active contract found for this apartment');
+      throw new NotFoundException(
+        'No active contract found for this apartment',
+      );
     }
 
     return this.prisma.maintenanceRequest.create({

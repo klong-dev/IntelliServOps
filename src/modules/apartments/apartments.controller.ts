@@ -79,7 +79,9 @@ export class ApartmentsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
   @ApiOperation({ summary: 'Update apartment' })
-  @ApiJsonResponse(ApartmentMutationResultDto, { description: 'Apartment updated' })
+  @ApiJsonResponse(ApartmentMutationResultDto, {
+    description: 'Apartment updated',
+  })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -93,7 +95,9 @@ export class ApartmentsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Delete apartment (soft delete)' })
-  @ApiJsonResponse(ApartmentStatusResultDto, { description: 'Apartment deactivated' })
+  @ApiJsonResponse(ApartmentStatusResultDto, {
+    description: 'Apartment deactivated',
+  })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.apartmentsService.remove(id);
@@ -115,7 +119,9 @@ export class ApartmentsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Approve apartment' })
-  @ApiJsonResponse(ApartmentStatusResultDto, { description: 'Apartment approved' })
+  @ApiJsonResponse(ApartmentStatusResultDto, {
+    description: 'Apartment approved',
+  })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
