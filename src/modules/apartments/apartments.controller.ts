@@ -39,7 +39,8 @@ export class ApartmentsController {
   @Public()
   @ApiOperation({
     summary: 'Search apartments',
-    description: 'Public endpoint to search available apartments with filters',
+    description:
+      'Public endpoint to search apartments with filters. If status is not provided, all statuses are returned.',
   })
   @ApiJsonResponse(ApartmentListItemDto, {
     isArray: true,
