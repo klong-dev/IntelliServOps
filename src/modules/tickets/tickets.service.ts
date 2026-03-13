@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTicketDto, UpdateTicketDto } from './dto';
 import { TicketStatus, Priority, Prisma } from '@prisma/client';
@@ -57,7 +61,13 @@ export class TicketsService {
         rentalContract: {
           select: {
             contractNumber: true,
-            apartment: { select: { apartmentNumber: true, address: true } },
+            apartment: {
+              select: {
+                apartmentNumber: true,
+                newWardCode: true,
+                oldWardCode: true,
+              },
+            },
           },
         },
       },
@@ -83,7 +93,9 @@ export class TicketsService {
       });
 
       if (!activeContract) {
-        throw new BadRequestException('No active contract found. Please provide rentalContractId.');
+        throw new BadRequestException(
+          'No active contract found. Please provide rentalContractId.',
+        );
       }
       rentalContractId = activeContract.id;
     }

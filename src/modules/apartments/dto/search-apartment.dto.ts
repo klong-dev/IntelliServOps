@@ -8,19 +8,19 @@ import {
   Max,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import { ApartmentStatus, FurnishingStatus } from '@prisma/client';
 
 export class SearchApartmentDto {
-  @ApiPropertyOptional({ example: 'Ho Chi Minh' })
-  @IsString()
+  @ApiPropertyOptional({
+    example: 26728,
+    description:
+      'Ward code filter. Uses newWardCode when addressType=new, oldWardCode when addressType=old, both when addressType=both',
+  })
+  @IsInt()
   @IsOptional()
-  city?: string;
-
-  @ApiPropertyOptional({ example: 'Binh Thanh' })
-  @IsString()
-  @IsOptional()
-  district?: string;
+  @Type(() => Number)
+  wardCode?: number;
 
   @ApiPropertyOptional({
     example: 'new',

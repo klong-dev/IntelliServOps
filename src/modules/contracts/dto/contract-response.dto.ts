@@ -9,11 +9,11 @@ class ContractApartmentDto {
   @ApiProperty({ example: 'A101' })
   apartmentNumber: string;
 
-  @ApiProperty({ example: '123 Nguyen Hue, Q1' })
-  address: string;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
+  newWardCode: number | null;
 
-  @ApiProperty({ example: 'Ho Chi Minh' })
-  city: string;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 26731 })
+  oldWardCode: number | null;
 }
 
 class ContractMemberUserDto {
@@ -167,7 +167,9 @@ export class ContractDetailDto {
   @ApiProperty({ example: true })
   hasPdf: boolean;
 
-  @ApiProperty({ example: '/contracts/9fbc9e7e-5a4d-4f38-9ba8-cc96af4f0eaf/pdf' })
+  @ApiProperty({
+    example: '/contracts/9fbc9e7e-5a4d-4f38-9ba8-cc96af4f0eaf/pdf',
+  })
   pdfUrl: string;
 
   @ApiPropertyOptional({ type: Date, nullable: true })

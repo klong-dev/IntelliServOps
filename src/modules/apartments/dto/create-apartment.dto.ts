@@ -8,12 +8,11 @@ import {
   Min,
   Max,
   IsArray,
-  IsDecimal,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
-import { FurnishingStatus, ApartmentStatus } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { FurnishingStatus } from '@prisma/client';
 
 export class CreateApartmentDto {
   @ApiPropertyOptional({ example: 'Vinhomes Central Park' })
@@ -34,53 +33,21 @@ export class CreateApartmentDto {
   @Max(200)
   floorNumber?: number;
 
-  @ApiProperty({ example: '208 Nguyen Huu Canh, Binh Thanh' })
-  @IsString()
-  @MaxLength(500)
-  address: string;
-
-  @ApiProperty({ example: 'Ho Chi Minh' })
-  @IsString()
-  @MaxLength(100)
-  city: string;
-
-  @ApiProperty({ example: 'Binh Thanh' })
-  @IsString()
-  @MaxLength(100)
-  district: string;
-
-  @ApiPropertyOptional({ example: 'Ward 22' })
-  @IsString()
+  @ApiPropertyOptional({
+    example: 26728,
+    description: 'Mã phường/xã sau sáp nhập (v2)',
+  })
+  @IsInt()
   @IsOptional()
-  @MaxLength(100)
-  ward?: string;
+  newWardCode?: number;
 
   @ApiPropertyOptional({
-    example: 'Thành phố Hồ Chí Minh',
-    description: 'Tỉnh/Thành phố (trước sáp nhập)',
+    example: 26731,
+    description: 'Mã phường/xã trước sáp nhập (v1)',
   })
-  @IsString()
+  @IsInt()
   @IsOptional()
-  @MaxLength(100)
-  oldCity?: string;
-
-  @ApiPropertyOptional({
-    example: 'Quận 9',
-    description: 'Quận/Huyện (trước sáp nhập)',
-  })
-  @IsString()
-  @IsOptional()
-  @MaxLength(100)
-  oldDistrict?: string;
-
-  @ApiPropertyOptional({
-    example: 'Phường Long Thạnh Mỹ',
-    description: 'Phường/Xã (trước sáp nhập)',
-  })
-  @IsString()
-  @IsOptional()
-  @MaxLength(100)
-  oldWard?: string;
+  oldWardCode?: number;
 
   @ApiPropertyOptional({ example: 10.8012 })
   @IsNumber()
