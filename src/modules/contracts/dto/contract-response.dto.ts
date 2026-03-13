@@ -53,6 +53,28 @@ class ContractMemberDto {
   user: ContractMemberUserDto;
 }
 
+class ContractListMemberUserDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Nguyen Van A' })
+  fullName: string;
+
+  @ApiProperty({ example: 'user@example.com' })
+  email: string;
+}
+
+class ContractListMemberDto {
+  @ApiProperty({ type: ContractListMemberUserDto })
+  user: ContractListMemberUserDto;
+
+  @ApiProperty({ example: 'primary' })
+  memberType: string;
+
+  @ApiProperty()
+  isPrimaryContact: boolean;
+}
+
 // ─── Contract List Item DTO (findAll) ───────────────────────────────
 
 export class ContractListItemDto {
@@ -89,6 +111,9 @@ export class ContractListItemDto {
 
   @ApiProperty({ type: ContractApartmentDto })
   apartment: ContractApartmentDto;
+
+  @ApiProperty({ type: [ContractListMemberDto] })
+  members: ContractListMemberDto[];
 }
 
 // ─── Contract Detail DTO (findOne) ──────────────────────────────────
