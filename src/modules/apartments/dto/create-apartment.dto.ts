@@ -87,7 +87,7 @@ export class CreateApartmentDto {
   @IsOptional()
   latitude?: number;
 
-  @ApiPropertyOptional({ example: 106.7200 })
+  @ApiPropertyOptional({ example: 106.72 })
   @IsNumber()
   @IsOptional()
   longitude?: number;

@@ -77,6 +77,19 @@ export class ContractListItemDto {
   @ApiProperty()
   createdAt: Date;
 
+  @ApiProperty({ example: true })
+  hasPdf: boolean;
+
+  @ApiProperty({ example: '/contracts/9fbc9e7e-5a4d-4f38-9ba8-cc96af4f0eaf/pdf' })
+  pdfUrl: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '/contracts/pdf/view?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+  })
+  publicPdfUrl: string | null;
+
   @ApiProperty({ type: ContractApartmentDto })
   apartment: ContractApartmentDto;
 }
@@ -128,6 +141,12 @@ export class ContractDetailDto {
 
   @ApiPropertyOptional({ type: String, nullable: true })
   contractDocumentUrl: string | null;
+
+  @ApiProperty({ example: true })
+  hasPdf: boolean;
+
+  @ApiProperty({ example: '/contracts/9fbc9e7e-5a4d-4f38-9ba8-cc96af4f0eaf/pdf' })
+  pdfUrl: string;
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;

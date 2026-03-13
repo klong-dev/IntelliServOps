@@ -210,6 +210,9 @@ export class PartnersService {
       this.logger.error(
         `FPT AI verification error for partner ${partnerId}: ${error.message}`,
       );
+      throw new BadRequestException(
+        error?.message || 'Không thể xác thực CCCD bằng AI lúc này',
+      );
     }
 
     // Merge extracted info from front and back

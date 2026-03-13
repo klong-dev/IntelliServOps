@@ -2,8 +2,17 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ViewingRequestsService } from './viewing-requests.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { createPrismaMock, mockStaffJwtPayload } from '../../test-utils';
-import { ContactRequestStatus, AppointmentStatus, PreferredContactMethod, ContactSource } from '@prisma/client';
-import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  ContactRequestStatus,
+  AppointmentStatus,
+  PreferredContactMethod,
+  ContactSource,
+} from '@prisma/client';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 
 describe('ViewingRequestsService', () => {
   let service: ViewingRequestsService;
@@ -60,9 +69,18 @@ describe('ViewingRequestsService', () => {
     };
 
     it('should create viewing request and assign matching staff', async () => {
-      const apartment = { id: 'apt-123', city: 'Hồ Chí Minh', district: 'Quận 1', status: 'available' };
+      const apartment = {
+        id: 'apt-123',
+        city: 'Hồ Chí Minh',
+        district: 'Quận 1',
+        status: 'available',
+      };
       const guest = { id: 'guest-123', email: 'john@example.com' };
-      const staff = { id: 'staff-123', fullName: 'Staff One', phone: '+84909000001' };
+      const staff = {
+        id: 'staff-123',
+        fullName: 'Staff One',
+        phone: '+84909000001',
+      };
 
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
       prisma.guest.findUnique.mockResolvedValue(null);
@@ -74,7 +92,12 @@ describe('ViewingRequestsService', () => {
         phone: '+84909123456',
         email: 'john@example.com',
         status: ContactRequestStatus.new,
-        apartment: { apartmentNumber: 'A101', address: '123 Main', city: 'HCM', district: 'Q1' },
+        apartment: {
+          apartmentNumber: 'A101',
+          address: '123 Main',
+          city: 'HCM',
+          district: 'Q1',
+        },
       } as any);
 
       const result = await service.create(createDto as any);
@@ -86,21 +109,33 @@ describe('ViewingRequestsService', () => {
     it('should throw NotFoundException if apartment not found', async () => {
       prisma.apartment.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(createDto as any)).rejects.toThrow(NotFoundException);
+      await expect(service.create(createDto as any)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw BadRequestException if apartment not available', async () => {
-      const apartment = { id: 'apt-123', city: 'HCM', district: 'Q1', status: 'rented' };
+      const apartment = {
+        id: 'apt-123',
+        city: 'HCM',
+        district: 'Q1',
+        status: 'rented',
+      };
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
 
-      await expect(service.create(createDto as any)).rejects.toThrow(BadRequestException);
+      await expect(service.create(createDto as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
   describe('getMyAssigned', () => {
     it('should return requests for staff working area', async () => {
       const staff = mockStaffJwtPayload();
-      const staffData = { workingCity: 'Hồ Chí Minh', workingDistrict: 'Quận 1' };
+      const staffData = {
+        workingCity: 'Hồ Chí Minh',
+        workingDistrict: 'Quận 1',
+      };
       const requests = [mockContactRequest()];
 
       prisma.staff.findUnique.mockResolvedValue(staffData as any);
@@ -115,7 +150,9 @@ describe('ViewingRequestsService', () => {
       const staff = mockStaffJwtPayload();
       prisma.staff.findUnique.mockResolvedValue(null);
 
-      await expect(service.getMyAssigned(staff)).rejects.toThrow(NotFoundException);
+      await expect(service.getMyAssigned(staff)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -144,7 +181,11 @@ describe('ViewingRequestsService', () => {
       prisma.appointment.create.mockResolvedValue(mockAppointment() as any);
       prisma.contactRequest.update.mockResolvedValue({} as any);
 
-      const result = await service.createAppointment('contact-123', createDto as any, staff);
+      const result = await service.createAppointment(
+        'contact-123',
+        createDto as any,
+        staff,
+      );
 
       expect(result.id).toBe('appt-123');
     });
@@ -165,16 +206,18 @@ describe('ViewingRequestsService', () => {
       prisma.contactRequest.findUnique.mockResolvedValue(contactRequest as any);
       prisma.appointment.count.mockResolvedValue(3); // Already full
 
-      await expect(service.createAppointment('contact-123', createDto as any, staff))
-        .rejects.toThrow(ConflictException);
+      await expect(
+        service.createAppointment('contact-123', createDto as any, staff),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should throw NotFoundException if contact request not found', async () => {
       const staff = mockStaffJwtPayload();
       prisma.contactRequest.findUnique.mockResolvedValue(null);
 
-      await expect(service.createAppointment('non-existent', createDto as any, staff))
-        .rejects.toThrow(NotFoundException);
+      await expect(
+        service.createAppointment('non-existent', createDto as any, staff),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException if no apartment', async () => {
@@ -183,8 +226,9 @@ describe('ViewingRequestsService', () => {
 
       prisma.contactRequest.findUnique.mockResolvedValue(contactRequest as any);
 
-      await expect(service.createAppointment('contact-123', createDto as any, staff))
-        .rejects.toThrow(BadRequestException);
+      await expect(
+        service.createAppointment('contact-123', createDto as any, staff),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -193,7 +237,10 @@ describe('ViewingRequestsService', () => {
       const appointments = [mockAppointment()];
       prisma.appointment.findMany.mockResolvedValue(appointments as any);
 
-      const result = await service.getApartmentAppointments('apt-123', '2026-02-15');
+      const result = await service.getApartmentAppointments(
+        'apt-123',
+        '2026-02-15',
+      );
 
       expect(result).toEqual(appointments);
     });

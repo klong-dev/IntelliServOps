@@ -110,7 +110,7 @@ export class ContractsService {
       };
     }
 
-    return this.prisma.rentalContract.findMany({
+    const contracts = await this.prisma.rentalContract.findMany({
       where,
       select: {
         id: true,
@@ -120,6 +120,7 @@ export class ContractsService {
         monthlyRent: true,
         status: true,
         createdAt: true,
+        contractPdfData: true,
         apartment: {
           select: {
             id: true,
@@ -144,6 +145,12 @@ export class ContractsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return contracts.map(({ contractPdfData, ...contract }) => ({
+      ...contract,
+      hasPdf: !!contractPdfData,
+      pdfUrl: `/contracts/${contract.id}/pdf`,
+    }));
   }
 
   /**
@@ -215,13 +222,13 @@ export class ContractsService {
     const { contractPdfData, landlordSignature, tenantSignature, ...rest } =
       contract as any;
 
-    // Generate signed PDF URL token if PDF exists
     const pdfToken = contractPdfData ? this.generatePdfToken(id) : null;
 
     return {
       ...rest,
       hasPdf: !!contractPdfData,
-      pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+      pdfUrl: `/contracts/${id}/pdf`,
+      publicPdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
       hasLandlordSignature: !!landlordSignature,
       hasTenantSignature: !!tenantSignature,
     };

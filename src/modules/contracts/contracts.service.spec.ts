@@ -50,7 +50,17 @@ describe('ContractsService', () => {
 
       const result = await service.findAll(admin);
 
-      expect(result).toEqual(contracts);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({
+        id: 'contract-123',
+        hasPdf: false,
+        pdfUrl: '/contracts/contract-123/pdf',
+      });
+      expect(result[1]).toMatchObject({
+        id: 'contract-124',
+        hasPdf: false,
+        pdfUrl: '/contracts/contract-124/pdf',
+      });
     });
 
     it('should return only user own contracts', async () => {
@@ -60,7 +70,12 @@ describe('ContractsService', () => {
 
       const result = await service.findAll(user);
 
-      expect(result).toEqual(contracts);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'contract-123',
+        hasPdf: false,
+        pdfUrl: '/contracts/contract-123/pdf',
+      });
       expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -92,7 +107,12 @@ describe('ContractsService', () => {
 
       const result = await service.findOne('contract-123', admin);
 
-      expect(result).toEqual(contract);
+      expect(result).toMatchObject({
+        id: 'contract-123',
+        hasPdf: false,
+        pdfUrl: '/contracts/contract-123/pdf',
+        publicPdfUrl: null,
+      });
     });
 
     it('should throw NotFoundException if not found', async () => {
