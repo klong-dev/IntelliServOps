@@ -79,7 +79,11 @@ export class SearchApartmentDto {
   @IsOptional()
   furnishingStatus?: FurnishingStatus;
 
-  @ApiPropertyOptional({ enum: ApartmentStatus })
+  @ApiPropertyOptional({
+    enum: ApartmentStatus,
+    description:
+      'Apartment status filter. If omitted, returns apartments of all statuses.',
+  })
   @IsEnum(ApartmentStatus)
   @IsOptional()
   status?: ApartmentStatus;

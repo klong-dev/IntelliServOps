@@ -10,7 +10,7 @@ export class ApartmentsService {
 
   /**
    * Search apartments with filters and pagination
-   * Public access for available apartments
+   * By default returns all statuses unless status filter is provided
    */
   async search(searchDto: SearchApartmentDto) {
     const {
@@ -25,7 +25,7 @@ export class ApartmentsService {
       minArea,
       maxArea,
       furnishingStatus,
-      status = ApartmentStatus.available,
+      status,
       page = 1,
       limit = 20,
       sortBy = 'createdAt',
@@ -93,7 +93,7 @@ export class ApartmentsService {
     }
 
     const where: Prisma.ApartmentWhereInput = {
-      status,
+      ...(status && { status }),
       ...(andConditions.length > 0 && { AND: andConditions }),
       ...((minBedrooms !== undefined || maxBedrooms !== undefined) && {
         numberOfBedrooms: {
