@@ -312,7 +312,7 @@ export class ContractsService {
       contractPdfData: new Uint8Array(contractPdf.buffer),
       status: ContractStatus.signed,
     };
-
+    // lo lo
     if (body?.signedDate) {
       updateData.signedDate = new Date(body.signedDate);
     }
