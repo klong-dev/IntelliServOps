@@ -10,6 +10,10 @@ import {
   ParseUUIDPipe,
   NotFoundException,
   StreamableFile,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  UsePipes,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,16 +22,21 @@ import {
   ApiBearerAuth,
   ApiQuery,
   ApiProduces,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ContractsService } from './contracts.service';
 import {
   CreateContractDto,
   UpdateContractDto,
   ContractListItemDto,
   ContractDetailDto,
+  UploadContractPdfDto,
 } from './dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
+import { FileUploadPipe } from '../../common/pipes';
 import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
@@ -114,6 +123,40 @@ export class ContractsController {
     });
 
     return new StreamableFile(pdfData.buffer);
+  }
+
+  @Post(':id/upload')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @UsePipes(FileUploadPipe)
+  @UseInterceptors(FileInterceptor('contractPdf'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Upload a signed contract PDF file',
+    type: UploadContractPdfDto,
+  })
+  @ApiOperation({ summary: 'Upload signed contract PDF' })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Signed contract PDF uploaded',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid or missing PDF file' })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({ status: 409, description: 'Contract PDF already uploaded' })
+  async uploadSignedPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() contractPdf: any,
+    @Body() body: UploadContractPdfDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    if (!contractPdf) {
+      throw new BadRequestException('Signed contract PDF is required');
+    }
+
+    return this.contractsService.uploadSignedPdf(
+      id,
+      contractPdf,
+      currentUser,
+      body,
+    );
   }
 
   @Post()

@@ -62,6 +62,9 @@ export class UsersController {
   @Get('profile')
   @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Get my profile' })
+  @ApiJsonResponse(UserDetailDto, {
+    description: 'User/Staff/Operator/Admin profile',
+  })
   @ApiResponse({
     status: 200,
     description: 'User/Staff/Operator/Admin profile',
