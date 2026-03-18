@@ -102,6 +102,7 @@ enum RoomStatus {
 enum ContractStatus {
   draft
   pending
+  signed
   active
   expired
   terminated

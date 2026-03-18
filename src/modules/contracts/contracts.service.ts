@@ -308,12 +308,9 @@ export class ContractsService {
       throw new NotFoundException('Contract not found');
     }
 
-    if (contract.contractPdfData) {
-      throw new ConflictException('Contract PDF already uploaded');
-    }
-
     const updateData: Prisma.RentalContractUpdateInput = {
       contractPdfData: new Uint8Array(contractPdf.buffer),
+      status: ContractStatus.signed,
     };
 
     if (body?.signedDate) {
@@ -354,7 +351,7 @@ export class ContractsService {
     const overlapping = await this.prisma.rentalContract.findFirst({
       where: {
         apartmentId: createDto.apartmentId,
-        status: { in: ['active', 'pending'] },
+        status: { in: ['active', 'pending', 'signed'] },
         OR: [
           {
             startDate: { lte: new Date(createDto.endDate) },
@@ -437,7 +434,8 @@ export class ContractsService {
 
     // Prevent editing active/signed contracts (except status changes)
     if (
-      contract.status === ContractStatus.active &&
+      (contract.status === ContractStatus.active ||
+        contract.status === ContractStatus.signed) &&
       updateDto.status !== ContractStatus.terminated
     ) {
       throw new ConflictException('Cannot modify active contract');
@@ -483,8 +481,13 @@ export class ContractsService {
       throw new NotFoundException('Contract not found');
     }
 
-    if (contract.status !== ContractStatus.pending) {
-      throw new ConflictException('Contract must be pending to activate');
+    if (
+      contract.status !== ContractStatus.pending &&
+      contract.status !== ContractStatus.signed
+    ) {
+      throw new ConflictException(
+        'Contract must be pending or signed to activate',
+      );
     }
 
     // Update contract and apartment status in transaction

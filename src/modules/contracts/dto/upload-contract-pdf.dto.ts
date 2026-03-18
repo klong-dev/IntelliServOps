@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { Allow, IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class UploadContractPdfDto {
   @ApiProperty({
@@ -7,6 +7,7 @@ export class UploadContractPdfDto {
     format: 'binary',
     description: 'Signed contract PDF file (required)',
   })
+  @Allow()
   contractPdf: any;
 
   @ApiPropertyOptional({
