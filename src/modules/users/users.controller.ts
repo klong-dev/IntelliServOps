@@ -11,6 +11,8 @@ import {
   UseInterceptors,
   UploadedFiles,
   BadRequestException,
+  ForbiddenException,
+  NotFoundException,
   UsePipes,
 } from '@nestjs/common';
 import {
@@ -31,7 +33,6 @@ import {
   UserDetailDto,
   UserCreatedDto,
   UserUpdatedDto,
-  UserVerifiedDto,
   UserDeletedDto,
   UserIdentityDetailDto,
 } from './dto';
@@ -139,6 +140,12 @@ export class UsersController {
     },
     @CurrentUser() currentUser: JwtPayload,
   ) {
+    if (currentUser.actorType === Role.STAFF) {
+      throw new ForbiddenException('Staff cannot verify identity cards');
+    }
+    if (currentUser.actorType !== Role.USER) {
+      throw new ForbiddenException('Only users can verify identity cards');
+    }
     if (!files?.identityCardFront?.[0]) {
       throw new BadRequestException('Front identity card image is required');
     }
@@ -177,7 +184,10 @@ export class UsersController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     const user = await this.usersService.findOne(id, currentUser);
-    return user?.identity || null;
+    if (user?.identity == null) {
+      throw new NotFoundException('User chưa xác minh danh tính');
+    }
+    return user.identity;
   }
 
   @Post()
@@ -206,18 +216,6 @@ export class UsersController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.usersService.update(id, updateUserDto, currentUser);
-  }
-
-  @Patch(':id/verify')
-  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
-  @ApiOperation({ summary: 'Verify user identity (staff confirms user info)' })
-  @ApiJsonResponse(UserVerifiedDto, {
-    description: 'User verified successfully',
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  @ApiResponse({ status: 409, description: 'User is already verified' })
-  async verifyUser(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.usersService.verifyUser(id);
   }
 
   @Delete(':id')

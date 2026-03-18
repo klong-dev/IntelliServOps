@@ -294,37 +294,6 @@ export class UsersService {
   }
 
   /**
-   * Verify user identity
-   * Only STAFF, OPERATOR, ADMIN can verify users
-   */
-  async verifyUser(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    if (user.isVerified) {
-      throw new ConflictException('User is already verified');
-    }
-
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { isVerified: true },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        profileImageUrl: true,
-        isVerified: true,
-        updatedAt: true,
-      },
-    });
-  }
-
-  /**
    * Update user's identity card by uploading front + back images
    * AI extracts info from both sides - images are NOT stored in DB
    */
