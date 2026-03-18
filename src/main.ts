@@ -59,21 +59,6 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addTag('Authentication', 'Authentication endpoints')
-    .addTag('Users', 'User management endpoints')
-    .addTag('Apartments', 'Apartment listing endpoints')
-    .addTag('Contracts', 'Rental contract endpoints')
-    .addTag('Invoices', 'Invoice and billing endpoints')
-    .addTag('Payments', 'Payment processing endpoints')
-    .addTag('IoT', 'IoT device control endpoints')
-    .addTag('Maintenance', 'Maintenance request endpoints')
-    .addTag('Tickets', 'Support ticket endpoints')
-    .addTag('Tasks', 'Task management endpoints')
-    .addTag('Partners', 'Partner & property request endpoints')
-    .addTag('Notifications', 'Notification endpoints')
-    .addTag('Policies', 'Policy & legal document endpoints')
-    .addTag('Activity Logs', 'Audit trail endpoints')
-    .addTag('Viewing Requests', 'Property viewing & appointment endpoints')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -87,11 +72,11 @@ async function bootstrap() {
 
   // Disable caching for Swagger UI & API spec (fixes Cloudflare tunnel serving stale docs)
   const expressApp_noCacheMiddleware = (req: any, res: any, next: any) => {
-    if (
-      req.path.startsWith('/docs') ||
-      req.path.startsWith('/openapi')
-    ) {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    if (req.path.startsWith('/docs') || req.path.startsWith('/openapi')) {
+      res.setHeader(
+        'Cache-Control',
+        'no-store, no-cache, must-revalidate, proxy-revalidate',
+      );
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
       res.setHeader('Surrogate-Control', 'no-store');

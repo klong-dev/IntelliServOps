@@ -14,6 +14,7 @@ export interface JwtPayload {
  */
 export interface RequestUser {
   id: string;
+  sub: string;
   email: string;
   role: string;
   actorType: string;
