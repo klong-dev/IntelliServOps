@@ -126,7 +126,7 @@ export class ContractsController {
   }
 
   @Post(':id/upload')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @UsePipes(FileUploadPipe)
   @UseInterceptors(FileInterceptor('contractPdf'))
   @ApiConsumes('multipart/form-data')
