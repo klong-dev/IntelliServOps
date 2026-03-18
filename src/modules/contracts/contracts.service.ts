@@ -6,7 +6,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateContractDto, UpdateContractDto } from './dto';
+import {
+  CreateContractDto,
+  UpdateContractDto,
+  UploadContractPdfDto,
+} from './dto';
 import {
   ContractStatus,
   ApartmentStatus,
@@ -277,6 +281,55 @@ export class ContractsService {
       buffer: contract.contractPdfData,
       contractNumber: contract.contractNumber,
     };
+  }
+
+  /**
+   * Upload signed contract PDF from frontend
+   */
+  async uploadSignedPdf(
+    id: string,
+    contractPdf: any,
+    currentUser: JwtPayload,
+    body?: UploadContractPdfDto,
+  ) {
+    const validMimeTypes = ['application/pdf'];
+    if (!validMimeTypes.includes(contractPdf.mimetype)) {
+      throw new BadRequestException(
+        `Invalid PDF format. Allowed: application/pdf. Received: ${contractPdf.mimetype}`,
+      );
+    }
+
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id },
+      select: { id: true, contractPdfData: true },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (contract.contractPdfData) {
+      throw new ConflictException('Contract PDF already uploaded');
+    }
+
+    const updateData: Prisma.RentalContractUpdateInput = {
+      contractPdfData: new Uint8Array(contractPdf.buffer),
+    };
+
+    if (body?.signedDate) {
+      updateData.signedDate = new Date(body.signedDate);
+    }
+
+    if (body?.contractDocumentUrl) {
+      updateData.contractDocumentUrl = body.contractDocumentUrl;
+    }
+
+    await this.prisma.rentalContract.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return this.findOne(id, currentUser);
   }
 
   /**

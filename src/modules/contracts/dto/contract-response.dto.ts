@@ -172,6 +172,19 @@ export class ContractDetailDto {
   })
   pdfUrl: string;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '/contracts/pdf/view?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+  })
+  publicPdfUrl?: string | null;
+
+  @ApiProperty({ example: false })
+  hasLandlordSignature: boolean;
+
+  @ApiProperty({ example: false })
+  hasTenantSignature: boolean;
+
   @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;
 
