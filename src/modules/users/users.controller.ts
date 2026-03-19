@@ -24,7 +24,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { UsersService } from './users.service';
+import { UsersService, type UpdateIdentityCardResult } from './users.service';
 import {
   CreateUserDto,
   UpdateUserDto,
@@ -139,11 +139,11 @@ export class UsersController {
       identityCardBack?: any[];
     },
     @CurrentUser() currentUser: JwtPayload,
-  ) {
-    if (currentUser.actorType === Role.STAFF) {
+  ): Promise<UpdateIdentityCardResult> {
+    if (currentUser.actorType === 'staff') {
       throw new ForbiddenException('Staff cannot verify identity cards');
     }
-    if (currentUser.actorType !== Role.USER) {
+    if (currentUser.actorType !== 'user') {
       throw new ForbiddenException('Only users can verify identity cards');
     }
     if (!files?.identityCardFront?.[0]) {
@@ -153,7 +153,7 @@ export class UsersController {
       throw new BadRequestException('Back identity card image is required');
     }
 
-    return await this.usersService.updateIdentityCard(
+    return this.usersService.updateIdentityCard(
       currentUser.sub,
       files.identityCardFront[0],
       files.identityCardBack[0],

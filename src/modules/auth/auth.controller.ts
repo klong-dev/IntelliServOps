@@ -41,10 +41,17 @@ export class AuthController {
   @Public()
   @ApiOperation({
     summary: 'Register',
-    description: 'Register a new user account with email, phone, fullName and password. Phone number can start with 0 or +84. Default role is user.',
+    description:
+      'Register a new user account with email, phone, fullName and password. Phone number can start with 0 or +84. Default role is user.',
   })
-  @ApiJsonResponse(AuthResponseDto, { status: 201, description: 'Registration successful' })
-  @ApiResponse({ status: 409, description: 'Email or phone already registered' })
+  @ApiJsonResponse(AuthResponseDto, {
+    status: 201,
+    description: 'Registration successful',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Email or phone already registered',
+  })
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
@@ -71,10 +78,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Google OAuth',
-    description: 'Login or register via Google OAuth using Supabase access token.',
+    description:
+      'Login or register via Google OAuth using Supabase access token.',
   })
   @ApiJsonResponse(AuthResponseDto, { description: 'Google OAuth successful' })
-  @ApiResponse({ status: 401, description: 'Invalid or expired Google OAuth token' })
+  @ApiResponse({
+    status: 401,
+    description: 'Invalid or expired Google OAuth token',
+  })
   async googleAuth(@Body() googleAuthDto: GoogleAuthDto) {
     return this.authService.googleAuth(googleAuthDto);
   }
@@ -84,7 +95,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Get Google OAuth login URL',
-    description: 'Returns the full Supabase Google OAuth URL for frontend to open login popup/redirect.',
+    description:
+      'Returns the full Supabase Google OAuth URL for frontend to open login popup/redirect.',
   })
   @ApiResponse({ status: 200, description: 'Google OAuth URL returned' })
   @ApiResponse({ status: 400, description: 'Supabase is not configured' })
@@ -127,7 +139,9 @@ export class AuthController {
     summary: 'Forgot password',
     description: 'Request a password reset link sent to email.',
   })
-  @ApiJsonResponse(MessageResponseDto, { description: 'Reset link sent (if account exists)' })
+  @ApiJsonResponse(MessageResponseDto, {
+    description: 'Reset link sent (if account exists)',
+  })
   async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
     return this.authService.forgotPassword(forgotPasswordDto);
   }
@@ -139,7 +153,9 @@ export class AuthController {
     summary: 'Reset password',
     description: 'Reset password using the token received via email.',
   })
-  @ApiJsonResponse(MessageResponseDto, { description: 'Password reset successful' })
+  @ApiJsonResponse(MessageResponseDto, {
+    description: 'Password reset successful',
+  })
   @ApiResponse({ status: 400, description: 'Invalid or expired reset token' })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return this.authService.resetPassword(resetPasswordDto);

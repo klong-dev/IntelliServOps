@@ -14,6 +14,62 @@ class ContractApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26731 })
   oldWardCode: number | null;
+
+  @ApiPropertyOptional({
+    type: () => WardAddressDto,
+    nullable: true,
+    description: 'Resolved address from new ward code (v2)',
+  })
+  newAddress?: WardAddressDto | null;
+
+  @ApiPropertyOptional({
+    type: () => WardAddressDto,
+    nullable: true,
+    description: 'Resolved address from old ward code (v1)',
+  })
+  oldAddress?: WardAddressDto | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Display address derived from resolved ward data',
+  })
+  displayAddress?: string | null;
+}
+
+class WardAddressDto {
+  @ApiProperty({ example: 26728 })
+  wardCode: number;
+
+  @ApiPropertyOptional({ type: String, example: 'Xa Chau Pha', nullable: true })
+  wardName: string | null;
+
+  @ApiPropertyOptional({ type: Number, example: 754, nullable: true })
+  districtCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thi xa Phu My',
+    nullable: true,
+  })
+  districtName: string | null;
+
+  @ApiPropertyOptional({ type: Number, example: 79, nullable: true })
+  provinceCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thanh pho Ho Chi Minh',
+    nullable: true,
+  })
+  provinceName: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Xa Chau Pha, Thanh pho Ho Chi Minh',
+    nullable: true,
+  })
+  fullAddress: string | null;
 }
 
 class ContractMemberUserDto {

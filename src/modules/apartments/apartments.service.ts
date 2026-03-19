@@ -172,6 +172,51 @@ export class ApartmentsService {
     };
   }
 
+  async getWardAddressByCode(
+    wardCode: number,
+    addressType: 'new' | 'old' = 'new',
+    cache?: Map<string, any>,
+  ) {
+    const lookupCache = cache ?? new Map<string, any>();
+    return addressType === 'new'
+      ? this.resolveNewWardAddress(wardCode, lookupCache)
+      : this.resolveOldWardAddress(wardCode, lookupCache);
+  }
+
+  async getApartmentAddressByWardCodes(
+    newWardCode?: number | null,
+    oldWardCode?: number | null,
+    addressType: 'new' | 'old' | 'both' = 'both',
+    cache?: Map<string, any>,
+  ) {
+    const lookupCache = cache ?? new Map<string, any>();
+    const includeNew = addressType === 'new' || addressType === 'both';
+    const includeOld = addressType === 'old' || addressType === 'both';
+
+    const newAddress =
+      includeNew && newWardCode != null
+        ? await this.resolveNewWardAddress(newWardCode, lookupCache)
+        : null;
+
+    const oldAddress =
+      includeOld && oldWardCode != null
+        ? await this.resolveOldWardAddress(oldWardCode, lookupCache)
+        : null;
+
+    const displayAddress =
+      addressType === 'new'
+        ? (newAddress?.fullAddress ?? null)
+        : addressType === 'old'
+          ? (oldAddress?.fullAddress ?? null)
+          : (newAddress?.fullAddress ?? oldAddress?.fullAddress ?? null);
+
+    return {
+      newAddress,
+      oldAddress,
+      displayAddress,
+    };
+  }
+
   /**
    * Search apartments with filters and pagination
    * By default returns all statuses unless status filter is provided
