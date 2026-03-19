@@ -5,10 +5,12 @@ import {
   IsDateString,
   IsUUID,
   IsArray,
+  IsEnum,
   ValidateNested,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { InvoiceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 
 export class InvoiceItemDto {
@@ -54,6 +56,15 @@ export class CreateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => InvoiceItemDto)
   items: InvoiceItemDto[];
+
+  @ApiPropertyOptional({
+    enum: InvoiceType,
+    default: InvoiceType.rent,
+    description: 'Invoice type for payment routing and display',
+  })
+  @IsOptional()
+  @IsEnum(InvoiceType)
+  invoiceType?: InvoiceType;
 
   @ApiPropertyOptional({ description: 'Additional notes' })
   @IsString()

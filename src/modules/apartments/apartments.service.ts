@@ -1,6 +1,14 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateApartmentDto, UpdateApartmentDto, SearchApartmentDto } from './dto';
+import {
+  CreateApartmentDto,
+  UpdateApartmentDto,
+  SearchApartmentDto,
+} from './dto';
 import { ApartmentStatus, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import axios from 'axios';
@@ -70,9 +78,12 @@ export class ApartmentsService {
     const wardKey = `v2:w:${wardCode}`;
     let ward = cache.get(wardKey);
     if (!ward) {
-      const wardResponse = await axios.get(`${this.provincesBaseUrl}/api/v2/w/${wardCode}`, {
-        timeout: 15000,
-      });
+      const wardResponse = await axios.get(
+        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
+        {
+          timeout: 15000,
+        },
+      );
       ward = wardResponse.data;
       cache.set(wardKey, ward);
     }
@@ -115,9 +126,12 @@ export class ApartmentsService {
     const wardKey = `v1:w:${wardCode}`;
     let ward = cache.get(wardKey);
     if (!ward) {
-      const wardResponse = await axios.get(`${this.provincesBaseUrl}/api/v1/w/${wardCode}`, {
-        timeout: 15000,
-      });
+      const wardResponse = await axios.get(
+        `${this.provincesBaseUrl}/api/v1/w/${wardCode}`,
+        {
+          timeout: 15000,
+        },
+      );
       ward = wardResponse.data;
       cache.set(wardKey, ward);
     }
@@ -360,12 +374,18 @@ export class ApartmentsService {
 
         const newAddress =
           includeNew && apartment.newWardCode != null
-            ? await this.resolveNewWardAddress(apartment.newWardCode, lookupCache)
+            ? await this.resolveNewWardAddress(
+                apartment.newWardCode,
+                lookupCache,
+              )
             : null;
 
         const oldAddress =
           includeOld && apartment.oldWardCode != null
-            ? await this.resolveOldWardAddress(apartment.oldWardCode, lookupCache)
+            ? await this.resolveOldWardAddress(
+                apartment.oldWardCode,
+                lookupCache,
+              )
             : null;
 
         const displayAddress =
@@ -497,7 +517,11 @@ export class ApartmentsService {
    * Update apartment
    * Only owner (partner) or Admin/Operator can update
    */
-  async update(id: string, updateDto: UpdateApartmentDto, currentUser: JwtPayload) {
+  async update(
+    id: string,
+    updateDto: UpdateApartmentDto,
+    currentUser: JwtPayload,
+  ) {
     const apartment = await this.prisma.apartment.findUnique({
       where: { id },
       select: { id: true, partnerId: true },

@@ -1,14 +1,26 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ContractsService } from './contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPrismaMock, mockUserJwtPayload, mockStaffJwtPayload, mockAdminJwtPayload, mockOperatorJwtPayload } from '../../test-utils';
+import { ApartmentsService } from '../apartments/apartments.service';
+import {
+  createPrismaMock,
+  mockUserJwtPayload,
+  mockStaffJwtPayload,
+  mockAdminJwtPayload,
+  mockOperatorJwtPayload,
+} from '../../test-utils';
 import { CreateContractDto, UpdateContractDto } from './dto';
 import { ContractStatus, ApartmentStatus, MemberStatus } from '@prisma/client';
-import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 
 describe('ContractsService', () => {
   let service: ContractsService;
   let prisma: ReturnType<typeof createPrismaMock>;
+  let apartmentsService: { getApartmentAddressByWardCodes: jest.Mock };
 
   const mockContract = (overrides = {}) => ({
     id: 'contract-123',
@@ -27,11 +39,19 @@ describe('ContractsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    apartmentsService = {
+      getApartmentAddressByWardCodes: jest.fn().mockResolvedValue({
+        newAddress: null,
+        oldAddress: null,
+        displayAddress: null,
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: ApartmentsService, useValue: apartmentsService },
       ],
     }).compile();
 
@@ -47,7 +67,10 @@ describe('ContractsService', () => {
       const admin = mockAdminJwtPayload();
       const contracts = [
         mockContract({ contractPdfData: null }),
-        mockContract({ id: 'contract-124', contractPdfData: Buffer.from('pdf') }),
+        mockContract({
+          id: 'contract-124',
+          contractPdfData: Buffer.from('pdf'),
+        }),
       ];
       prisma.rentalContract.findMany.mockResolvedValue(contracts as any);
 
@@ -84,7 +107,7 @@ describe('ContractsService', () => {
           where: expect.objectContaining({
             members: { some: { userId: user.sub } },
           }),
-        })
+        }),
       );
     });
 
@@ -97,7 +120,7 @@ describe('ContractsService', () => {
       expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ status: ContractStatus.active }),
-        })
+        }),
       );
     });
   });
@@ -122,7 +145,9 @@ describe('ContractsService', () => {
       const admin = mockAdminJwtPayload();
       prisma.rentalContract.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent', admin)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('non-existent', admin)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -146,10 +171,12 @@ describe('ContractsService', () => {
       prisma.rentalContract.findFirst.mockResolvedValue(null);
       prisma.rentalContract.count.mockResolvedValue(0);
       // Service uses callback-style $transaction
-      prisma.$transaction.mockImplementation(async (callback) => callback({
-        rentalContract: { create: jest.fn().mockResolvedValue(created) },
-        userContractMember: { createMany: jest.fn().mockResolvedValue({}) },
-      }));
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback({
+          rentalContract: { create: jest.fn().mockResolvedValue(created) },
+          userContractMember: { createMany: jest.fn().mockResolvedValue({}) },
+        }),
+      );
 
       const result = await service.create(createDto, operator);
 
@@ -160,7 +187,9 @@ describe('ContractsService', () => {
       const operator = mockOperatorJwtPayload();
       prisma.apartment.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(createDto, operator)).rejects.toThrow(NotFoundException);
+      await expect(service.create(createDto, operator)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw ConflictException if apartment already rented', async () => {
@@ -169,9 +198,59 @@ describe('ContractsService', () => {
       const existingContract = mockContract({ status: ContractStatus.active });
 
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
-      prisma.rentalContract.findFirst.mockResolvedValue(existingContract as any);
+      prisma.rentalContract.findFirst.mockResolvedValue(
+        existingContract as any,
+      );
 
-      await expect(service.create(createDto, operator)).rejects.toThrow(ConflictException);
+      await expect(service.create(createDto, operator)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('uploadSignedPdf', () => {
+    it('should auto-create deposit invoice when signing contract', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce({
+          id: 'contract-123',
+          contractNumber: 'CTR-2026-00001',
+          contractPdfData: null,
+          startDate: new Date('2026-01-01'),
+          depositAmount: 20000000,
+          paymentMethod: 'bank_transfer',
+          apartment: { depositAmount: 25000000 },
+        } as any)
+        .mockResolvedValueOnce({
+          ...mockContract(),
+          members: [{ user: { id: user.sub } }],
+          apartment: null,
+          contractPdfData: null,
+          landlordSignature: null,
+          tenantSignature: null,
+          invoices: [],
+        } as any);
+
+      prisma.invoice.findFirst.mockResolvedValue(null);
+      prisma.invoice.count.mockResolvedValue(0);
+      prisma.invoice.create.mockResolvedValue({ id: 'inv-deposit-1' } as any);
+
+      await service.uploadSignedPdf(
+        'contract-123',
+        { mimetype: 'application/pdf', buffer: Buffer.from('pdf') },
+        user,
+      );
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            rentalContract: { connect: { id: 'contract-123' } },
+            status: 'issued',
+            totalAmount: 25000000,
+          }),
+        }),
+      );
     });
   });
 
@@ -195,16 +274,24 @@ describe('ContractsService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.rentalContract.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', updateDto)).rejects.toThrow(NotFoundException);
+      await expect(service.update('non-existent', updateDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('activate', () => {
     it('should activate contract', async () => {
-      const contract = mockContract({ status: ContractStatus.pending, apartmentId: 'apt-123' });
+      const contract = mockContract({
+        status: ContractStatus.pending,
+        apartmentId: 'apt-123',
+      });
       const activated = { ...contract, status: ContractStatus.active };
 
-      prisma.rentalContract.findUnique.mockResolvedValue({ ...contract, apartment: { id: 'apt-123' } } as any);
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
       // Service uses array-style $transaction for activate
       prisma.$transaction.mockResolvedValue([activated, {}]);
 
@@ -216,27 +303,44 @@ describe('ContractsService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.rentalContract.findUnique.mockResolvedValue(null);
 
-      await expect(service.activate('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.activate('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw ConflictException if not pending', async () => {
       const contract = mockContract({ status: ContractStatus.active });
-      prisma.rentalContract.findUnique.mockResolvedValue({ ...contract, apartment: { id: 'apt-123' } } as any);
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
 
-      await expect(service.activate('contract-123')).rejects.toThrow(ConflictException);
+      await expect(service.activate('contract-123')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
   describe('terminate', () => {
     it('should terminate active contract', async () => {
-      const contract = mockContract({ status: ContractStatus.active, apartmentId: 'apt-123' });
+      const contract = mockContract({
+        status: ContractStatus.active,
+        apartmentId: 'apt-123',
+      });
       const terminated = { ...contract, status: ContractStatus.terminated };
 
-      prisma.rentalContract.findUnique.mockResolvedValue({ ...contract, apartment: { id: 'apt-123' } } as any);
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
       // Service uses array-style $transaction for terminate
       prisma.$transaction.mockResolvedValue([terminated, {}, {}]);
 
-      const result = await service.terminate('contract-123', 'Early termination', 5000000);
+      const result = await service.terminate(
+        'contract-123',
+        'Early termination',
+        5000000,
+      );
 
       expect(result[0].status).toBe(ContractStatus.terminated);
     });
@@ -244,7 +348,70 @@ describe('ContractsService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.rentalContract.findUnique.mockResolvedValue(null);
 
-      await expect(service.terminate('non-existent', 'reason')).rejects.toThrow(NotFoundException);
+      await expect(service.terminate('non-existent', 'reason')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('cancelByUser', () => {
+    it('should cancel contract for member user', async () => {
+      const user = mockUserJwtPayload();
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        members: [{ userId: user.sub }],
+      });
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce(contract as any)
+        .mockResolvedValueOnce({
+          ...mockContract({ status: ContractStatus.terminated }),
+          members: [{ user: { id: user.sub } }],
+          apartment: null,
+          createdByStaff: null,
+          invoices: [],
+          contractPdfData: null,
+          landlordSignature: null,
+          tenantSignature: null,
+        } as any);
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback(prisma as any),
+      );
+
+      const result = await service.cancelByUser(
+        'contract-123',
+        { reason: 'Khong thue nua' },
+        user,
+      );
+
+      expect(result).toBeDefined();
+      expect(prisma.rentalContract.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'contract-123' },
+          data: expect.objectContaining({
+            status: ContractStatus.terminated,
+          }),
+        }),
+      );
+    });
+
+    it('should throw NotFoundException if user is not member', async () => {
+      const user = mockUserJwtPayload();
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        members: [{ userId: 'other-user' }],
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue(contract as any);
+
+      await expect(
+        service.cancelByUser(
+          'contract-123',
+          { reason: 'Khong thue nua' },
+          user,
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

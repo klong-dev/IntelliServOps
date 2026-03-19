@@ -38,6 +38,31 @@ class InvoicePaymentSummaryDto {
   paymentDate: Date;
 }
 
+class InvoiceContentItemDto {
+  @ApiProperty({ example: 'Deposit for contract CTR-2026-00001' })
+  description: string;
+
+  @ApiProperty({ example: 20000000 })
+  amount: number;
+
+  @ApiProperty({ example: 1 })
+  quantity: number;
+
+  @ApiProperty({ example: 'contractDeposit' })
+  itemType: string;
+}
+
+class InvoiceContentDto {
+  @ApiPropertyOptional({ type: String, nullable: true })
+  title?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  description?: string | null;
+
+  @ApiProperty({ type: [InvoiceContentItemDto] })
+  items: InvoiceContentItemDto[];
+}
+
 // ─── Invoice List Item DTO (findAll) ────────────────────────────────
 
 export class InvoiceListItemDto {
@@ -52,6 +77,9 @@ export class InvoiceListItemDto {
 
   @ApiProperty({ example: 'issued' })
   status: string;
+
+  @ApiProperty({ example: 'rent' })
+  invoiceType: string;
 
   @ApiProperty()
   dueDate: Date;
@@ -113,6 +141,12 @@ export class InvoiceDetailDto {
 
   @ApiProperty({ example: 'issued' })
   status: string;
+
+  @ApiProperty({ example: 'rent' })
+  invoiceType: string;
+
+  @ApiPropertyOptional({ type: InvoiceContentDto, nullable: true })
+  invoiceContent: InvoiceContentDto | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   paymentMethod: string | null;

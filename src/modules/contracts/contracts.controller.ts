@@ -8,7 +8,6 @@ import {
   Query,
   Res,
   ParseUUIDPipe,
-  NotFoundException,
   StreamableFile,
   UseInterceptors,
   UploadedFile,
@@ -34,6 +33,7 @@ import {
   ContractListItemDto,
   ContractDetailDto,
   UploadContractPdfDto,
+  CancelContractDto,
 } from './dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
@@ -208,5 +208,21 @@ export class ContractsController {
       body.reason,
       body.terminationFee,
     );
+  }
+
+  @Patch(':id/cancel')
+  @Roles(Role.USER)
+  @ApiOperation({ summary: 'Cancel contract by user' })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Contract cancelled by user',
+  })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({ status: 409, description: 'Contract cannot be cancelled' })
+  async cancelByUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CancelContractDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.cancelByUser(id, body, currentUser);
   }
 }

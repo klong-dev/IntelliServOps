@@ -301,6 +301,16 @@ enum RelatedEntityType {
 }
 
 // --- Financial Enums ---
+enum InvoiceType {
+  rent
+  deposit
+  contractDeposit
+  utility
+  service
+  penalty
+  other
+}
+
 enum InvoiceStatus {
   draft
   issued
@@ -712,7 +722,6 @@ model Apartment {
   @@index([numberOfBedrooms])
   @@map("apartments")
 }
-
 model Room {
   id                 String     @id @default(uuid())
   apartmentId        String
@@ -1127,6 +1136,8 @@ model Invoice {
   id                 String        @id @default(uuid())
   invoiceNumber      String        @unique
   rentalContractId   String
+  invoiceType        InvoiceType   @default(rent)
+  invoiceContent     Json?
   billingPeriodStart DateTime
   billingPeriodEnd   DateTime
   issueDate          DateTime
@@ -1154,6 +1165,7 @@ model Invoice {
   payments       Payment[]
 
   @@index([rentalContractId])
+  @@index([invoiceType])
   @@index([status])
   @@index([dueDate])
   @@index([billingPeriodStart])
