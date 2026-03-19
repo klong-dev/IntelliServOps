@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   Injectable,
   UnauthorizedException,
@@ -521,7 +522,8 @@ export class AuthService {
    */
   getSupabaseUrl(): { url: string } {
     const supabaseUrl = this.configService.get<string>('supabase.url');
-    const redirectUrl = this.configService.get<string>('supabase.redirectUrl') || '';
+    const redirectUrl =
+      this.configService.get<string>('supabase.redirectUrl') || '';
 
     if (!supabaseUrl) {
       throw new BadRequestException(

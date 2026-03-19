@@ -18,6 +18,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+import { ApartmentsService } from '../apartments/apartments.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -26,7 +27,10 @@ export class ContractsService {
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly PDF_TOKEN_EXPIRY = 5 * 60 * 1000; // 5 minutes
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly apartmentsService: ApartmentsService,
+  ) {}
 
   /**
    * Generate a signed token for PDF access (valid for 5 minutes)
@@ -131,6 +135,7 @@ export class ContractsService {
             apartmentNumber: true,
             newWardCode: true,
             oldWardCode: true,
+            buildingName: true,
           },
         },
         members: {
@@ -150,17 +155,37 @@ export class ContractsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return contracts.map(({ contractPdfData, ...contract }) => {
-      const pdfToken = contractPdfData
-        ? this.generatePdfToken(contract.id)
-        : null;
+    const lookupCache = new Map<string, any>();
+    const items = await Promise.all(
+      contracts.map(async ({ contractPdfData, ...contract }) => {
+        const pdfToken = contractPdfData
+          ? this.generatePdfToken(contract.id)
+          : null;
 
-      return {
-        ...contract,
-        hasPdf: !!contractPdfData,
-        pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
-      };
-    });
+        const addressInfo = contract.apartment
+          ? await this.apartmentsService.getApartmentAddressByWardCodes(
+              contract.apartment.newWardCode,
+              contract.apartment.oldWardCode,
+              'both',
+              lookupCache,
+            )
+          : { newAddress: null, oldAddress: null, displayAddress: null };
+
+        return {
+          ...contract,
+          apartment: contract.apartment
+            ? {
+                ...contract.apartment,
+                ...addressInfo,
+              }
+            : contract.apartment,
+          hasPdf: !!contractPdfData,
+          pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+        };
+      }),
+    );
+
+    return items;
   }
 
   /**
@@ -232,9 +257,23 @@ export class ContractsService {
       contract as any;
 
     const pdfToken = contractPdfData ? this.generatePdfToken(id) : null;
+    const addressInfo = contract.apartment
+      ? await this.apartmentsService.getApartmentAddressByWardCodes(
+          contract.apartment.newWardCode,
+          contract.apartment.oldWardCode,
+          'both',
+          new Map<string, any>(),
+        )
+      : { newAddress: null, oldAddress: null, displayAddress: null };
 
     return {
       ...rest,
+      apartment: contract.apartment
+        ? {
+            ...contract.apartment,
+            ...addressInfo,
+          }
+        : contract.apartment,
       hasPdf: !!contractPdfData,
       pdfUrl: `/contracts/${id}/pdf`,
       publicPdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
@@ -326,7 +365,7 @@ export class ContractsService {
       data: updateData,
     });
 
-    return this.findOne(id, currentUser);
+    return await this.findOne(id, currentUser);
   }
 
   /**

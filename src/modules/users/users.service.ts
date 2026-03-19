@@ -1,4 +1,7 @@
-import type { Express } from 'express';
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   Injectable,
   NotFoundException,
@@ -8,12 +11,21 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { FptAiService } from '../../shared/services/fpt-ai.service';
 import type { JwtPayload } from '../auth/auth.service';
 import { CreateUserDto, UpdateUserDto, SearchUserDto } from './dto';
-import { Role } from '../../common/enums/role.enum';
+
+export type UpdateIdentityCardResult = Prisma.UserGetPayload<{
+  include: { identity: true };
+}> & {
+  aiVerification: {
+    front: { success: boolean; extractedInfo: unknown } | null;
+    back: { success: boolean; extractedInfo: unknown } | null;
+  };
+};
 
 @Injectable()
 export class UsersService {
@@ -301,7 +313,7 @@ export class UsersService {
     userId: string,
     identityCardFrontFile: any,
     identityCardBackFile: any,
-  ) {
+  ): Promise<UpdateIdentityCardResult> {
     // Validate file types
     const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validMimeTypes.includes(identityCardFrontFile.mimetype)) {
@@ -459,7 +471,7 @@ export class UsersService {
     });
 
     // Auto-verify user if AI confirms valid ID
-    let updatedUser: any;
+    let updatedUser: Prisma.UserGetPayload<{ include: { identity: true } }>;
     if (
       autoVerified &&
       this.configService.get<boolean>('fptAi.autoVerifyOnSuccess')
@@ -471,13 +483,10 @@ export class UsersService {
       });
       this.logger.log(`User ${userId} auto-verified after ID card check`);
     } else {
-      updatedUser = await this.prisma.user.findUnique({
+      updatedUser = await this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
         include: { identity: true },
       });
-      if (!updatedUser) {
-        throw new NotFoundException('User not found');
-      }
     }
 
     // Attach AI verification metadata to response
