@@ -34,6 +34,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.2.5",
+    "@payos/node": "^2.0.5",
     "@supabase/supabase-js": "^2.95.3",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",

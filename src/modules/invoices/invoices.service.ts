@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
-import { InvoiceStatus, Prisma } from '@prisma/client';
+import { InvoiceStatus, InvoiceType, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 
 @Injectable()
@@ -27,6 +27,7 @@ export class InvoicesService {
       select: {
         id: true,
         invoiceNumber: true,
+        invoiceType: true,
         totalAmount: true,
         status: true,
         dueDate: true,
@@ -119,6 +120,21 @@ export class InvoicesService {
     // Generate invoice number
     const invoiceNumber = await this.generateInvoiceNumber();
 
+    const invoiceType = createDto.invoiceType ?? InvoiceType.rent;
+    const normalizedItems: Prisma.InputJsonArray = createDto.items.map(
+      (item) => ({
+        description: item.description,
+        amount: item.amount,
+        quantity: item.quantity || 1,
+        itemType: item.itemType || invoiceType,
+      }),
+    );
+    const invoiceContent: Prisma.InputJsonObject = {
+      title: `Invoice ${invoiceNumber}`,
+      description: `Type: ${invoiceType}`,
+      items: normalizedItems,
+    };
+
     return this.prisma.invoice.create({
       data: {
         invoiceNumber,
@@ -127,15 +143,18 @@ export class InvoicesService {
         issueDate: new Date(),
         billingPeriodStart: new Date(createDto.billingPeriodStart),
         billingPeriodEnd: new Date(createDto.billingPeriodEnd),
+        invoiceType,
+        invoiceContent,
         baseRent: contract.monthlyRent,
         totalAmount,
-        additionalCharges: createDto.items as any,
+        additionalCharges: normalizedItems,
         notes: createDto.notes,
         status: InvoiceStatus.draft,
       },
       select: {
         id: true,
         invoiceNumber: true,
+        invoiceType: true,
         totalAmount: true,
         status: true,
         dueDate: true,

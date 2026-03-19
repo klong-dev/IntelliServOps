@@ -17,11 +17,13 @@ import {
 import { PaymentsService } from './payments.service';
 import {
   CreatePaymentDto,
+  CreatePayOSPaymentLinkDto,
   PaymentListItemDto,
   PaymentDetailDto,
   PaymentCreatedDto,
+  PayOSPaymentLinkCreatedDto,
 } from './dto';
-import { Roles, CurrentUser } from '../../common/decorators';
+import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
@@ -37,12 +39,34 @@ export class PaymentsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List payments' })
   @ApiQuery({ name: 'status', required: false, enum: PaymentStatus })
-  @ApiJsonResponse(PaymentListItemDto, { isArray: true, description: 'List of payments' })
+  @ApiQuery({ name: 'invoiceId', required: false, type: String })
+  @ApiJsonResponse(PaymentListItemDto, {
+    isArray: true,
+    description: 'List of payments',
+  })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: PaymentStatus,
+    @Query('invoiceId') invoiceId?: string,
   ) {
-    return this.paymentsService.findAll(currentUser, status);
+    return this.paymentsService.findAll(currentUser, status, invoiceId);
+  }
+
+  @Get('invoice/:invoiceId')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'Get payments by invoice ID' })
+  @ApiQuery({ name: 'status', required: false, enum: PaymentStatus })
+  @ApiJsonResponse(PaymentListItemDto, {
+    isArray: true,
+    description:
+      'Payments of a specific invoice (includes pending synthetic entry if unpaid)',
+  })
+  async findByInvoiceId(
+    @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+    @CurrentUser() currentUser: JwtPayload,
+    @Query('status') status?: PaymentStatus,
+  ) {
+    return this.paymentsService.findByInvoiceId(invoiceId, currentUser, status);
   }
 
   @Get(':id')
@@ -60,13 +84,30 @@ export class PaymentsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create payment' })
-  @ApiJsonResponse(PaymentCreatedDto, { status: 201, description: 'Payment created' })
+  @ApiJsonResponse(PaymentCreatedDto, {
+    status: 201,
+    description: 'Payment created',
+  })
   @ApiResponse({ status: 404, description: 'Invoice not found' })
   async create(
     @Body() createDto: CreatePaymentDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.paymentsService.create(createDto, currentUser);
+  }
+
+  @Post('payos/create-link')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'Create PayOS hosted checkout link from invoice' })
+  @ApiJsonResponse(PayOSPaymentLinkCreatedDto, {
+    status: 201,
+    description: 'PayOS payment link created',
+  })
+  async createPayOSPaymentLink(
+    @Body() createDto: CreatePayOSPaymentLinkDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.paymentsService.createPayOSPayment(createDto, currentUser);
   }
 
   @Post(':id/confirm')
@@ -82,6 +123,7 @@ export class PaymentsController {
   }
 
   @Post('webhook/payos')
+  @Public()
   @ApiOperation({ summary: 'PayOS webhook' })
   @ApiResponse({ status: 200, description: 'Webhook processed' })
   async handlePayOSWebhook(@Body() body: any) {

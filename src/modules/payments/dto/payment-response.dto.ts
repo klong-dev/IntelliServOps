@@ -13,6 +13,63 @@ class PaymentInvoiceSummaryDto {
   totalAmount: string;
 }
 
+class PaymentInvoiceItemDto {
+  @ApiProperty({ example: 'Deposit for contract CTR-2026-00001' })
+  description: string;
+
+  @ApiProperty({ example: 20000000 })
+  amount: number;
+
+  @ApiProperty({ example: 1 })
+  quantity: number;
+
+  @ApiProperty({ example: 'contractDeposit' })
+  itemType: string;
+}
+
+class PaymentInvoiceContentDto {
+  @ApiProperty({ example: 'invoice-123' })
+  invoiceId: string;
+
+  @ApiProperty({ example: 'INV-202601-00001' })
+  invoiceNumber: string;
+
+  @ApiProperty({ example: 'contractDeposit' })
+  invoiceType: string;
+
+  @ApiProperty({ example: 'VND' })
+  currency: string;
+
+  @ApiProperty({ example: 0 })
+  baseRent: number;
+
+  @ApiProperty({ example: 0 })
+  taxAmount: number;
+
+  @ApiProperty({ example: 20000000 })
+  totalAmount: number;
+
+  @ApiProperty({ type: [PaymentInvoiceItemDto] })
+  items: PaymentInvoiceItemDto[];
+
+  @ApiProperty({
+    type: Object,
+    example: {
+      title: 'Deposit invoice for CTR-2026-00001',
+      description: 'Security deposit payment',
+      items: [
+        {
+          description: 'Deposit for contract CTR-2026-00001',
+          amount: 20000000,
+          quantity: 1,
+          itemType: 'contractDeposit',
+        },
+      ],
+    },
+  })
+  content: Record<string, unknown>;
+}
+
 // ─── Payment List Item DTO (findAll) ────────────────────────────────
 
 export class PaymentListItemDto {
@@ -39,6 +96,13 @@ export class PaymentListItemDto {
 
   @ApiProperty({ type: PaymentInvoiceSummaryDto })
   invoice: PaymentInvoiceSummaryDto;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'True when this is a synthetic pending row generated from an unpaid invoice without payment records',
+  })
+  isSynthetic?: boolean;
 }
 
 // ─── Payment Detail DTO (findOne) ───────────────────────────────────
@@ -101,8 +165,8 @@ export class PaymentDetailDto {
   @ApiProperty()
   updatedAt: Date;
 
-  @ApiProperty()
-  invoice: any; // Full include with nested contract and members
+  @ApiProperty({ type: PaymentInvoiceContentDto })
+  invoice: PaymentInvoiceContentDto;
 
   @ApiProperty()
   user: any; // { id, fullName }
@@ -122,4 +186,39 @@ export class PaymentCreatedDto {
 
   @ApiProperty({ example: 'pending' })
   status: string;
+}
+
+export class PayOSPaymentLinkCreatedDto {
+  @ApiProperty({ example: '9fbc9e7e-5a4d-4f38-9ba8-cc96af4f0eaf' })
+  paymentId: string;
+
+  @ApiProperty({ example: 'invoice-123' })
+  invoiceId: string;
+
+  @ApiProperty({ example: 'PAYOS-250319123456' })
+  paymentReference: string;
+
+  @ApiProperty({ example: 250319123456 })
+  orderCode: number;
+
+  @ApiProperty({ example: 'PENDING' })
+  status: string;
+
+  @ApiProperty({
+    example: 'https://pay.payos.vn/web/4cecc6f4f7af43f09b3d3137ce645a49',
+  })
+  checkoutUrl: string;
+
+  @ApiProperty({ example: '0002010102123858...' })
+  qrCode: string;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'Unix timestamp (seconds) for link expiry',
+  })
+  expiredAt?: number | null;
+
+  @ApiProperty({ type: PaymentInvoiceContentDto })
+  invoice: PaymentInvoiceContentDto;
 }

@@ -10,11 +10,15 @@ import {
   CreateContractDto,
   UpdateContractDto,
   UploadContractPdfDto,
+  CancelContractDto,
 } from './dto';
 import {
   ContractStatus,
   ApartmentStatus,
   MemberStatus,
+  InvoiceStatus,
+  InvoiceType,
+  PaymentMethodType,
   Prisma,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
@@ -26,6 +30,15 @@ export class ContractsService {
   private readonly PDF_TOKEN_SECRET =
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly PDF_TOKEN_EXPIRY = 5 * 60 * 1000; // 5 minutes
+
+  private readonly depositInvoiceSelect = {
+    id: true,
+    invoiceNumber: true,
+    invoiceType: true,
+    status: true,
+    totalAmount: true,
+    dueDate: true,
+  } as const;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -340,7 +353,19 @@ export class ContractsService {
 
     const contract = await this.prisma.rentalContract.findUnique({
       where: { id },
-      select: { id: true, contractPdfData: true },
+      select: {
+        id: true,
+        contractNumber: true,
+        contractPdfData: true,
+        startDate: true,
+        depositAmount: true,
+        paymentMethod: true,
+        apartment: {
+          select: {
+            depositAmount: true,
+          },
+        },
+      },
     });
 
     if (!contract) {
@@ -365,7 +390,20 @@ export class ContractsService {
       data: updateData,
     });
 
-    return await this.findOne(id, currentUser);
+    const depositInvoice =
+      await this.createDepositInvoiceForSignedContract(contract);
+
+    if (!depositInvoice) {
+      throw new BadRequestException(
+        'Cannot create contract deposit invoice because deposit amount is missing or invalid',
+      );
+    }
+
+    const contractDetail = await this.findOne(id, currentUser);
+    return {
+      ...contractDetail,
+      depositInvoice,
+    };
   }
 
   /**
@@ -583,6 +621,66 @@ export class ContractsService {
     ]);
   }
 
+  async cancelByUser(
+    id: string,
+    cancelDto: CancelContractDto,
+    currentUser: JwtPayload,
+  ) {
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id },
+      include: {
+        members: {
+          select: {
+            userId: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    const isMember = contract.members.some((m) => m.userId === currentUser.sub);
+    if (!isMember) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (
+      contract.status === ContractStatus.terminated ||
+      contract.status === ContractStatus.expired
+    ) {
+      throw new ConflictException('Contract cannot be cancelled');
+    }
+
+    const cancelReason = `User cancelled: ${cancelDto.reason}`;
+    const terminatedAt = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rentalContract.update({
+        where: { id },
+        data: {
+          status: ContractStatus.terminated,
+          terminationDate: terminatedAt,
+          terminationReason: cancelReason,
+          earlyTerminationFee: null,
+        },
+      });
+
+      await tx.apartment.update({
+        where: { id: contract.apartmentId },
+        data: { status: ApartmentStatus.available },
+      });
+
+      await tx.userContractMember.updateMany({
+        where: { rentalContractId: id },
+        data: { status: MemberStatus.moved_out, moveOutDate: terminatedAt },
+      });
+    });
+
+    return await this.findOne(id, currentUser);
+  }
+
   private async generateContractNumber(): Promise<string> {
     const year = new Date().getFullYear();
     const count = await this.prisma.rentalContract.count({
@@ -591,5 +689,98 @@ export class ContractsService {
       },
     });
     return `CTR-${year}-${String(count + 1).padStart(5, '0')}`;
+  }
+
+  private async createDepositInvoiceForSignedContract(contract: {
+    id: string;
+    contractNumber: string;
+    startDate: Date;
+    depositAmount: Prisma.Decimal;
+    paymentMethod: PaymentMethodType;
+    apartment: { depositAmount: Prisma.Decimal | null } | null;
+  }) {
+    const marker = `DEPOSIT_INVOICE_FOR_CONTRACT:${contract.id}`;
+
+    const existingDepositInvoice = await this.prisma.invoice.findFirst({
+      where: {
+        rentalContractId: contract.id,
+        notes: {
+          contains: marker,
+        },
+      },
+      select: this.depositInvoiceSelect,
+    });
+
+    if (existingDepositInvoice) {
+      if (existingDepositInvoice.invoiceType === InvoiceType.deposit) {
+        const updated = await this.prisma.invoice.update({
+          where: { id: existingDepositInvoice.id },
+          data: { invoiceType: InvoiceType.contractDeposit },
+          select: this.depositInvoiceSelect,
+        });
+        return updated;
+      }
+      return existingDepositInvoice;
+    }
+
+    const apartmentDeposit = contract.apartment?.depositAmount
+      ? Number(contract.apartment.depositAmount)
+      : 0;
+    const contractDeposit = Number(contract.depositAmount);
+    const depositAmount =
+      apartmentDeposit > 0 ? apartmentDeposit : contractDeposit;
+
+    if (!Number.isFinite(depositAmount) || depositAmount <= 0) {
+      return null;
+    }
+
+    const invoiceNumber = await this.generateDepositInvoiceNumber();
+    const now = new Date();
+    const depositCharge: Prisma.InputJsonArray = [
+      {
+        description: `Deposit for contract ${contract.contractNumber}`,
+        amount: depositAmount,
+        quantity: 1,
+        itemType: 'contractDeposit',
+      },
+    ];
+    const invoiceContent: Prisma.InputJsonObject = {
+      title: `Deposit invoice for ${contract.contractNumber}`,
+      description: 'Security deposit payment',
+      items: depositCharge,
+    };
+
+    return this.prisma.invoice.create({
+      data: {
+        invoiceNumber,
+        rentalContract: { connect: { id: contract.id } },
+        invoiceType: InvoiceType.contractDeposit,
+        invoiceContent,
+        billingPeriodStart: contract.startDate,
+        billingPeriodEnd: contract.startDate,
+        issueDate: now,
+        dueDate: now,
+        baseRent: 0,
+        additionalCharges: depositCharge,
+        totalAmount: depositAmount,
+        paymentMethod: contract.paymentMethod,
+        status: InvoiceStatus.issued,
+        notes: `Auto-created deposit invoice. ${marker}`,
+      },
+      select: this.depositInvoiceSelect,
+    });
+  }
+
+  private async generateDepositInvoiceNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, '0');
+    const prefix = `INV-DEP-${year}${month}`;
+    const count = await this.prisma.invoice.count({
+      where: {
+        invoiceNumber: { startsWith: prefix },
+      },
+    });
+
+    return `${prefix}-${String(count + 1).padStart(5, '0')}`;
   }
 }
