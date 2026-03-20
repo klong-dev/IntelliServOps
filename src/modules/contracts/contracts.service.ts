@@ -142,6 +142,7 @@ export class ContractsService {
         status: true,
         createdAt: true,
         contractPdfData: true,
+        terminationReason: true,
         apartment: {
           select: {
             id: true,
@@ -657,6 +658,11 @@ export class ContractsService {
     const terminatedAt = new Date();
 
     await this.prisma.$transaction(async (tx) => {
+      await tx.reservation.update({
+        where: { createdContractId: id },
+        data: { status: 'cancelled' },
+      });
+
       await tx.rentalContract.update({
         where: { id },
         data: {
