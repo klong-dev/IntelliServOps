@@ -475,6 +475,7 @@ model User {
   staffNotes            StaffNote[]
   userRooms             UserRoom[]
   reservations          Reservation[]
+  chatConversations     ChatConversation[]
 
   @@index([phone])
   @@index([supabaseId])
@@ -1598,4 +1599,80 @@ model PendingGuestRegistration {
   @@index([submittedByStaffId])
   @@index([expiresAt])
   @@map("pending_guest_registrations")
+}
+
+// ============================================================================
+// CHAT MODELS
+// ============================================================================
+
+// --- Chat Enums ---
+enum ConversationStatus {
+  active
+  closed
+  archived
+}
+
+enum MessageType {
+  text
+  image
+  file
+  system
+}
+
+enum SenderType {
+  user
+  guest
+  staff
+  operator
+  admin
+  system
+}
+
+// --- Chat Models ---
+model ChatConversation {
+  id              String             @id @default(uuid())
+  title           String?
+  userId          String?
+  guestSessionId  String?
+  guestName       String?
+  guestEmail      String?
+  status          ConversationStatus @default(active)
+  lastMessageAt   DateTime?
+  lastMessageText String?
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Relations
+  user     User?          @relation(fields: [userId], references: [id])
+  messages ChatMessage[]
+
+  @@index([userId])
+  @@index([guestSessionId])
+  @@index([status])
+  @@index([lastMessageAt])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id              String      @id @default(uuid())
+  conversationId  String
+  senderType      SenderType
+  senderId        String?
+  senderName      String?
+  messageType     MessageType @default(text)
+  content         String
+  attachments     Json?
+  isRead          Boolean     @default(false)
+  readAt          DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderType, senderId])
+  @@index([createdAt])
+  @@map("chat_messages")
 }

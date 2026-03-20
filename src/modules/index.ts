@@ -17,3 +17,4 @@ export * from './users';
 export * from './user-rooms';
 export * from './apartment-policies';
 export * from './reservations';
+export * from './chat';

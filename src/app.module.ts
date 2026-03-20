@@ -40,6 +40,7 @@ import { StaffNotesModule } from './modules/staff-notes';
 import { UserRoomsModule } from './modules/user-rooms';
 import { ApartmentPoliciesModule } from './modules/apartment-policies';
 import { ReservationsModule } from './modules/reservations';
+import { ChatModule } from './modules/chat';
 
 // App Core
 import { AppController } from './app.controller';
@@ -86,6 +87,7 @@ import { AppService } from './app.service';
     UserRoomsModule,
     ApartmentPoliciesModule,
     ReservationsModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [

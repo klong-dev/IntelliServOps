@@ -33,7 +33,9 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/platform-socket.io": "^11.1.17",
     "@nestjs/swagger": "^11.2.5",
+    "@nestjs/websockets": "^11.1.17",
     "@payos/node": "^2.0.5",
     "@supabase/supabase-js": "^2.95.3",
     "axios": "^1.13.2",
@@ -52,6 +54,7 @@
     "redis": "^5.10.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "socket.io": "^4.8.3",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0"
   },
