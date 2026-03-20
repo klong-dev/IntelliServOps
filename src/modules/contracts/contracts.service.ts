@@ -142,6 +142,7 @@ export class ContractsService {
         status: true,
         createdAt: true,
         contractPdfData: true,
+        terminationReason: true,
         apartment: {
           select: {
             id: true,
