@@ -1054,8 +1054,7 @@ async function main() {
   console.log('   - Admins: 2');
   console.log('   - Operators: 2');
   console.log('   - Staff: 3');
-  console.log('   - Partners: 2');
-  console.log('   - Users: 3');
+  console.log('   - Users (incl. partner users): 5');
   console.log('   - Guests: 2');
   console.log('   - Apartments: 4');
   console.log('   - Rooms: 6');
@@ -1081,7 +1080,7 @@ async function main() {
   console.log('   Admin: superadmin@intellirentops.vn / Admin@123');
   console.log('   Operator: operator1@intellirentops.vn / Operator@123');
   console.log('   Staff: staff1@intellirentops.vn / Staff@123');
-  console.log('   Partner: partner1@gmail.com / Partner@123');
+  console.log('   User (partner): partner1@gmail.com / Partner@123');
   console.log('   User: user1@gmail.com / User@123');
 }
 

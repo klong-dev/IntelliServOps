@@ -9,7 +9,6 @@ export * from './tickets';
 export * from './viewing-requests';
 export * from './iot';
 export * from './tasks';
-export * from './partners';
 export * from './notifications';
 export * from './policies';
 export * from './activity-logs';
