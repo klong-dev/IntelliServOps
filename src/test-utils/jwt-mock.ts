@@ -46,14 +46,6 @@ export const mockAdminJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPay
   ...overrides,
 });
 
-export const mockPartnerJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPayload => ({
-  sub: 'partner-123',
-  email: 'partner@example.com',
-  role: 'partner',
-  actorType: 'partner',
-  type: 'access',
-  ...overrides,
-});
 
 export const mockRefreshJwtPayload = (actorType: ActorType, actorId: string, email: string): JwtPayload => ({
   sub: actorId,
@@ -71,7 +63,6 @@ function determineRoleFromActorType(actorType: ActorType): string {
     staff: 'staff',
     operator: 'operator',
     admin: 'admin',
-    partner: 'partner',
     system: 'system',
   };
   return roleMap[actorType] || 'user';

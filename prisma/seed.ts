@@ -139,12 +139,12 @@ async function main() {
   });
 
   // ============================================================================
-  // PARTNERS
+  // PARTNER-USERS (users with business/partner info)
   // ============================================================================
-  console.log('Creating partners...');
+  console.log('Creating partner users...');
   const partnerPassword = await hashPassword('Partner@123');
 
-  const partner1 = await prisma.partner.upsert({
+  const partner1 = await prisma.user.upsert({
     where: { email: 'partner1@gmail.com' },
     update: {},
     create: {
@@ -153,9 +153,7 @@ async function main() {
       fullName: 'Võ Văn Chủ Nhà',
       companyName: 'Công ty BĐS Phú Mỹ',
       taxCode: '0312345678',
-      nationalId: '079123456789',
       passwordHash: partnerPassword,
-      address: '123 Nguyễn Huệ, Quận 1, TP.HCM',
       bankName: 'Vietcombank',
       bankAccountNumber: '0071000123456',
       commissionRate: new Prisma.Decimal(8.0),
@@ -164,7 +162,7 @@ async function main() {
     },
   });
 
-  const partner2 = await prisma.partner.upsert({
+  const partner2 = await prisma.user.upsert({
     where: { email: 'partner2@gmail.com' },
     update: {},
     create: {
@@ -174,7 +172,6 @@ async function main() {
       companyName: 'Công ty Đầu tư Hoàng Gia',
       taxCode: '0398765432',
       passwordHash: partnerPassword,
-      address: '456 Lê Lợi, Quận 3, TP.HCM',
       bankName: 'Techcombank',
       bankAccountNumber: '19028888888888',
       commissionRate: new Prisma.Decimal(10.0),
@@ -288,7 +285,7 @@ async function main() {
       description:
         'Căn hộ cao cấp view sông Sài Gòn, nội thất đầy đủ, tiện ích 5 sao',
       status: 'available',
-      partnerId: partner1.id,
+      ownerId: partner1.id,
       approvedByOperatorId: operator1.id,
       approvedAt: new Date(),
     },
@@ -312,7 +309,7 @@ async function main() {
       amenities: ['Hồ bơi', 'Gym', 'BBQ', 'Sân chơi trẻ em'],
       description: 'Căn hộ hiện đại gần Metro, view thành phố',
       status: 'occupied',
-      partnerId: partner1.id,
+      ownerId: partner1.id,
       approvedByOperatorId: operator1.id,
       approvedAt: new Date(),
     },
@@ -336,7 +333,7 @@ async function main() {
       amenities: ['Hồ bơi', 'Gym'],
       description: 'Căn hộ 1 phòng ngủ, phù hợp độc thân hoặc cặp đôi',
       status: 'available',
-      partnerId: partner2.id,
+      ownerId: partner2.id,
       approvedByOperatorId: operator1.id,
       approvedAt: new Date(),
     },
@@ -360,7 +357,7 @@ async function main() {
       amenities: ['Hồ bơi', 'Gym', 'Spa', 'Sân tennis', 'Nhà hàng'],
       description: 'Penthouse view panorama, nội thất sang trọng',
       status: 'available',
-      partnerId: partner2.id,
+      ownerId: partner2.id,
       approvedByOperatorId: operator1.id,
       approvedAt: new Date(),
     },
@@ -828,7 +825,7 @@ async function main() {
 
   await prisma.partnerRequest.create({
     data: {
-      partnerId: partner1.id,
+      userId: partner1.id,
       propertyType: 'apartment',
       address: '500 Điện Biên Phủ, Quận 3',
       city: 'Hồ Chí Minh',

@@ -46,3 +46,7 @@ temp/
 # Cache
 .cache/
 .npm/
+
+# Firebase
+config/firebase-service-account.json
+*-firebase-adminsdk*.json

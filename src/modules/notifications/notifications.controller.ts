@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Patch,
+  Delete,
   Param,
   Query,
   ParseUUIDPipe,
@@ -19,7 +20,8 @@ import { NotificationsService } from './notifications.service';
 import {
   CreateNotificationDto,
   NotificationResponseDto,
-  UnreadCountResponseDto,
+  RegisterFcmTokenDto,
+  RemoveFcmTokenDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
@@ -31,6 +33,36 @@ import type { JwtPayload } from '../auth/auth.service';
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
+
+  // ============================================================================
+  // FCM Token Management
+  // ============================================================================
+
+  @Post('fcm-token')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'Register FCM device token for push notifications' })
+  @ApiResponse({ status: 201, description: 'Token registered' })
+  async registerFcmToken(
+    @CurrentUser() currentUser: JwtPayload,
+    @Body() dto: RegisterFcmTokenDto,
+  ) {
+    return this.notificationsService.registerFcmToken(currentUser, dto);
+  }
+
+  @Delete('fcm-token')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'Remove FCM device token' })
+  @ApiResponse({ status: 200, description: 'Token removed' })
+  async removeFcmToken(
+    @CurrentUser() currentUser: JwtPayload,
+    @Body() dto: RemoveFcmTokenDto,
+  ) {
+    return this.notificationsService.removeFcmToken(currentUser, dto.token);
+  }
+
+  // ============================================================================
+  // Notifications CRUD
+  // ============================================================================
 
   @Get('my')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
@@ -47,15 +79,14 @@ export class NotificationsController {
   @Get('unread-count')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get unread notification count' })
-  @ApiJsonResponse(UnreadCountResponseDto, { description: 'Unread count' })
   async countUnread(@CurrentUser() currentUser: JwtPayload) {
     return this.notificationsService.countUnread(currentUser);
   }
 
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Send notification' })
-  @ApiJsonResponse(NotificationResponseDto, { status: 201, description: 'Notification sent' })
+  @ApiOperation({ summary: 'Send notification (admin/operator only)' })
+  @ApiJsonResponse(NotificationResponseDto, { status: 201, description: 'Notification sent + FCM push' })
   async create(@Body() createDto: CreateNotificationDto) {
     return this.notificationsService.create(createDto);
   }
@@ -63,7 +94,6 @@ export class NotificationsController {
   @Patch(':id/read')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Mark notification as read' })
-  @ApiJsonResponse(NotificationResponseDto, { description: 'Notification marked as read' })
   @ApiResponse({ status: 404, description: 'Notification not found' })
   async markAsRead(
     @Param('id', ParseUUIDPipe) id: string,
@@ -75,7 +105,6 @@ export class NotificationsController {
   @Patch('read-all')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Mark all notifications as read' })
-  @ApiResponse({ status: 200, description: 'All marked as read' })
   async markAllAsRead(@CurrentUser() currentUser: JwtPayload) {
     return this.notificationsService.markAllAsRead(currentUser);
   }

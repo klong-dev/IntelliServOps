@@ -62,7 +62,7 @@ export class ApartmentsController {
 
   @Post()
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
   @ApiOperation({ summary: 'Create apartment' })
   @ApiJsonResponse(ApartmentMutationResultDto, {
     status: 201,
@@ -77,7 +77,7 @@ export class ApartmentsController {
 
   @Patch(':id')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
   @ApiOperation({ summary: 'Update apartment' })
   @ApiJsonResponse(ApartmentMutationResultDto, {
     description: 'Apartment updated',
@@ -103,16 +103,16 @@ export class ApartmentsController {
     return this.apartmentsService.remove(id);
   }
 
-  @Get('partner/:partnerId')
+  @Get('owner/:ownerId')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.PARTNER)
-  @ApiOperation({ summary: 'Get apartments by partner' })
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
+  @ApiOperation({ summary: 'Get apartments by owner' })
   @ApiJsonResponse(ApartmentListItemDto, {
     isArray: true,
-    description: 'Partner apartments',
+    description: 'Owner apartments',
   })
-  async findByPartner(@Param('partnerId', ParseUUIDPipe) partnerId: string) {
-    return this.apartmentsService.findByPartner(partnerId);
+  async findByOwner(@Param('ownerId', ParseUUIDPipe) ownerId: string) {
+    return this.apartmentsService.findByOwner(ownerId);
   }
 
   @Patch(':id/approve')

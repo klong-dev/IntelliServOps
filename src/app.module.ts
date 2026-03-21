@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD } from '@nestjs/core';
 
 // Config
@@ -32,7 +33,6 @@ import { TicketsModule } from './modules/tickets';
 import { ViewingRequestsModule } from './modules/viewing-requests';
 import { IoTModule } from './modules/iot';
 import { TasksModule } from './modules/tasks';
-import { PartnersModule } from './modules/partners';
 import { NotificationsModule } from './modules/notifications';
 import { PoliciesModule } from './modules/policies';
 import { ActivityLogsModule } from './modules/activity-logs';
@@ -64,6 +64,9 @@ import { AppService } from './app.service';
       envFilePath: ['.env'],
     }),
 
+    // Event System (for centralized notification triggers)
+    EventEmitterModule.forRoot(),
+
     // Shared Infrastructure (Prisma, Redis, Queue)
     SharedModule,
 
@@ -79,7 +82,6 @@ import { AppService } from './app.service';
     ViewingRequestsModule,
     IoTModule,
     TasksModule,
-    PartnersModule,
     NotificationsModule,
     PoliciesModule,
     ActivityLogsModule,

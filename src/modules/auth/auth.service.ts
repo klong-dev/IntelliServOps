@@ -79,7 +79,7 @@ export class AuthService {
   }
 
   /**
-   * Login for any actor type (User, Staff, Operator, Admin, Partner)
+   * Login for any actor type (User, Staff, Operator, Admin)
    * Supports multi-role: finds all roles for the email, returns available roles.
    * If actorType not specified, defaults to 'user' if available.
    */
@@ -306,7 +306,7 @@ export class AuthService {
   private async findAllRolesForEmail(email: string): Promise<ActorType[]> {
     const roles: ActorType[] = [];
 
-    const [user, staff, operator, admin, partner] = await Promise.all([
+    const [user, staff, operator, admin] = await Promise.all([
       this.prisma.user.findUnique({ where: { email }, select: { id: true } }),
       this.prisma.staff.findUnique({ where: { email }, select: { id: true } }),
       this.prisma.operator.findUnique({
@@ -314,17 +314,12 @@ export class AuthService {
         select: { id: true },
       }),
       this.prisma.admin.findUnique({ where: { email }, select: { id: true } }),
-      this.prisma.partner.findUnique({
-        where: { email },
-        select: { id: true },
-      }),
     ]);
 
     if (user) roles.push(ActorType.user);
     if (staff) roles.push(ActorType.staff);
     if (operator) roles.push(ActorType.operator);
     if (admin) roles.push(ActorType.admin);
-    if (partner) roles.push(ActorType.partner);
 
     return roles;
   }
@@ -337,7 +332,7 @@ export class AuthService {
     const roles: ActorType[] = [];
     const phoneVariants = this.getPhoneVariants(phone);
 
-    const [user, staff, operator, admin, partner] = await Promise.all([
+    const [user, staff, operator, admin] = await Promise.all([
       this.prisma.user.findFirst({
         where: { phone: { in: phoneVariants } },
         select: { id: true },
@@ -354,17 +349,12 @@ export class AuthService {
         where: { phone: { in: phoneVariants } },
         select: { id: true },
       }),
-      this.prisma.partner.findFirst({
-        where: { phone: { in: phoneVariants } },
-        select: { id: true },
-      }),
     ]);
 
     if (user) roles.push(ActorType.user);
     if (staff) roles.push(ActorType.staff);
     if (operator) roles.push(ActorType.operator);
     if (admin) roles.push(ActorType.admin);
-    if (partner) roles.push(ActorType.partner);
 
     return roles;
   }
@@ -382,8 +372,6 @@ export class AuthService {
         return this.prisma.operator.findUnique({ where: { email } });
       case ActorType.admin:
         return this.prisma.admin.findUnique({ where: { email } });
-      case ActorType.partner:
-        return this.prisma.partner.findUnique({ where: { email } });
       default:
         return null;
     }
@@ -416,10 +404,6 @@ export class AuthService {
         return this.prisma.admin.findFirst({
           where: { phone: { in: phoneVariants } },
         });
-      case ActorType.partner:
-        return this.prisma.partner.findFirst({
-          where: { phone: { in: phoneVariants } },
-        });
       default:
         return null;
     }
@@ -446,7 +430,6 @@ export class AuthService {
       [LoginActorType.STAFF]: ActorType.staff,
       [LoginActorType.OPERATOR]: ActorType.operator,
       [LoginActorType.ADMIN]: ActorType.admin,
-      [LoginActorType.PARTNER]: ActorType.partner,
     };
     return map[actorType];
   }
@@ -461,8 +444,6 @@ export class AuthService {
         return 'operator';
       case ActorType.admin:
         return actor.roleLevel || 'admin';
-      case ActorType.partner:
-        return 'partner';
       default:
         return 'guest';
     }
@@ -509,7 +490,7 @@ export class AuthService {
           data: { lastLoginAt: now },
         });
         break;
-      // Staff, Operator, Partner don't have lastLoginAt field
+      // Staff, Operator don't have lastLoginAt field
     }
   }
 
@@ -806,11 +787,6 @@ export class AuthService {
       if (admin) {
         await tx.admin.update({ where: { email }, data: { passwordHash } });
       }
-
-      const partner = await tx.partner.findUnique({ where: { email } });
-      if (partner) {
-        await tx.partner.update({ where: { email }, data: { passwordHash } });
-      }
     });
 
     return { message: 'Password has been reset successfully' };
@@ -843,11 +819,6 @@ export class AuthService {
         break;
       case ActorType.admin:
         actor = await this.prisma.admin.findUnique({ where: { id: actorId } });
-        break;
-      case ActorType.partner:
-        actor = await this.prisma.partner.findUnique({
-          where: { id: actorId },
-        });
         break;
     }
 
@@ -892,12 +863,6 @@ export class AuthService {
         break;
       case ActorType.admin:
         await this.prisma.admin.update({
-          where: { id: actorId },
-          data: { passwordHash },
-        });
-        break;
-      case ActorType.partner:
-        await this.prisma.partner.update({
           where: { id: actorId },
           data: { passwordHash },
         });

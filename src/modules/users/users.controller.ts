@@ -226,4 +226,62 @@ export class UsersController {
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.remove(id);
   }
+
+  // ─── Partner Requests (merged from PartnersController) ────────────
+
+  @Get('partner-requests/all')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'List all partner requests' })
+  async findAllPartnerRequests() {
+    return this.usersService.findAllPartnerRequests();
+  }
+
+  @Get('partner-requests/my')
+  @Roles(Role.USER)
+  @ApiOperation({ summary: 'List own partner requests' })
+  async findMyPartnerRequests(@CurrentUser() currentUser: JwtPayload) {
+    return this.usersService.findMyPartnerRequests(currentUser);
+  }
+
+  @Get('partner-requests/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
+  @ApiOperation({ summary: 'Get partner request details' })
+  @ApiResponse({ status: 404, description: 'Request not found' })
+  async findOnePartnerRequest(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.findOnePartnerRequest(id);
+  }
+
+  @Post('partner-requests')
+  @Roles(Role.USER)
+  @ApiOperation({ summary: 'Submit partner request' })
+  async createPartnerRequest(
+    @Body() createDto: any,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.createPartnerRequest(createDto, currentUser);
+  }
+
+  @Patch('partner-requests/:id')
+  @Roles(Role.USER)
+  @ApiOperation({ summary: 'Update partner request' })
+  @ApiResponse({ status: 404, description: 'Request not found' })
+  async updatePartnerRequest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateDto: any,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.updatePartnerRequest(id, updateDto, currentUser);
+  }
+
+  @Patch('partner-requests/:id/review')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'Review partner request (approve/reject)' })
+  @ApiResponse({ status: 404, description: 'Request not found' })
+  async reviewPartnerRequest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() reviewDto: any,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.reviewPartnerRequest(id, reviewDto, currentUser);
+  }
 }

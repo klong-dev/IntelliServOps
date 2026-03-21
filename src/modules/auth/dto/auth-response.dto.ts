@@ -17,7 +17,7 @@ export class AuthUserDto {
 
   @ApiProperty({
     example: 'user',
-    enum: ['user', 'staff', 'operator', 'admin', 'partner', 'guest'],
+    enum: ['user', 'staff', 'operator', 'admin', 'guest'],
   })
   actorType: string;
 
