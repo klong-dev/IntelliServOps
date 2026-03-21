@@ -463,12 +463,30 @@ export class UsersService {
       autoVerified &&
       this.configService.get<boolean>('fptAi.autoVerifyOnSuccess')
     ) {
+      // Build update data: sync dob + fullName from extracted identity info
+      const userUpdateData: any = { isVerified: true };
+
+      if (extractedInfo.dob) {
+        // Parse DD/MM/YYYY format from CCCD
+        const parts = extractedInfo.dob.split('/');
+        if (parts.length === 3) {
+          const parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+          if (!isNaN(parsedDate.getTime())) {
+            userUpdateData.dateOfBirth = parsedDate;
+          }
+        }
+      }
+
+      if (extractedInfo.name) {
+        userUpdateData.fullName = extractedInfo.name;
+      }
+
       updatedUser = await this.prisma.user.update({
         where: { id: userId },
-        data: { isVerified: true },
+        data: userUpdateData,
         include: { identity: true },
       });
-      this.logger.log(`User ${userId} auto-verified after ID card check`);
+      this.logger.log(`User ${userId} auto-verified after ID card check. Synced dob/fullName from identity.`);
     } else {
       updatedUser = await this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
