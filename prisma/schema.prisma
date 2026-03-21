@@ -48,7 +48,6 @@ enum ActorType {
   staff
   operator
   admin
-  partner
   system
 }
 
@@ -465,6 +464,17 @@ model User {
   updatedAt                DateTime  @updatedAt
   createdByStaffId         String?
 
+  // Partner business fields (nullable — only set for users who are also property owners)
+  companyName              String?
+  taxCode                  String?   @unique
+  bankAccountNumber        String?
+  bankName                 String?
+  address                  String?
+  commissionRate           Decimal?  @db.Decimal(5, 2)
+  contractStartDate        DateTime?
+  contractEndDate          DateTime?
+  paymentTerms             String?
+
   // Relations
   createdByStaff        Staff?                @relation("UserCreatedByStaff", fields: [createdByStaffId], references: [id])
   identity              UserIdentity?
@@ -476,6 +486,8 @@ model User {
   userRooms             UserRoom[]
   reservations          Reservation[]
   chatConversations     ChatConversation[]
+  apartments            Apartment[]
+  partnerRequests       PartnerRequest[]
 
   @@index([phone])
   @@index([supabaseId])
@@ -601,71 +613,7 @@ model Admin {
   @@map("admins")
 }
 
-model Partner {
-  id                String    @id @default(uuid())
-  email             String    @unique
-  phone             String
-  fullName          String?
-  companyName       String?
-  taxCode           String?   @unique
-  nationalId        String?
-  bankAccountNumber String?
-  bankName          String?
-  address           String?
-  contractStartDate DateTime?
-  contractEndDate   DateTime?
-  commissionRate    Decimal?  @db.Decimal(5, 2)
-  paymentTerms      String?
-  isVerified        Boolean   @default(false)
-  isActive          Boolean   @default(true)
-  passwordHash      String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-
-  // Relations
-  identity        PartnerIdentity?
-  apartments      Apartment[]
-  partnerRequests PartnerRequest[]
-
-  @@index([isVerified])
-  @@index([isActive])
-  @@map("partners")
-}
-
-// ─── Partner Identity (căn cước / hộ chiếu) ─────────────────────────────────
-
-model PartnerIdentity {
-  id                       String    @id @default(uuid())
-  partnerId                String    @unique
-  nationalId               String?   @unique  // Số căn cước công dân
-  passportNumber           String?   @unique  // Hộ chiếu
-  name                     String?              // Tên trên CCCD
-  dob                      String?              // Ngày sinh
-  sex                      String?              // Giới tính
-  nationality              String?              // Quốc tịch
-  ethnicity                String?              // Dân tộc
-  home                     String?              // Nguyên quán
-  address                  String?              // Địa chỉ đầy đủ
-  province                 String?              // Tỉnh/Thành phố
-  district                 String?              // Quận/Huyện
-  ward                     String?              // Phường/Xã
-  street                   String?              // Số nhà, đường
-  features                 String?              // Đặc điểm nhận dạng
-  issueDate                String?              // Ngày cấp
-  doe                      String?              // Ngày hết hạn
-  isVerified               Boolean   @default(false) // AI đã xác minh?
-  verifiedAt               DateTime?
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
-
-  // Relations
-  partner                  Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-
-  @@index([partnerId])
-  @@index([nationalId])
-  @@index([isVerified])
-  @@map("partner_identities")
-}
+// Partner and PartnerIdentity models have been merged into User and UserIdentity
 
 // ============================================================================
 // ASSET MODELS
@@ -694,14 +642,14 @@ model Apartment {
   images                Json?
   videoTourUrl          String?
   yearBuilt             Int?
-  partnerId             String?
+  ownerId               String?
   approvedByOperatorId  String?
   approvedAt            DateTime?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
 
   // Relations
-  partner           Partner?           @relation(fields: [partnerId], references: [id])
+  owner             User?              @relation(fields: [ownerId], references: [id])
   approvedByOperator Operator?          @relation("ApartmentApprovedByOperator", fields: [approvedByOperatorId], references: [id])
   rooms             Room[]
   rentalContracts   RentalContract[]
@@ -718,7 +666,7 @@ model Apartment {
   @@index([status])
   @@index([newWardCode])
   @@index([oldWardCode])
-  @@index([partnerId])
+  @@index([ownerId])
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])
   @@map("apartments")
@@ -972,7 +920,7 @@ model Appointment {
 
 model PartnerRequest {
   id                    String               @id @default(uuid())
-  partnerId             String
+  userId                String
   propertyType          PropertyType         @default(apartment)
   address               String
   city                  String
@@ -995,10 +943,10 @@ model PartnerRequest {
   updatedAt             DateTime             @updatedAt
 
   // Relations
-  partner            Partner   @relation(fields: [partnerId], references: [id])
+  user               User      @relation(fields: [userId], references: [id])
   reviewedByOperator Operator? @relation("PartnerRequestReviewedByOperator", fields: [reviewedByOperatorId], references: [id])
 
-  @@index([partnerId])
+  @@index([userId])
   @@index([status])
   @@index([reviewedByOperatorId])
   @@index([city])

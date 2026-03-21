@@ -12,7 +12,6 @@ export enum LoginActorType {
   STAFF = 'staff',
   OPERATOR = 'operator',
   ADMIN = 'admin',
-  PARTNER = 'partner',
 }
 
 export class LoginDto {

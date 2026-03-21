@@ -429,7 +429,7 @@ export class ApartmentsService {
             status: true,
           },
         },
-        partner: {
+        owner: {
           select: {
             id: true,
             companyName: true,
@@ -492,11 +492,11 @@ export class ApartmentsService {
       status: ApartmentStatus.available,
     };
 
-    // If partner creates, link to their account
-    if (currentUser.actorType === 'partner') {
-      data.partner = { connect: { id: currentUser.sub } };
-    } else if (createDto.partnerId) {
-      data.partner = { connect: { id: createDto.partnerId } };
+    // If user creates, link to their account
+    if (currentUser.actorType === 'user') {
+      data.owner = { connect: { id: currentUser.sub } };
+    } else if (createDto.ownerId) {
+      data.owner = { connect: { id: createDto.ownerId } };
     }
 
     return this.prisma.apartment.create({
@@ -515,7 +515,7 @@ export class ApartmentsService {
 
   /**
    * Update apartment
-   * Only owner (partner) or Admin/Operator can update
+   * Only owner (user) or Admin/Operator can update
    */
   async update(
     id: string,
@@ -524,17 +524,17 @@ export class ApartmentsService {
   ) {
     const apartment = await this.prisma.apartment.findUnique({
       where: { id },
-      select: { id: true, partnerId: true },
+      select: { id: true, ownerId: true },
     });
 
     if (!apartment) {
       throw new NotFoundException('Apartment not found');
     }
 
-    // Partners can only update their own apartments
+    // Users can only update their own apartments
     if (
-      currentUser.actorType === 'partner' &&
-      apartment.partnerId !== currentUser.sub
+      currentUser.actorType === 'user' &&
+      apartment.ownerId !== currentUser.sub
     ) {
       throw new ForbiddenException('You can only update your own apartments');
     }
@@ -579,11 +579,11 @@ export class ApartmentsService {
   }
 
   /**
-   * Get apartments by partner (for partner dashboard)
+   * Get apartments by owner (for owner dashboard)
    */
-  async findByPartner(partnerId: string) {
+  async findByOwner(ownerId: string) {
     return this.prisma.apartment.findMany({
-      where: { partnerId },
+      where: { ownerId },
       select: {
         id: true,
         buildingName: true,

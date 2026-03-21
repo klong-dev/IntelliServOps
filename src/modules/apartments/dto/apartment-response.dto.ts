@@ -1,8 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// ─── Partner Nested DTO ─────────────────────────────────────────────
+// ─── Owner Nested DTO ─────────────────────────────────────────────
 
-class PartnerSummaryDto {
+class OwnerSummaryDto {
   @ApiProperty({ example: 'e33f798c-7978-4a86-b243-b3ac43e020ba' })
   id: string;
 
@@ -80,7 +80,7 @@ class WardAddressDto {
   fullAddress: string | null;
 }
 
-// ─── Apartment List Item DTO (search / findByPartner) ───────────────
+// ─── Apartment List Item DTO (search / findByOwner) ───────────────
 
 export class ApartmentListItemDto {
   @ApiProperty({ example: 'd6e0a098-c1e9-4b5d-9207-e507e9a5974d' })
@@ -247,7 +247,7 @@ export class ApartmentDetailDto {
   yearBuilt: number | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
-  partnerId: string | null;
+  ownerId: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   approvedByOperatorId: string | null;
@@ -264,8 +264,8 @@ export class ApartmentDetailDto {
   @ApiProperty({ type: [RoomDto] })
   rooms: RoomDto[];
 
-  @ApiPropertyOptional({ type: PartnerSummaryDto })
-  partner?: PartnerSummaryDto;
+  @ApiPropertyOptional({ type: OwnerSummaryDto })
+  owner?: OwnerSummaryDto;
 
   @ApiProperty({ type: [Object], example: [] })
   iotDevices: any[];
