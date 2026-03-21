@@ -1502,6 +1502,19 @@ model Notification {
   @@map("notifications")
 }
 
+model FcmToken {
+  id        String    @id @default(uuid())
+  actorType ActorType
+  actorId   String
+  token     String    @unique
+  device    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([actorType, actorId])
+  @@map("fcm_tokens")
+}
+
 // ============================================================================
 // STAFF NOTES MODEL
 // ============================================================================
@@ -1645,7 +1658,7 @@ model ChatConversation {
 
   // Relations
   user     User?          @relation(fields: [userId], references: [id])
-  messages ChatMessage[]
+  messages ChatMessage[]  @relation("ConversationMessages")
 
   @@index([userId])
   @@index([guestSessionId])
@@ -1655,13 +1668,15 @@ model ChatConversation {
 }
 
 model ChatMessage {
-  id              String      @id @default(uuid())
+  id              Int         @id @default(autoincrement())
   conversationId  String
   senderType      SenderType
   senderId        String?
   senderName      String?
   messageType     MessageType @default(text)
   content         String
+  images          String[]
+  apartmentId     String?
   attachments     Json?
   isRead          Boolean     @default(false)
   readAt          DateTime?
@@ -1669,7 +1684,7 @@ model ChatMessage {
   updatedAt       DateTime    @updatedAt
 
   // Relations
-  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation ChatConversation @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
   @@index([senderType, senderId])

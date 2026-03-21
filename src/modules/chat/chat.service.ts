@@ -177,6 +177,8 @@ export class ChatService {
           senderName: senderName || null,
           messageType: dto.messageType || MessageType.text,
           content: dto.content,
+          images: dto.images || [],
+          apartmentId: dto.apartmentId || null,
           attachments: dto.attachments ? (dto.attachments as any) : null,
         },
       }),
@@ -192,7 +194,21 @@ export class ChatService {
       }),
     ]);
 
-    return message;
+    return this.mapToFrontendMessage(message);
+  }
+
+  /**
+   * Maps a Prisma ChatMessage to the specific frontend Message interface.
+   */
+  private mapToFrontendMessage(msg: any) {
+    return {
+      id: msg.id,
+      content: msg.content,
+      images: msg.images && msg.images.length > 0 ? msg.images : undefined,
+      apartmentId: msg.apartmentId || undefined,
+      sender: ['user', 'guest'].includes(msg.senderType) ? 'user' : 'support',
+      timestamp: msg.createdAt,
+    };
   }
 
   /**
@@ -223,7 +239,7 @@ export class ChatService {
     ]);
 
     return {
-      data: messages.reverse(), // Return in chronological order
+      data: messages.reverse().map((m) => this.mapToFrontendMessage(m)), // Return mapped in chronological order
       meta: {
         total,
         page,

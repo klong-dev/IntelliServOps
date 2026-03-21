@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD } from '@nestjs/core';
 
 // Config
@@ -63,6 +64,9 @@ import { AppService } from './app.service';
       ],
       envFilePath: ['.env'],
     }),
+
+    // Event System (for centralized notification triggers)
+    EventEmitterModule.forRoot(),
 
     // Shared Infrastructure (Prisma, Redis, Queue)
     SharedModule,

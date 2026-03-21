@@ -270,7 +270,7 @@ export class ChatGateway
       // Also notify staff inbox (for conversations list update)
       this.server.to('staff:inbox').emit('chat:conversation_updated', {
         conversationId: data.conversationId,
-        lastMessageAt: message.createdAt,
+        lastMessageAt: message.timestamp,
         lastMessageText: message.content.length > 100
           ? message.content.substring(0, 100) + '...'
           : message.content,

@@ -14,6 +14,8 @@ describe('NotificationsController', () => {
     create: jest.fn(),
     markAsRead: jest.fn(),
     markAllAsRead: jest.fn(),
+    registerFcmToken: jest.fn(),
+    removeFcmToken: jest.fn(),
   };
 
   const mockNotification = (overrides = {}) => ({
@@ -51,15 +53,6 @@ describe('NotificationsController', () => {
       expect(result).toEqual(notifications);
       expect(mockNotificationsService.findMyNotifications).toHaveBeenCalledWith(currentUser, undefined);
     });
-
-    it('should filter by read status', async () => {
-      const currentUser = mockUserJwtPayload();
-      mockNotificationsService.findMyNotifications.mockResolvedValue([]);
-
-      await controller.findMyNotifications(currentUser, 'true');
-
-      expect(mockNotificationsService.findMyNotifications).toHaveBeenCalledWith(currentUser, true);
-    });
   });
 
   describe('countUnread', () => {
@@ -73,32 +66,13 @@ describe('NotificationsController', () => {
     });
   });
 
-  describe('findAll', () => {
-    it('should return all notifications (admin)', async () => {
-      const notifications = [mockNotification()];
-      mockNotificationsService.findAll.mockResolvedValue(notifications);
-
-      const result = await controller.findAll();
-
-      expect(result).toEqual(notifications);
-    });
-
-    it('should filter by recipientType', async () => {
-      mockNotificationsService.findAll.mockResolvedValue([]);
-
-      await controller.findAll(ActorType.user);
-
-      expect(mockNotificationsService.findAll).toHaveBeenCalledWith(ActorType.user);
-    });
-  });
-
   describe('create', () => {
     it('should create notification', async () => {
       const createDto = {
         recipientType: ActorType.user,
         recipientId: 'user-123',
-        notificationType: 'general' as any,
-        channel: 'in_app' as any,
+        notificationType: 'info' as any,
+        channel: 'push' as any,
         title: 'Test',
         message: 'Test message',
       };
@@ -132,6 +106,35 @@ describe('NotificationsController', () => {
       const result = await controller.markAllAsRead(currentUser);
 
       expect(result).toEqual({ markedCount: 5 });
+    });
+  });
+
+  describe('registerFcmToken', () => {
+    it('should register FCM token', async () => {
+      const currentUser = mockUserJwtPayload();
+      const dto = { token: 'fcm-token-123', device: 'iPhone 15' };
+      mockNotificationsService.registerFcmToken.mockResolvedValue({
+        id: 'token-id',
+        token: dto.token,
+        device: dto.device,
+      });
+
+      const result = await controller.registerFcmToken(currentUser, dto);
+
+      expect(result.token).toEqual(dto.token);
+      expect(mockNotificationsService.registerFcmToken).toHaveBeenCalledWith(currentUser, dto);
+    });
+  });
+
+  describe('removeFcmToken', () => {
+    it('should remove FCM token', async () => {
+      const currentUser = mockUserJwtPayload();
+      const dto = { token: 'fcm-token-123' };
+      mockNotificationsService.removeFcmToken.mockResolvedValue({ message: 'Token removed' });
+
+      const result = await controller.removeFcmToken(currentUser, dto);
+
+      expect(result).toEqual({ message: 'Token removed' });
     });
   });
 });

@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsArray } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MessageType } from '@prisma/client';
 
@@ -40,4 +40,21 @@ export class SendMessageDto {
     mimeType?: string;
     size?: number;
   }>;
+
+  @ApiPropertyOptional({
+    description: 'Array of image URLs',
+    example: ['https://example.com/img1.jpg'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  images?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Related apartment ID',
+    example: 'apt-123',
+  })
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
 }
