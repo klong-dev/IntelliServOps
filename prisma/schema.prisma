@@ -459,6 +459,7 @@ model User {
   supabaseId               String?   @unique
   isActive                 Boolean   @default(true)
   isVerified               Boolean   @default(false)
+  isPartner                Boolean   @default(false)
   lastLoginAt              DateTime?
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
