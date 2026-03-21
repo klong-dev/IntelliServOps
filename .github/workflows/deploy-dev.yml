@@ -18,6 +18,11 @@ jobs:
 
       - run: npm ci
 
+      - name: Create Firebase config
+        run: |
+          mkdir -p config
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > config/firebase-service-account.json
+
       - run: npx prisma generate
 
       - run: npm run build
@@ -28,6 +33,7 @@ jobs:
           path: |
             dist
             prisma
+            config
             package.json
             package-lock.json
           retention-days: 7
