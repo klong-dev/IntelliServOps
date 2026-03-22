@@ -38,6 +38,7 @@ import { PoliciesModule } from './modules/policies';
 import { ActivityLogsModule } from './modules/activity-logs';
 import { StaffNotesModule } from './modules/staff-notes';
 import { UserRoomsModule } from './modules/user-rooms';
+import { UserApartmentsModule } from './modules/user-apartments';
 import { ApartmentPoliciesModule } from './modules/apartment-policies';
 import { ReservationsModule } from './modules/reservations';
 import { ChatModule } from './modules/chat';
@@ -87,6 +88,7 @@ import { AppService } from './app.service';
     ActivityLogsModule,
     StaffNotesModule,
     UserRoomsModule,
+    UserApartmentsModule,
     ApartmentPoliciesModule,
     ReservationsModule,
     ChatModule,

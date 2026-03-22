@@ -1,4 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 // ─── Owner Nested DTO ─────────────────────────────────────────────
 
@@ -63,13 +71,21 @@ class WardAddressDto {
   @ApiPropertyOptional({ type: Number, example: 754, nullable: true })
   districtCode: number | null;
 
-  @ApiPropertyOptional({ type: String, example: 'Thị xã Phú Mỹ', nullable: true })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thị xã Phú Mỹ',
+    nullable: true,
+  })
   districtName: string | null;
 
   @ApiPropertyOptional({ type: Number, example: 79, nullable: true })
   provinceCode: number | null;
 
-  @ApiPropertyOptional({ type: String, example: 'Thành phố Hồ Chí Minh', nullable: true })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thành phố Hồ Chí Minh',
+    nullable: true,
+  })
   provinceName: string | null;
 
   @ApiPropertyOptional({
@@ -80,13 +96,79 @@ class WardAddressDto {
   fullAddress: string | null;
 }
 
+class RentalContractLinkedUserDto {
+  @ApiProperty({ example: 'e33f798c-7978-4a86-b243-b3ac43e020ba' })
+  id: string;
+
+  @ApiProperty({ example: 'Nguyen Van A' })
+  fullName: string;
+}
+
+class RentalContractMemberLinkDto {
+  @ApiProperty({ example: '7c2946d7-b237-4e6d-aec4-8f055f8d12f0' })
+  id: string;
+
+  @ApiProperty({ example: 'primary' })
+  memberType: string;
+
+  @ApiProperty({ example: true })
+  isPrimaryContact: boolean;
+
+  @ApiProperty({ example: 'active' })
+  status: string;
+
+  @ApiProperty({ type: RentalContractLinkedUserDto })
+  user: RentalContractLinkedUserDto;
+}
+
+class ApartmentUserApartmentContractDto {
+  @ApiProperty({ example: '5e10f4d8-1c14-48f5-8ad4-e35ea928f2a3' })
+  id: string;
+
+  @ApiProperty({ example: 'CTR-2026-00001' })
+  contractNumber: string;
+
+  @ApiProperty({ example: 'active' })
+  status: string;
+
+  @ApiProperty({ type: [RentalContractMemberLinkDto] })
+  members: RentalContractMemberLinkDto[];
+}
+
+class ApartmentUserApartmentDto {
+  @ApiProperty({ example: 'ce47fe96-d6a9-4df2-9f95-c0a7ac4a4d5c' })
+  id: string;
+
+  @ApiProperty({ example: 'active' })
+  status: string;
+
+  @ApiProperty({ example: true })
+  isPrimaryTenant: boolean;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  moveInDate: Date | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  moveOutDate: Date | null;
+
+  @ApiProperty({ type: RentalContractLinkedUserDto })
+  user: RentalContractLinkedUserDto;
+
+  @ApiProperty({ type: ApartmentUserApartmentContractDto })
+  rentalContract: ApartmentUserApartmentContractDto;
+}
+
 // ─── Apartment List Item DTO (search / findByOwner) ───────────────
 
 export class ApartmentListItemDto {
   @ApiProperty({ example: 'd6e0a098-c1e9-4b5d-9207-e507e9a5974d' })
   id: string;
 
-  @ApiPropertyOptional({ type: String, example: 'Saigon Pearl', nullable: true })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Saigon Pearl',
+    nullable: true,
+  })
   buildingName: string | null;
 
   @ApiProperty({ example: 'R1-801' })
@@ -132,6 +214,14 @@ export class ApartmentListItemDto {
   @ApiProperty({ example: 'available' })
   status: string;
 
+  @ApiPropertyOptional({
+    type: Number,
+    example: 4.5,
+    nullable: true,
+    description: 'Diem danh gia trung binh cua apartment (1-5)',
+  })
+  rating?: number | null;
+
   @ApiPropertyOptional({ type: String, nullable: true })
   description: string | null;
 
@@ -155,10 +245,9 @@ export class ApartmentListItemDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description:
-      'Chuỗi địa chỉ hiển thị theo addressType đang filter (new/old/both)',
+    description: 'Dia chi hien thi theo addressType dang filter (new/old/both)',
   })
-  displayAddress?: string | null;
+  address?: string | null;
 
   @ApiProperty()
   createdAt: Date;
@@ -173,7 +262,11 @@ export class ApartmentDetailDto {
   @ApiProperty({ example: 'd6e0a098-c1e9-4b5d-9207-e507e9a5974d' })
   id: string;
 
-  @ApiPropertyOptional({ type: String, example: 'Saigon Pearl', nullable: true })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Saigon Pearl',
+    nullable: true,
+  })
   buildingName: string | null;
 
   @ApiProperty({ example: 'R1-801' })
@@ -222,7 +315,11 @@ export class ApartmentDetailDto {
   @ApiProperty({ example: 'semi_furnished' })
   furnishingStatus: string;
 
-  @ApiPropertyOptional({ type: [String], example: ['Hồ bơi', 'Gym'], nullable: true })
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Hồ bơi', 'Gym'],
+    nullable: true,
+  })
   amenities: string[] | null;
 
   @ApiProperty({ example: '12000000' })
@@ -233,6 +330,14 @@ export class ApartmentDetailDto {
 
   @ApiProperty({ example: 'available' })
   status: string;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 4.5,
+    nullable: true,
+    description: 'Diem danh gia trung binh cua apartment (1-5)',
+  })
+  rating?: number | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   description: string | null;
@@ -245,6 +350,28 @@ export class ApartmentDetailDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true })
   yearBuilt: number | null;
+
+  @ApiPropertyOptional({
+    type: WardAddressDto,
+    nullable: true,
+    description: 'Dia chi resolve theo ma phuong/xa sau sap nhap (v2)',
+  })
+  newAddress?: WardAddressDto | null;
+
+  @ApiPropertyOptional({
+    type: WardAddressDto,
+    nullable: true,
+    description: 'Dia chi resolve theo ma phuong/xa truoc sap nhap (v1)',
+  })
+  oldAddress?: WardAddressDto | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Dia chi hien thi theo addressType query (new/old/both) khi lay chi tiet can ho',
+  })
+  address?: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   ownerId: string | null;
@@ -272,6 +399,14 @@ export class ApartmentDetailDto {
 
   @ApiProperty({ type: [Object], example: [] })
   utilityMeters: any[];
+
+  @ApiProperty({
+    type: [ApartmentUserApartmentDto],
+    description:
+      'Danh sach userApartment duoc lay tu rental contract co status active',
+    example: [],
+  })
+  userApartments: ApartmentUserApartmentDto[];
 }
 
 // ─── Apartment Create/Update Result ─────────────────────────────────
@@ -313,4 +448,61 @@ export class ApartmentStatusResultDto {
 
   @ApiProperty({ example: 'available' })
   status: string;
+}
+
+export class RateApartmentDto {
+  @ApiProperty({
+    example: 5,
+    minimum: 1,
+    maximum: 5,
+    description: 'Diem danh gia tu 1 den 5',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating: number;
+
+  @ApiPropertyOptional({
+    example: 'Can ho sach se, quan ly ho tro nhanh.',
+    nullable: true,
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(1000)
+  comment?: string;
+}
+
+export class ApartmentRatingResultDto {
+  @ApiProperty({ example: 'fbec65aa-facd-45f8-bd7b-97317018f3e6' })
+  id: string;
+
+  @ApiProperty({ example: 'd6e0a098-c1e9-4b5d-9207-e507e9a5974d' })
+  apartmentId: string;
+
+  @ApiProperty({ example: 'e33f798c-7978-4a86-b243-b3ac43e020ba' })
+  userId: string;
+
+  @ApiProperty({ example: 5 })
+  rating: number;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Can ho sach se, quan ly ho tro nhanh.',
+  })
+  comment: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 4.5,
+    description: 'Diem danh gia trung binh moi nhat cua apartment',
+  })
+  averageRating: number | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
 }

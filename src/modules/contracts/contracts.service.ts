@@ -16,6 +16,7 @@ import {
   ContractStatus,
   ApartmentStatus,
   MemberStatus,
+  UserApartmentStatus,
   InvoiceStatus,
   InvoiceType,
   PaymentMethodType,
@@ -619,6 +620,13 @@ export class ContractsService {
         where: { rentalContractId: id },
         data: { status: MemberStatus.moved_out, moveOutDate: new Date() },
       }),
+      this.prisma.userApartment.updateMany({
+        where: { rentalContractId: id },
+        data: {
+          status: UserApartmentStatus.moved_out,
+          moveOutDate: new Date(),
+        },
+      }),
     ]);
   }
 
@@ -681,6 +689,14 @@ export class ContractsService {
       await tx.userContractMember.updateMany({
         where: { rentalContractId: id },
         data: { status: MemberStatus.moved_out, moveOutDate: terminatedAt },
+      });
+
+      await tx.userApartment.updateMany({
+        where: { rentalContractId: id },
+        data: {
+          status: UserApartmentStatus.moved_out,
+          moveOutDate: terminatedAt,
+        },
       });
     });
 
