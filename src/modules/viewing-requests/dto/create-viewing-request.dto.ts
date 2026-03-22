@@ -30,7 +30,10 @@ export class CreateViewingRequestDto {
   @MaxLength(20)
   phone: string;
 
-  @ApiPropertyOptional({ example: '2026-02-15', description: 'Preferred move-in date' })
+  @ApiPropertyOptional({
+    example: '2026-02-15',
+    description: 'Preferred move-in date',
+  })
   @IsDateString()
   @IsOptional()
   preferredMoveInDate?: string;
@@ -41,14 +44,20 @@ export class CreateViewingRequestDto {
   @MaxLength(1000)
   message?: string;
 
-  @ApiPropertyOptional({ example: 2, description: 'Number of people who will live' })
+  @ApiPropertyOptional({
+    example: 2,
+    description: 'Number of people who will live',
+  })
   @IsInt()
   @IsOptional()
   @Min(1)
   @Max(10)
   numberOfOccupants?: number;
 
-  @ApiPropertyOptional({ example: 'morning', description: 'Best time to contact' })
+  @ApiPropertyOptional({
+    example: 'morning',
+    description: 'Best time to contact',
+  })
   @IsString()
   @IsOptional()
   preferredContactTime?: string;
