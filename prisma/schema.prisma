@@ -132,6 +132,12 @@ enum UserRoomStatus {
   inactive
 }
 
+enum UserApartmentStatus {
+  active
+  moved_out
+  inactive
+}
+
 enum PaymentMethodType {
   bank_transfer
   cash
@@ -485,7 +491,9 @@ model User {
   maintenanceRequests   MaintenanceRequest[]
   staffNotes            StaffNote[]
   userRooms             UserRoom[]
+  userApartments        UserApartment[]
   reservations          Reservation[]
+  apartmentRatings      ApartmentRating[]
   chatConversations     ChatConversation[]
   apartments            Apartment[]
   partnerRequests       PartnerRequest[]
@@ -663,6 +671,8 @@ model Apartment {
   tasks             Task[]
   apartmentPolicies ApartmentPolicy[]
   reservations      Reservation[]
+  userApartments    UserApartment[]
+  ratings           ApartmentRating[]
 
   @@index([status])
   @@index([newWardCode])
@@ -671,6 +681,28 @@ model Apartment {
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])
   @@map("apartments")
+}
+
+model ApartmentRating {
+  id               String         @id @default(uuid())
+  apartmentId      String
+  userId           String
+  rentalContractId String
+  rating           Int
+  comment          String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Relations
+  apartment      Apartment      @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, apartmentId])
+  @@index([apartmentId])
+  @@index([userId])
+  @@index([rentalContractId])
+  @@map("apartment_ratings")
 }
 model Room {
   id                 String     @id @default(uuid())
@@ -743,6 +775,8 @@ model RentalContract {
   maintenanceRequests MaintenanceRequest[]
   utilityReadings     UtilityReading[]
   userRooms           UserRoom[]
+  userApartments      UserApartment[]
+  apartmentRatings    ApartmentRating[]
 
   @@index([apartmentId])
   @@index([status])
@@ -1359,6 +1393,49 @@ model UserRoom {
   @@index([rentalContractId])
   @@index([status])
   @@map("user_rooms")
+}
+
+// ============================================================================
+// USER-APARTMENT ASSIGNMENT MODEL
+// ============================================================================
+
+model UserApartment {
+  id                    String              @id @default(uuid())
+  userId                String
+  apartmentId           String
+  rentalContractId      String
+  moveInDate            DateTime?
+  moveOutDate           DateTime?
+  isPrimaryTenant       Boolean             @default(true)
+  status                UserApartmentStatus @default(active)
+
+  // Apartment access data for tenant app
+  apartmentDoorPassword String?
+  buildingGateCode      String?
+  smartLockPin          String?
+  mailboxCode           String?
+  parkingAccessCode     String?
+  wifiName              String?
+  wifiPassword          String?
+
+  // Contacts and notes
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  notes                 String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Relations
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apartment      Apartment      @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, apartmentId, rentalContractId])
+  @@index([userId])
+  @@index([apartmentId])
+  @@index([rentalContractId])
+  @@index([status])
+  @@map("user_apartments")
 }
 
 // ============================================================================

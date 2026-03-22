@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { NotificationsService } from './notifications.service';
-import { NotificationType, NotificationChannel, Priority, ActorType } from '@prisma/client';
+import {
+  NotificationType,
+  NotificationChannel,
+  Priority,
+  ActorType,
+} from '@prisma/client';
 
 /**
  * Centralized notification triggers.
@@ -106,7 +111,9 @@ export class NotificationTriggers {
     contractCode: string;
     daysLeft: number;
   }) {
-    this.logger.log(`Trigger: contract.expiring_soon → ${payload.contractCode}`);
+    this.logger.log(
+      `Trigger: contract.expiring_soon → ${payload.contractCode}`,
+    );
 
     await this.notifications.createAndPush({
       recipientType: ActorType.user,
@@ -134,7 +141,9 @@ export class NotificationTriggers {
     requestCode: string;
     newStatus: string;
   }) {
-    this.logger.log(`Trigger: maintenance.status_changed → ${payload.requestCode}`);
+    this.logger.log(
+      `Trigger: maintenance.status_changed → ${payload.requestCode}`,
+    );
 
     const statusLabels: Record<string, string> = {
       in_progress: 'đang xử lý',
@@ -145,7 +154,10 @@ export class NotificationTriggers {
     await this.notifications.createAndPush({
       recipientType: ActorType.user,
       recipientId: payload.userId,
-      notificationType: payload.newStatus === 'completed' ? NotificationType.success : NotificationType.info,
+      notificationType:
+        payload.newStatus === 'completed'
+          ? NotificationType.success
+          : NotificationType.info,
       channel: NotificationChannel.push,
       title: 'Cập nhật yêu cầu bảo trì',
       message: `Yêu cầu ${payload.requestCode} ${statusLabels[payload.newStatus] || payload.newStatus}.`,
@@ -203,7 +215,10 @@ export class NotificationTriggers {
       notificationType: NotificationType.info,
       channel: NotificationChannel.push,
       title: `Tin nhắn từ ${payload.senderName}`,
-      message: payload.preview.length > 80 ? payload.preview.substring(0, 80) + '...' : payload.preview,
+      message:
+        payload.preview.length > 80
+          ? payload.preview.substring(0, 80) + '...'
+          : payload.preview,
       actionUrl: `/chat/${payload.conversationId}`,
       actionLabel: 'Mở chat',
       priority: Priority.medium,
@@ -224,7 +239,9 @@ export class NotificationTriggers {
     userName: string;
     description: string;
   }) {
-    this.logger.log(`Trigger: staff.new_maintenance_request → ${payload.requestCode}`);
+    this.logger.log(
+      `Trigger: staff.new_maintenance_request → ${payload.requestCode}`,
+    );
 
     await this.notifications.createAndPushBulk(
       ActorType.staff,
@@ -268,5 +285,89 @@ export class NotificationTriggers {
         relatedEntityId: payload.paymentId,
       },
     );
+  }
+
+  // ============================================================================
+  // Viewing Request Events
+  // ============================================================================
+
+  @OnEvent('viewing_request.staff_assigned')
+  async onViewingRequestStaffAssigned(payload: {
+    staffId: string;
+    contactRequestId: string;
+    appointmentId?: string;
+    apartmentId: string;
+    requesterName: string;
+  }) {
+    this.logger.log(
+      `Trigger: viewing_request.staff_assigned -> ${payload.contactRequestId}`,
+    );
+
+    await this.notifications.createAndPush({
+      recipientType: ActorType.staff,
+      recipientId: payload.staffId,
+      notificationType: NotificationType.info,
+      channel: NotificationChannel.push,
+      title: 'Yeu cau xem can ho moi',
+      message: `${payload.requesterName} vua tao lich xem can ho.`,
+      actionUrl: payload.appointmentId
+        ? `/viewing-requests/appointments/${payload.appointmentId}`
+        : `/viewing-requests/${payload.contactRequestId}`,
+      actionLabel: 'Xem chi tiet',
+      priority: Priority.high,
+      relatedEntityType: payload.appointmentId
+        ? 'Appointment'
+        : 'ContactRequest',
+      relatedEntityId: payload.appointmentId ?? payload.contactRequestId,
+    });
+  }
+
+  @OnEvent('viewing_request.user_cancelled')
+  async onViewingRequestUserCancelled(payload: {
+    staffId: string;
+    appointmentId: string;
+  }) {
+    this.logger.log(
+      `Trigger: viewing_request.user_cancelled -> ${payload.appointmentId}`,
+    );
+
+    await this.notifications.createAndPush({
+      recipientType: ActorType.staff,
+      recipientId: payload.staffId,
+      notificationType: NotificationType.warning,
+      channel: NotificationChannel.push,
+      title: 'Lich xem da bi huy',
+      message: 'User da huy lich hen xem can ho.',
+      actionUrl: `/viewing-requests/appointments/${payload.appointmentId}`,
+      actionLabel: 'Xem lich hen',
+      priority: Priority.medium,
+      relatedEntityType: 'Appointment',
+      relatedEntityId: payload.appointmentId,
+    });
+  }
+
+  @OnEvent('viewing_request.confirmed_by_staff')
+  async onViewingRequestConfirmedByStaff(payload: {
+    userId: string;
+    appointmentId: string;
+    apartmentId: string;
+  }) {
+    this.logger.log(
+      `Trigger: viewing_request.confirmed_by_staff -> ${payload.appointmentId}`,
+    );
+
+    await this.notifications.createAndPush({
+      recipientType: ActorType.user,
+      recipientId: payload.userId,
+      notificationType: NotificationType.success,
+      channel: NotificationChannel.push,
+      title: 'Lich xem da duoc xac nhan',
+      message: 'Nhan vien da xac nhan lich xem can ho cua ban.',
+      actionUrl: `/viewing-requests/appointments/${payload.appointmentId}`,
+      actionLabel: 'Xem lich hen',
+      priority: Priority.high,
+      relatedEntityType: 'Appointment',
+      relatedEntityId: payload.appointmentId,
+    });
   }
 }

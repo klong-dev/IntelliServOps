@@ -12,6 +12,7 @@ import {
   InvoiceStatus,
   ContractStatus,
   ApartmentStatus,
+  UserApartmentStatus,
   Prisma,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
@@ -290,6 +291,14 @@ export class PaymentsService {
                 id: true,
                 status: true,
                 apartmentId: true,
+                startDate: true,
+                members: {
+                  select: {
+                    userId: true,
+                    memberType: true,
+                    isPrimaryContact: true,
+                  },
+                },
               },
             },
           },
@@ -331,6 +340,41 @@ export class PaymentsService {
           where: { id: payment.invoice.rentalContract.apartmentId },
           data: { status: ApartmentStatus.occupied },
         }),
+      );
+
+      const members = payment.invoice.rentalContract.members ?? [];
+      txOperations.push(
+        ...members.map((member) =>
+          this.prisma.userApartment.upsert({
+            where: {
+              userId_apartmentId_rentalContractId: {
+                userId: member.userId,
+                apartmentId: payment.invoice.rentalContract.apartmentId,
+                rentalContractId: payment.invoice.rentalContract.id,
+              },
+            },
+            create: {
+              user: { connect: { id: member.userId } },
+              apartment: {
+                connect: { id: payment.invoice.rentalContract.apartmentId },
+              },
+              rentalContract: {
+                connect: { id: payment.invoice.rentalContract.id },
+              },
+              moveInDate: payment.invoice.rentalContract.startDate,
+              isPrimaryTenant:
+                member.memberType === 'primary' || member.isPrimaryContact,
+              status: UserApartmentStatus.active,
+            },
+            update: {
+              moveInDate: payment.invoice.rentalContract.startDate,
+              moveOutDate: null,
+              isPrimaryTenant:
+                member.memberType === 'primary' || member.isPrimaryContact,
+              status: UserApartmentStatus.active,
+            },
+          }),
+        ),
       );
     }
 
@@ -518,6 +562,14 @@ export class PaymentsService {
                 id: true,
                 status: true,
                 apartmentId: true,
+                startDate: true,
+                members: {
+                  select: {
+                    userId: true,
+                    memberType: true,
+                    isPrimaryContact: true,
+                  },
+                },
               },
             },
           },
@@ -587,6 +639,41 @@ export class PaymentsService {
             where: { id: payment.invoice.rentalContract.apartmentId },
             data: { status: ApartmentStatus.occupied },
           }),
+        );
+
+        const members = payment.invoice.rentalContract.members ?? [];
+        txOperations.push(
+          ...members.map((member) =>
+            this.prisma.userApartment.upsert({
+              where: {
+                userId_apartmentId_rentalContractId: {
+                  userId: member.userId,
+                  apartmentId: payment.invoice.rentalContract.apartmentId,
+                  rentalContractId: payment.invoice.rentalContract.id,
+                },
+              },
+              create: {
+                user: { connect: { id: member.userId } },
+                apartment: {
+                  connect: { id: payment.invoice.rentalContract.apartmentId },
+                },
+                rentalContract: {
+                  connect: { id: payment.invoice.rentalContract.id },
+                },
+                moveInDate: payment.invoice.rentalContract.startDate,
+                isPrimaryTenant:
+                  member.memberType === 'primary' || member.isPrimaryContact,
+                status: UserApartmentStatus.active,
+              },
+              update: {
+                moveInDate: payment.invoice.rentalContract.startDate,
+                moveOutDate: null,
+                isPrimaryTenant:
+                  member.memberType === 'primary' || member.isPrimaryContact,
+                status: UserApartmentStatus.active,
+              },
+            }),
+          ),
         );
       }
 

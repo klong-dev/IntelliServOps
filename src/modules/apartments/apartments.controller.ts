@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ApartmentsService } from './apartments.service';
 import {
@@ -24,6 +25,8 @@ import {
   ApartmentDetailDto,
   ApartmentMutationResultDto,
   ApartmentStatusResultDto,
+  RateApartmentDto,
+  ApartmentRatingResultDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
@@ -54,10 +57,43 @@ export class ApartmentsController {
   @Get(':id')
   @Public()
   @ApiOperation({ summary: 'Get apartment details' })
+  @ApiQuery({
+    name: 'addressType',
+    required: false,
+    enum: ['new', 'old', 'both'],
+    description:
+      'Address type for display address: new (v2), old (v1), both (default)',
+  })
   @ApiJsonResponse(ApartmentDetailDto, { description: 'Apartment details' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.apartmentsService.findOne(id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('addressType') addressType?: 'new' | 'old' | 'both',
+  ) {
+    return this.apartmentsService.findOne(id, addressType ?? 'both');
+  }
+
+  @Post(':id/rating')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.USER)
+  @ApiOperation({
+    summary: 'Rate apartment by user',
+    description:
+      'User can rate only once per apartment and only when they have an active contract for that apartment.',
+  })
+  @ApiJsonResponse(ApartmentRatingResultDto, {
+    status: 201,
+    description: 'Apartment rated successfully',
+  })
+  @ApiResponse({ status: 403, description: 'No active contract for apartment' })
+  @ApiResponse({ status: 404, description: 'Apartment not found' })
+  @ApiResponse({ status: 409, description: 'Apartment already rated by user' })
+  async rateApartment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() rateDto: RateApartmentDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.apartmentsService.rateApartment(id, rateDto, currentUser);
   }
 
   @Post()
