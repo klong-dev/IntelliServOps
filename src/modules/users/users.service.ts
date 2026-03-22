@@ -16,7 +16,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { FptAiService } from '../../shared/services/fpt-ai.service';
 import type { JwtPayload } from '../auth/auth.service';
-import { CreateUserDto, UpdateUserDto, SearchUserDto } from './dto';
+import {
+  CreateUserDto,
+  UpdateUserDto,
+  SearchUserDto,
+  CreatePartnerRequestDto,
+  UpdatePartnerRequestDto,
+  ReviewPartnerRequestDto,
+} from './dto';
 
 export type UpdateIdentityCardResult = Prisma.UserGetPayload<{
   include: { identity: true };
@@ -198,8 +205,17 @@ export class UsersService {
         emergencyContactPhone: createUserDto.emergencyContactPhone,
         createdByStaffId,
       },
-      include: {
-        identity: true,
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        fullName: true,
+        dateOfBirth: true,
+        profileImageUrl: true,
+        isActive: true,
+        isVerified: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
@@ -486,7 +502,9 @@ export class UsersService {
         data: userUpdateData,
         include: { identity: true },
       });
-      this.logger.log(`User ${userId} auto-verified after ID card check. Synced dob/fullName from identity.`);
+      this.logger.log(
+        `User ${userId} auto-verified after ID card check. Synced dob/fullName from identity.`,
+      );
     } else {
       updatedUser = await this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
@@ -619,7 +637,10 @@ export class UsersService {
     return request;
   }
 
-  async createPartnerRequest(createDto: any, currentUser: JwtPayload) {
+  async createPartnerRequest(
+    createDto: CreatePartnerRequestDto,
+    currentUser: JwtPayload,
+  ) {
     return this.prisma.partnerRequest.create({
       data: {
         user: { connect: { id: currentUser.sub } },
@@ -645,7 +666,7 @@ export class UsersService {
 
   async updatePartnerRequest(
     id: string,
-    updateDto: any,
+    updateDto: UpdatePartnerRequestDto,
     currentUser: JwtPayload,
   ) {
     const request = await this.prisma.partnerRequest.findUnique({
@@ -666,11 +687,13 @@ export class UsersService {
 
     return this.prisma.partnerRequest.update({
       where: { id },
-      data: updateDto as any,
+      data: updateDto,
       select: {
         id: true,
+        propertyType: true,
         address: true,
         status: true,
+        reviewNotes: true,
         updatedAt: true,
       },
     });
@@ -678,7 +701,7 @@ export class UsersService {
 
   async reviewPartnerRequest(
     id: string,
-    reviewDto: any,
+    reviewDto: ReviewPartnerRequestDto,
     currentUser: JwtPayload,
   ) {
     const request = await this.prisma.partnerRequest.findUnique({
@@ -712,9 +735,11 @@ export class UsersService {
       data,
       select: {
         id: true,
+        propertyType: true,
         address: true,
         status: true,
         reviewNotes: true,
+        createdAt: true,
         updatedAt: true,
       },
     });

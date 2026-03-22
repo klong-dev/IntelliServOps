@@ -6,11 +6,14 @@ class ContractApartmentSummaryDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: '123 Nguyen Hue, Q1' })
-  address: string;
-
   @ApiProperty({ example: 'A101' })
   apartmentNumber: string;
+
+  @ApiPropertyOptional({ type: Number, example: 26728, nullable: true })
+  newWardCode: number | null;
+
+  @ApiPropertyOptional({ type: Number, example: 26731, nullable: true })
+  oldWardCode: number | null;
 }
 
 class ContractSummaryDto {
@@ -120,17 +123,25 @@ export class UserIdentityDetailDto {
   updatedAt: Date;
 }
 
+class UserIdentityListDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  id: string;
+
+  @ApiPropertyOptional({ example: '012345678901', nullable: true })
+  nationalId: string | null;
+
+  @ApiProperty({ example: false })
+  isVerified: boolean;
+
+  @ApiPropertyOptional({ example: '2026-03-10T10:30:00.000Z', nullable: true })
+  verifiedAt: Date | null;
+}
+
 // ─── AI Verification Result ─────────────────────────────────────────
 
-class AiVerificationResultDto {
+class AiVerificationSideDto {
   @ApiProperty({ example: true })
   success: boolean;
-
-  @ApiPropertyOptional({
-    example: '012345678901',
-    nullable: true,
-  })
-  extractedId: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
@@ -149,6 +160,14 @@ class AiVerificationResultDto {
     },
   })
   extractedInfo: Record<string, any> | null;
+}
+
+class AiVerificationResultDto {
+  @ApiPropertyOptional({ type: AiVerificationSideDto, nullable: true })
+  front: AiVerificationSideDto | null;
+
+  @ApiPropertyOptional({ type: AiVerificationSideDto, nullable: true })
+  back: AiVerificationSideDto | null;
 }
 
 // ─── User List Item DTO (findAll) ────────────────────────────────────
@@ -176,10 +195,10 @@ export class UserListItemDto {
   profileImageUrl: string | null;
 
   @ApiPropertyOptional({
-    type: UserIdentityDetailDto,
+    type: UserIdentityListDto,
     nullable: true,
   })
-  identity?: UserIdentityDetailDto | null;
+  identity?: UserIdentityListDto | null;
 
   @ApiProperty({ example: true })
   isActive: boolean;
@@ -391,12 +410,6 @@ export class UserDeletedDto {
   @ApiProperty({ example: 'user@example.com' })
   email: string;
 
-  @ApiProperty({ example: 'Nguyen Van A' })
-  fullName: string;
-
   @ApiProperty({ example: false })
   isActive: boolean;
-
-  @ApiProperty()
-  updatedAt: Date;
 }

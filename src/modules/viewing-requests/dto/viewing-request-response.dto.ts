@@ -137,3 +137,88 @@ export class UserViewingBookingResponseDto {
   @ApiProperty({ type: UserViewingAssignedStaffDto })
   assignedStaff: UserViewingAssignedStaffDto;
 }
+
+class UserMyViewingApartmentDto {
+  @ApiProperty({ example: '11111111-2222-3333-4444-555555555555' })
+  id: string;
+
+  @ApiProperty({ example: 'A-1208' })
+  apartmentNumber: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Intelli Tower A',
+  })
+  buildingName: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
+  newWardCode: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 26731 })
+  oldWardCode: number | null;
+}
+
+class UserMyViewingContactRequestDto {
+  @ApiProperty({ example: 'd7a8e15e-e4b7-4df5-83d4-f7d7e4d4a31a' })
+  id: string;
+
+  @ApiProperty({ example: 'scheduled' })
+  status: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Toi muon xem can ho vao buoi sang.',
+  })
+  message: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Vui long lien he truoc 30 phut.',
+  })
+  notes: string | null;
+
+  @ApiProperty()
+  receivedAt: Date;
+}
+
+export class UserMyViewingRequestDto {
+  @ApiProperty({ example: 'b6a52ecf-6f88-4ed4-9aa4-7b8db6bc65d4' })
+  appointmentId: string;
+
+  @ApiProperty({ example: '2026-03-24T09:30:00.000Z' })
+  appointmentAt: Date;
+
+  @ApiProperty({ example: 30 })
+  durationMinutes: number;
+
+  @ApiProperty({ example: 'scheduled' })
+  status: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Toi muon xem can ho vao buoi sang.',
+  })
+  note: string | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  cancelledAt: Date | null;
+
+  @ApiProperty({ type: UserMyViewingApartmentDto })
+  apartment: UserMyViewingApartmentDto;
+
+  @ApiProperty({ type: UserViewingAssignedStaffDto })
+  assignedStaff: UserViewingAssignedStaffDto;
+
+  @ApiPropertyOptional({
+    type: UserMyViewingContactRequestDto,
+    nullable: true,
+  })
+  contactRequest: UserMyViewingContactRequestDto | null;
+
+  @ApiProperty()
+  createdAt: Date;
+}

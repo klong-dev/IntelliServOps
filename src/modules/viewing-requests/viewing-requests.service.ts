@@ -11,6 +11,7 @@ import {
   CreateViewingRequestDto,
   CreateAppointmentDto,
   CreateUserViewingRequestDto,
+  MyViewingRequestsQueryDto,
 } from './dto';
 import {
   ContactRequestStatus,
@@ -283,6 +284,102 @@ export class ViewingRequestsService {
     });
 
     return result;
+  }
+
+  async getMyViewingRequests(
+    currentUser: JwtPayload,
+    query: MyViewingRequestsQueryDto,
+  ) {
+    const { status, page = 1, limit = 10 } = query;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: currentUser.sub },
+      select: {
+        id: true,
+        email: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      throw new NotFoundException('User not found or inactive');
+    }
+
+    const where = {
+      guest: {
+        email: user.email,
+      },
+      ...(status ? { status } : {}),
+    };
+
+    const skip = (page - 1) * limit;
+
+    const [appointments, total] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where,
+        select: {
+          id: true,
+          appointmentTime: true,
+          durationMinutes: true,
+          status: true,
+          guestNotes: true,
+          cancelledAt: true,
+          createdAt: true,
+          apartment: {
+            select: {
+              id: true,
+              apartmentNumber: true,
+              buildingName: true,
+              newWardCode: true,
+              oldWardCode: true,
+            },
+          },
+          assignedStaff: {
+            select: {
+              id: true,
+              fullName: true,
+              phone: true,
+            },
+          },
+          contactRequest: {
+            select: {
+              id: true,
+              status: true,
+              message: true,
+              notes: true,
+              receivedAt: true,
+            },
+          },
+        },
+        orderBy: {
+          appointmentTime: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.appointment.count({ where }),
+    ]);
+
+    const items = appointments.map((appointment) => ({
+      appointmentId: appointment.id,
+      appointmentAt: appointment.appointmentTime,
+      durationMinutes: appointment.durationMinutes,
+      status: appointment.status,
+      note: appointment.guestNotes ?? appointment.contactRequest?.notes ?? null,
+      cancelledAt: appointment.cancelledAt,
+      apartment: appointment.apartment,
+      assignedStaff: appointment.assignedStaff,
+      contactRequest: appointment.contactRequest,
+      createdAt: appointment.createdAt,
+    }));
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
