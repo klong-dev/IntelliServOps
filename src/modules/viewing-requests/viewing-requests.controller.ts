@@ -22,9 +22,11 @@ import {
   CreateViewingRequestDto,
   CreateUserViewingRequestDto,
   CreateAppointmentDto,
+  MyViewingRequestsQueryDto,
   ViewingRequestResponseDto,
   AppointmentResponseDto,
   UserViewingBookingResponseDto,
+  UserMyViewingRequestDto,
 } from './dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse, MessageResponseDto } from '../../common/dto';
@@ -88,6 +90,45 @@ export class ViewingRequestsController {
       createDto,
       currentUser,
     );
+  }
+
+  @Get('my')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.USER)
+  @ApiOperation({
+    summary: 'Get my viewing requests',
+    description:
+      'Authenticated user gets their own viewing requests/appointments with optional status filter and pagination.',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'],
+    description: 'Filter by appointment status',
+    example: 'scheduled',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page',
+    example: 10,
+  })
+  @ApiJsonResponse(UserMyViewingRequestDto, {
+    isArray: true,
+    isPaginated: true,
+    description: 'Paginated list of current user viewing requests',
+  })
+  async getMyViewingRequests(
+    @CurrentUser() currentUser: JwtPayload,
+    @Query() query: MyViewingRequestsQueryDto,
+  ) {
+    return this.viewingRequestsService.getMyViewingRequests(currentUser, query);
   }
 
   @Get('my-assigned')
