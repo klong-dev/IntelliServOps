@@ -3,7 +3,7 @@
 > **Namespace:** `/chat`  
 > **Protocol:** Socket.IO v4  
 > **Base URL:** `ws://<host>:<port>/chat`  
-> **Cập nhật:** 2026-03-20
+> **Cập nhật:** 2026-03-23
 
 ---
 
@@ -54,6 +54,59 @@ Nếu `guestSessionId` để trống, server sẽ tạo mới và emit lại qua
 
 ---
 
+## Message Interface (Frontend)
+
+Server trả về tin nhắn theo format sau cho **tất cả** events và REST APIs:
+
+```ts
+interface Message {
+  id: number;
+  content: string;
+  images?: string[];       // Mảng URL ảnh (nếu có)
+  apartmentId?: string;    // ID căn hộ liên quan (nếu có)
+  sender: 'user' | 'support';  // user/guest → 'user', staff/operator/admin → 'support'
+  timestamp: Date;
+}
+```
+
+---
+
+## Gửi ảnh trong chat
+
+### Bước 1: Upload ảnh qua REST API
+
+```ts
+const formData = new FormData();
+formData.append('images', file1);
+formData.append('images', file2); // Tối đa 5 ảnh
+
+const res = await fetch('/api/v1/chat/upload-images', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}` },
+  body: formData,
+});
+const { images } = await res.json(); // images: string[]
+```
+
+**Response:**
+```json
+{ "images": ["https://storage.example.com/chat-images/user-id/123-0.jpg", "..."] }
+```
+
+### Bước 2: Gửi tin nhắn kèm URL ảnh qua Socket
+
+```ts
+socket.emit('chat:send_message', {
+  conversationId: 'conv-id',
+  content: 'Xem ảnh căn hộ',
+  images: images,                    // Mảng URL từ bước 1
+  apartmentId: 'apt-123',           // Tuỳ chọn
+  messageType: 'image',             // Tuỳ chọn, mặc định 'text'
+});
+```
+
+---
+
 ## Events: Client → Server
 
 ### `chat:create_conversation`
@@ -79,10 +132,12 @@ Gửi tin nhắn vào một conversation.
 
 ```ts
 socket.emit('chat:send_message', {
-  conversationId: string,  // Bắt buộc
-  content: string,         // Nội dung tin nhắn
-  messageType?: 'text' | 'image' | 'file',  // Mặc định: 'text'
-  attachments?: [{         // Tuỳ chọn
+  conversationId: string,                        // Bắt buộc
+  content: string,                               // Nội dung tin nhắn
+  images?: string[],                             // Mảng URL ảnh (từ upload-images API)
+  apartmentId?: string,                          // ID căn hộ liên quan
+  messageType?: 'text' | 'image' | 'file',       // Mặc định: 'text'
+  attachments?: [{                               // Tuỳ chọn
     url: string,
     filename: string,
     mimeType?: string,
@@ -161,9 +216,9 @@ setInterval(() => socket.emit('chat:heartbeat'), 30_000);
 | `chat:session` | Ngay sau kết nối (guest) | `{ guestSessionId: string }` |
 | `chat:conversation_created` | Sau khi tạo conversation | `ChatConversation` object |
 | `chat:new_conversation` | Staff: có conversation mới | `ChatConversation` object |
-| `chat:new_message` | Có tin nhắn mới trong room | `ChatMessage` object |
+| `chat:new_message` | Có tin nhắn mới trong room | `Message` object *(xem interface ở trên)* |
 | `chat:conversation_updated` | Conversation có tin nhắn mới | `{ conversationId, lastMessageAt, lastMessageText, senderName, senderType }` |
-| `chat:conversation_data` | Sau khi join conversation | `{ conversation, messages }` |
+| `chat:conversation_data` | Sau khi join conversation | `{ conversation, messages: { data: Message[], meta } }` |
 | `chat:staff_joined` | Staff vào conversation | `{ conversationId, staffName, actorType }` |
 | `chat:user_typing` | Ai đó đang gõ | `{ conversationId, actorType, actorId, fullName }` |
 | `chat:user_stop_typing` | Ngừng gõ | `{ conversationId, actorType, actorId }` |
@@ -195,36 +250,29 @@ setInterval(() => socket.emit('chat:heartbeat'), 30_000);
 }
 ```
 
-### ChatMessage
+### Message (response format)
 
 ```ts
 {
-  id: string;
-  conversationId: string;
-  senderType: 'user' | 'guest' | 'staff' | 'operator' | 'admin' | 'system';
-  senderId: string | null;
-  senderName: string | null;
-  messageType: 'text' | 'image' | 'file' | 'system';
+  id: number;
   content: string;
-  attachments: object[] | null;
-  isRead: boolean;
-  readAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  images?: string[];          // Mảng URL ảnh, undefined nếu không có
+  apartmentId?: string;       // undefined nếu không có
+  sender: 'user' | 'support'; // user/guest = 'user', staff/operator/admin = 'support'
+  timestamp: Date;
 }
 ```
 
 ---
 
-## REST API bổ sung
-
-WebSocket xử lý real-time, còn REST dùng để load lịch sử và quản lý conversation. Tài liệu đầy đủ trên **Swagger** tại `/docs`, dưới tag **Chat**.
+## REST API
 
 | Method | Endpoint | Mô tả |
 |---|---|---|
+| `POST` | `/api/v1/chat/upload-images` | **Upload ảnh chat** (multipart, max 5 files) → trả về `{ images: string[] }` |
 | `GET` | `/api/v1/chat/conversations` | Danh sách conversations (phân trang) |
 | `GET` | `/api/v1/chat/conversations/:id` | Chi tiết conversation |
-| `GET` | `/api/v1/chat/conversations/:id/messages` | Lịch sử tin nhắn (phân trang) |
+| `GET` | `/api/v1/chat/conversations/:id/messages` | Lịch sử tin nhắn (phân trang, format `Message`) |
 | `POST` | `/api/v1/chat/conversations` | Tạo conversation (thay thế cho socket) |
 | `PATCH` | `/api/v1/chat/conversations/:id/close` | Đóng conversation *(staff only)* |
 | `PATCH` | `/api/v1/chat/conversations/:id/archive` | Lưu trữ *(staff only)* |
@@ -239,9 +287,18 @@ WebSocket xử lý real-time, còn REST dùng để load lịch sử và quản 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+interface Message {
+  id: number;
+  content: string;
+  images?: string[];
+  apartmentId?: string;
+  sender: 'user' | 'support';
+  timestamp: Date;
+}
+
 export function useChat(token: string) {
   const socketRef = useRef<Socket | null>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
 
   useEffect(() => {
@@ -249,7 +306,7 @@ export function useChat(token: string) {
       auth: { token },
     });
 
-    socket.on('chat:new_message', (msg) => {
+    socket.on('chat:new_message', (msg: Message) => {
       setMessages((prev) => [...prev, msg]);
     });
 
@@ -261,15 +318,34 @@ export function useChat(token: string) {
     return () => { socket.disconnect(); };
   }, [token]);
 
-  const sendMessage = useCallback((conversationId: string, content: string) => {
-    socketRef.current?.emit('chat:send_message', { conversationId, content });
+  const sendMessage = useCallback((conversationId: string, content: string, images?: string[], apartmentId?: string) => {
+    socketRef.current?.emit('chat:send_message', {
+      conversationId,
+      content,
+      images,
+      apartmentId,
+      messageType: images?.length ? 'image' : 'text',
+    });
   }, []);
+
+  const uploadImages = useCallback(async (files: File[]): Promise<string[]> => {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('images', f));
+
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/chat/upload-images`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await res.json();
+    return data.images;
+  }, [token]);
 
   const joinConversation = useCallback((conversationId: string) => {
     socketRef.current?.emit('chat:join_conversation', { conversationId });
   }, []);
 
-  return { messages, conversations, sendMessage, joinConversation };
+  return { messages, conversations, sendMessage, uploadImages, joinConversation };
 }
 ```
 
