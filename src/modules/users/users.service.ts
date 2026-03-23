@@ -102,7 +102,30 @@ export class UsersService {
   async findOne(id: string, currentUser: JwtPayload) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        fullName: true,
+        dateOfBirth: true,
+        profileImageUrl: true,
+        emergencyContactName: true,
+        emergencyContactPhone: true,
+        isActive: true,
+        isVerified: true,
+        isPartner: true,
+        lastLoginAt: true,
+        companyName: true,
+        taxCode: true,
+        bankAccountNumber: true,
+        bankName: true,
+        address: true,
+        commissionRate: true,
+        contractStartDate: true,
+        contractEndDate: true,
+        paymentTerms: true,
+        createdAt: true,
+        updatedAt: true,
         identity: {
           select: {
             id: true,
@@ -168,7 +191,167 @@ export class UsersService {
       throw new ForbiddenException('You can only view your own profile');
     }
 
-    return user;
+    return this.toUnifiedUserDetail(user);
+  }
+
+  private toUnifiedUserDetail(user: any) {
+    return {
+      role: user.isPartner ? 'partner' : 'user',
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      fullName: user.fullName,
+      dateOfBirth: user.dateOfBirth,
+      profileImageUrl: user.profileImageUrl,
+      emergencyContactName: user.emergencyContactName,
+      emergencyContactPhone: user.emergencyContactPhone,
+      companyName: user.companyName,
+      taxCode: user.taxCode,
+      bankAccountNumber: user.bankAccountNumber,
+      bankName: user.bankName,
+      address: user.address,
+      commissionRate: user.commissionRate?.toString?.() ?? null,
+      contractStartDate: user.contractStartDate,
+      contractEndDate: user.contractEndDate,
+      paymentTerms: user.paymentTerms,
+      employeeCode: null,
+      staffRole: null,
+      department: null,
+      workingCity: null,
+      workingDistrict: null,
+      hireDate: null,
+      operatorShift: null,
+      username: null,
+      adminRoleLevel: null,
+      permissions: null,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+      lastLoginAt: user.lastLoginAt,
+      identity: user.identity,
+      contractMemberships: user.contractMemberships,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+  }
+
+  private toUnifiedStaffDetail(staff: any) {
+    return {
+      role: 'staff',
+      id: staff.id,
+      email: staff.email,
+      phone: staff.phone,
+      fullName: staff.fullName,
+      dateOfBirth: null,
+      profileImageUrl: null,
+      emergencyContactName: null,
+      emergencyContactPhone: null,
+      companyName: null,
+      taxCode: null,
+      bankAccountNumber: null,
+      bankName: null,
+      address: null,
+      commissionRate: null,
+      contractStartDate: null,
+      contractEndDate: null,
+      paymentTerms: null,
+      employeeCode: staff.employeeCode,
+      staffRole: staff.role,
+      department: staff.department,
+      workingCity: staff.workingCity,
+      workingDistrict: staff.workingDistrict,
+      hireDate: staff.hireDate,
+      operatorShift: null,
+      username: null,
+      adminRoleLevel: null,
+      permissions: null,
+      isActive: staff.isActive,
+      isVerified: null,
+      lastLoginAt: null,
+      identity: null,
+      contractMemberships: null,
+      createdAt: staff.createdAt,
+      updatedAt: staff.updatedAt,
+    };
+  }
+
+  private toUnifiedOperatorDetail(operator: any) {
+    return {
+      role: 'operator',
+      id: operator.id,
+      email: operator.email,
+      phone: operator.phone,
+      fullName: operator.fullName,
+      dateOfBirth: null,
+      profileImageUrl: null,
+      emergencyContactName: null,
+      emergencyContactPhone: null,
+      companyName: null,
+      taxCode: null,
+      bankAccountNumber: null,
+      bankName: null,
+      address: null,
+      commissionRate: null,
+      contractStartDate: null,
+      contractEndDate: null,
+      paymentTerms: null,
+      employeeCode: operator.employeeCode,
+      staffRole: null,
+      department: null,
+      workingCity: null,
+      workingDistrict: null,
+      hireDate: null,
+      operatorShift: operator.shift,
+      username: null,
+      adminRoleLevel: null,
+      permissions: null,
+      isActive: operator.isActive,
+      isVerified: null,
+      lastLoginAt: null,
+      identity: null,
+      contractMemberships: null,
+      createdAt: operator.createdAt,
+      updatedAt: operator.updatedAt,
+    };
+  }
+
+  private toUnifiedAdminDetail(admin: any) {
+    return {
+      role: 'admin',
+      id: admin.id,
+      email: admin.email,
+      phone: admin.phone,
+      fullName: admin.fullName,
+      dateOfBirth: null,
+      profileImageUrl: null,
+      emergencyContactName: null,
+      emergencyContactPhone: null,
+      companyName: null,
+      taxCode: null,
+      bankAccountNumber: null,
+      bankName: null,
+      address: null,
+      commissionRate: null,
+      contractStartDate: null,
+      contractEndDate: null,
+      paymentTerms: null,
+      employeeCode: null,
+      staffRole: null,
+      department: null,
+      workingCity: null,
+      workingDistrict: null,
+      hireDate: null,
+      operatorShift: null,
+      username: admin.username,
+      adminRoleLevel: admin.roleLevel,
+      permissions: admin.permissions,
+      isActive: admin.isActive,
+      isVerified: null,
+      lastLoginAt: admin.lastLoginAt,
+      identity: null,
+      contractMemberships: null,
+      createdAt: admin.createdAt,
+      updatedAt: admin.updatedAt,
+    };
   }
 
   /**
@@ -542,23 +725,62 @@ export class UsersService {
       case 'staff': {
         const staff = await this.prisma.staff.findUnique({
           where: { id: sub },
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            fullName: true,
+            employeeCode: true,
+            role: true,
+            department: true,
+            workingCity: true,
+            workingDistrict: true,
+            hireDate: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
         });
         if (!staff) throw new NotFoundException('Staff not found');
-        return staff;
+        return this.toUnifiedStaffDetail(staff);
       }
       case 'operator': {
         const operator = await this.prisma.operator.findUnique({
           where: { id: sub },
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            fullName: true,
+            employeeCode: true,
+            shift: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
         });
         if (!operator) throw new NotFoundException('Operator not found');
-        return operator;
+        return this.toUnifiedOperatorDetail(operator);
       }
       case 'admin': {
         const admin = await this.prisma.admin.findUnique({
           where: { id: sub },
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            fullName: true,
+            username: true,
+            roleLevel: true,
+            permissions: true,
+            lastLoginAt: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
         });
         if (!admin) throw new NotFoundException('Admin not found');
-        return admin;
+        return this.toUnifiedAdminDetail(admin);
       }
       default:
         return this.findOne(sub, currentUser);
