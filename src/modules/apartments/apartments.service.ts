@@ -584,22 +584,39 @@ export class ApartmentsService {
   async findByOwner(ownerId: string) {
     return this.prisma.apartment.findMany({
       where: { ownerId },
-      select: {
-        id: true,
-        buildingName: true,
-        apartmentNumber: true,
-        newWardCode: true,
-        oldWardCode: true,
-        numberOfBedrooms: true,
-        baseRentPrice: true,
-        status: true,
-        createdAt: true,
-        rentalContracts: {
+      include: {
+        rooms: {
+          select: {
+            id: true,
+            roomNumber: true,
+            roomType: true,
+            area: true,
+            status: true,
+          },
+        },
+        owner: {
+          select: {
+            id: true,
+            companyName: true,
+            fullName: true,
+          },
+        },
+        iotDevices: {
           where: { status: 'active' },
           select: {
             id: true,
-            contractNumber: true,
+            deviceName: true,
+            deviceType: true,
             status: true,
+          },
+        },
+        utilityMeters: {
+          where: { status: 'active' },
+          select: {
+            id: true,
+            meterNumber: true,
+            meterType: true,
+            currentReading: true,
           },
         },
       },
