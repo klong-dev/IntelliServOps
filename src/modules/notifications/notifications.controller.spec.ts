@@ -45,20 +45,29 @@ describe('NotificationsController', () => {
   describe('findMyNotifications', () => {
     it('should return notifications for current user', async () => {
       const currentUser = mockUserJwtPayload();
-      const notifications = [mockNotification({ recipientId: currentUser.sub })];
-      mockNotificationsService.findMyNotifications.mockResolvedValue(notifications);
+      const notifications = [
+        mockNotification({ recipientId: currentUser.sub }),
+      ];
+      mockNotificationsService.findMyNotifications.mockResolvedValue(
+        notifications,
+      );
 
       const result = await controller.findMyNotifications(currentUser);
 
       expect(result).toEqual(notifications);
-      expect(mockNotificationsService.findMyNotifications).toHaveBeenCalledWith(currentUser, undefined);
+      expect(mockNotificationsService.findMyNotifications).toHaveBeenCalledWith(
+        currentUser,
+        undefined,
+      );
     });
   });
 
   describe('countUnread', () => {
     it('should return unread count', async () => {
       const currentUser = mockUserJwtPayload();
-      mockNotificationsService.countUnread.mockResolvedValue({ unreadCount: 5 });
+      mockNotificationsService.countUnread.mockResolvedValue({
+        unreadCount: 5,
+      });
 
       const result = await controller.countUnread(currentUser);
 
@@ -94,14 +103,19 @@ describe('NotificationsController', () => {
       const result = await controller.markAsRead('notif-123', currentUser);
 
       expect(result.isRead).toBe(true);
-      expect(mockNotificationsService.markAsRead).toHaveBeenCalledWith('notif-123', currentUser);
+      expect(mockNotificationsService.markAsRead).toHaveBeenCalledWith(
+        'notif-123',
+        currentUser,
+      );
     });
   });
 
   describe('markAllAsRead', () => {
     it('should mark all notifications as read', async () => {
       const currentUser = mockUserJwtPayload();
-      mockNotificationsService.markAllAsRead.mockResolvedValue({ markedCount: 5 });
+      mockNotificationsService.markAllAsRead.mockResolvedValue({
+        markedCount: 5,
+      });
 
       const result = await controller.markAllAsRead(currentUser);
 
@@ -122,7 +136,10 @@ describe('NotificationsController', () => {
       const result = await controller.registerFcmToken(currentUser, dto);
 
       expect(result.token).toEqual(dto.token);
-      expect(mockNotificationsService.registerFcmToken).toHaveBeenCalledWith(currentUser, dto);
+      expect(mockNotificationsService.registerFcmToken).toHaveBeenCalledWith(
+        currentUser,
+        dto,
+      );
     });
   });
 
@@ -130,7 +147,9 @@ describe('NotificationsController', () => {
     it('should remove FCM token', async () => {
       const currentUser = mockUserJwtPayload();
       const dto = { token: 'fcm-token-123' };
-      mockNotificationsService.removeFcmToken.mockResolvedValue({ message: 'Token removed' });
+      mockNotificationsService.removeFcmToken.mockResolvedValue({
+        message: 'Token removed',
+      });
 
       const result = await controller.removeFcmToken(currentUser, dto);
 

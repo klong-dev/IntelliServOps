@@ -1,13 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ApartmentsModule } from '../apartments/apartments.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { ContractsController } from './contracts.controller';
 import { ContractsService } from './contracts.service';
 import { ContractPdfService } from './contract-pdf.service';
+import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
 
 @Module({
-  imports: [ApartmentsModule],
+  imports: [ApartmentsModule, NotificationsModule],
   controllers: [ContractsController],
-  providers: [ContractsService, ContractPdfService],
+  providers: [ContractsService, ContractPdfService, SupabaseStorageService],
   exports: [ContractsService, ContractPdfService],
 })
 export class ContractsModule {}

@@ -1,9 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { IoTService } from './iot.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPrismaMock, mockUserJwtPayload, mockStaffJwtPayload } from '../../test-utils';
+import {
+  createPrismaMock,
+  mockUserJwtPayload,
+  mockStaffJwtPayload,
+} from '../../test-utils';
 import { IoTStatus, MeterStatus } from '@prisma/client';
-import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 
 describe('IoTService', () => {
   let service: IoTService;
@@ -55,7 +63,9 @@ describe('IoTService', () => {
 
     it('should throw NotFoundException if not found', async () => {
       prisma.ioTDevice.findUnique.mockResolvedValue(null);
-      await expect(service.findOneDevice('x')).rejects.toThrow(NotFoundException);
+      await expect(service.findOneDevice('x')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -70,7 +80,9 @@ describe('IoTService', () => {
 
     it('should throw ForbiddenException if no contract', async () => {
       prisma.rentalContract.findFirst.mockResolvedValue(null);
-      await expect(service.findDevicesByApartment('apt-123', mockUserJwtPayload())).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.findDevicesByApartment('apt-123', mockUserJwtPayload()),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -78,7 +90,12 @@ describe('IoTService', () => {
     it('should create device', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
       prisma.ioTDevice.create.mockResolvedValue(mockDevice() as any);
-      const result = await service.createDevice({ apartmentId: 'apt-123', deviceName: 'D', deviceType: 'sensor' as any, tuyaDeviceId: 't' });
+      const result = await service.createDevice({
+        apartmentId: 'apt-123',
+        deviceName: 'D',
+        deviceType: 'sensor' as any,
+        tuyaDeviceId: 't',
+      });
       expect(result.id).toBe('device-123');
     });
   });
@@ -109,7 +126,9 @@ describe('IoTService', () => {
         apartment: { id: 'apt-123', rentalContracts: [] },
       };
       prisma.ioTDevice.findUnique.mockResolvedValue(device as any);
-      await expect(service.controlDevice('device-123', 'on', user)).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.controlDevice('device-123', 'on', user),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -124,16 +143,37 @@ describe('IoTService', () => {
   describe('createReading', () => {
     it('should create reading', async () => {
       prisma.utilityMeter.findUnique.mockResolvedValue(mockMeter() as any);
-      prisma.utilityReading.findFirst.mockResolvedValue({ readingValue: 1000 } as any);
-      prisma.utilityReading.create.mockResolvedValue({ id: 'r-1', readingValue: 1100 } as any);
+      prisma.utilityReading.findFirst.mockResolvedValue({
+        readingValue: 1000,
+      } as any);
+      prisma.utilityReading.create.mockResolvedValue({
+        id: 'r-1',
+        readingValue: 1100,
+      } as any);
       prisma.utilityMeter.update.mockResolvedValue({} as any);
-      const result = await service.createReading({ utilityMeterId: 'meter-123', readingValue: 1100, readingDate: '2026-02-08' } as any, mockStaffJwtPayload());
+      const result = await service.createReading(
+        {
+          utilityMeterId: 'meter-123',
+          readingValue: 1100,
+          readingDate: '2026-02-08',
+        } as any,
+        mockStaffJwtPayload(),
+      );
       expect(result.readingValue).toBe(1100);
     });
 
     it('should throw NotFoundException if meter not found', async () => {
       prisma.utilityMeter.findUnique.mockResolvedValue(null);
-      await expect(service.createReading({ utilityMeterId: 'non-existent', readingValue: 1100, readingDate: '2026-02-08' } as any, mockStaffJwtPayload())).rejects.toThrow(NotFoundException);
+      await expect(
+        service.createReading(
+          {
+            utilityMeterId: 'non-existent',
+            readingValue: 1100,
+            readingDate: '2026-02-08',
+          } as any,
+          mockStaffJwtPayload(),
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

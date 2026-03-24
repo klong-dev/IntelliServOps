@@ -2,7 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPrismaMock, mockTask, mockUserJwtPayload, mockStaffJwtPayload, mockOperatorJwtPayload, MockPrisma } from '../../test-utils';
+import {
+  createPrismaMock,
+  mockTask,
+  mockUserJwtPayload,
+  mockStaffJwtPayload,
+  mockOperatorJwtPayload,
+  MockPrisma,
+} from '../../test-utils';
 import { CreateTaskDto, UpdateTaskDto } from './dto';
 import { TaskStatus, Priority, ActorType } from '@prisma/client';
 
@@ -50,9 +57,11 @@ describe('TasksService', () => {
       const result = await service.findAll(adminUser, TaskStatus.pending);
 
       expect(result).toEqual(tasks);
-      expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ status: TaskStatus.pending }),
-      }));
+      expect(prisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: TaskStatus.pending }),
+        }),
+      );
     });
 
     it('should return only assigned tasks for staff', async () => {
@@ -62,9 +71,11 @@ describe('TasksService', () => {
 
       await service.findAll(staffUser);
 
-      expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ assignedToStaffId: staffUser.sub }),
-      }));
+      expect(prisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ assignedToStaffId: staffUser.sub }),
+        }),
+      );
     });
 
     it('should return created and unassigned tasks for operator', async () => {
@@ -74,14 +85,16 @@ describe('TasksService', () => {
 
       await service.findAll(operatorUser);
 
-      expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({
-          OR: expect.arrayContaining([
-            { assignedByOperatorId: operatorUser.sub },
-            { assignedToStaffId: null },
-          ]),
+      expect(prisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { assignedByOperatorId: operatorUser.sub },
+              { assignedToStaffId: null },
+            ]),
+          }),
         }),
-      }));
+      );
     });
   });
 
@@ -102,7 +115,9 @@ describe('TasksService', () => {
     it('should throw NotFoundException if task not found', async () => {
       prisma.task.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -129,7 +144,11 @@ describe('TasksService', () => {
     it('should assign task to staff if staffId provided', async () => {
       const assignDto = { ...createDto, assignedToStaffId: 'staff-123' };
       const operatorUser = mockOperatorJwtPayload();
-      const assignedTask = mockTask({ ...createDto, assignedToStaffId: 'staff-123', status: TaskStatus.assigned });
+      const assignedTask = mockTask({
+        ...createDto,
+        assignedToStaffId: 'staff-123',
+        status: TaskStatus.assigned,
+      });
       prisma.task.create.mockResolvedValue(assignedTask);
 
       const result = await service.create(assignDto, operatorUser);
@@ -149,7 +168,7 @@ describe('TasksService', () => {
           data: expect.objectContaining({
             assignedByOperator: { connect: { id: operatorUser.sub } },
           }),
-        })
+        }),
       );
     });
   });
@@ -175,21 +194,27 @@ describe('TasksService', () => {
     it('should throw NotFoundException if task not found', async () => {
       prisma.task.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', updateDto)).rejects.toThrow(NotFoundException);
+      await expect(service.update('non-existent', updateDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should update status to assigned when assigning staff', async () => {
       const task = mockTask();
       const assignDto = { assignedToStaffId: 'staff-123' };
       prisma.task.findUnique.mockResolvedValue(task);
-      prisma.task.update.mockResolvedValue({ ...task, ...assignDto, status: TaskStatus.assigned });
+      prisma.task.update.mockResolvedValue({
+        ...task,
+        ...assignDto,
+        status: TaskStatus.assigned,
+      });
 
       await service.update(task.id, assignDto);
 
       expect(prisma.task.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: TaskStatus.assigned }),
-        })
+        }),
       );
     });
   });
@@ -197,7 +222,11 @@ describe('TasksService', () => {
   describe('assign', () => {
     it('should assign task to staff', async () => {
       const task = mockTask();
-      const assignedTask = { ...task, assignedToStaffId: 'staff-123', status: TaskStatus.assigned };
+      const assignedTask = {
+        ...task,
+        assignedToStaffId: 'staff-123',
+        status: TaskStatus.assigned,
+      };
       prisma.task.findUnique.mockResolvedValue(task);
       prisma.task.update.mockResolvedValue(assignedTask);
 
@@ -217,14 +246,20 @@ describe('TasksService', () => {
     it('should throw NotFoundException if task not found', async () => {
       prisma.task.findUnique.mockResolvedValue(null);
 
-      await expect(service.assign('non-existent', 'staff-123')).rejects.toThrow(NotFoundException);
+      await expect(service.assign('non-existent', 'staff-123')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('start', () => {
     it('should start task and set actualStartTime', async () => {
       const task = mockTask();
-      const startedTask = { ...task, status: TaskStatus.in_progress, actualStartTime: new Date() };
+      const startedTask = {
+        ...task,
+        status: TaskStatus.in_progress,
+        actualStartTime: new Date(),
+      };
       prisma.task.update.mockResolvedValue(startedTask);
 
       const result = await service.start(task.id);

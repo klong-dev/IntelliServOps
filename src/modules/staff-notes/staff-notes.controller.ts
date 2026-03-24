@@ -18,7 +18,12 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { StaffNotesService } from './staff-notes.service';
-import { CreateStaffNoteDto, UpdateStaffNoteDto, StaffNoteDetailDto, StaffNoteResponseDto } from './dto';
+import {
+  CreateStaffNoteDto,
+  UpdateStaffNoteDto,
+  StaffNoteDetailDto,
+  StaffNoteResponseDto,
+} from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { RequestUser } from '../../common/types';
@@ -34,9 +39,13 @@ export class StaffNotesController {
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
     summary: 'Create staff note',
-    description: 'Create a note about a customer interaction. Visible to other staff.',
+    description:
+      'Create a note about a customer interaction. Visible to other staff.',
   })
-  @ApiJsonResponse(StaffNoteDetailDto, { status: 201, description: 'Note created' })
+  @ApiJsonResponse(StaffNoteDetailDto, {
+    status: 201,
+    description: 'Note created',
+  })
   @ApiResponse({ status: 404, description: 'User not found' })
   async create(
     @Body() createDto: CreateStaffNoteDto,
@@ -49,7 +58,8 @@ export class StaffNotesController {
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
     summary: 'Get notes for a user',
-    description: 'Get all staff notes about a specific user. Visible to all staff.',
+    description:
+      'Get all staff notes about a specific user. Visible to all staff.',
   })
   @ApiJsonResponse(StaffNoteDetailDto, {
     isArray: true,

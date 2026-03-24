@@ -30,7 +30,7 @@ describe('AppController', () => {
   describe('root', () => {
     it('should return welcome message', () => {
       const result = appController.getHello();
-      
+
       expect(result).toHaveProperty('message');
       expect(result).toHaveProperty('version');
       expect(result).toHaveProperty('timestamp');

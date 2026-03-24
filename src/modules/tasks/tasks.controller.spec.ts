@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
-import { mockTask, mockOperatorJwtPayload, mockStaffJwtPayload } from '../../test-utils';
+import {
+  mockTask,
+  mockOperatorJwtPayload,
+  mockStaffJwtPayload,
+} from '../../test-utils';
 import { CreateTaskDto, UpdateTaskDto } from './dto';
 import { TaskStatus, Priority } from '@prisma/client';
 
@@ -59,7 +63,10 @@ describe('TasksController', () => {
       const result = await controller.findAll(currentUser, TaskStatus.pending);
 
       expect(result).toEqual(tasks);
-      expect(tasksService.findAll).toHaveBeenCalledWith(currentUser, TaskStatus.pending);
+      expect(tasksService.findAll).toHaveBeenCalledWith(
+        currentUser,
+        TaskStatus.pending,
+      );
     });
   });
 
@@ -117,7 +124,11 @@ describe('TasksController', () => {
   describe('assign', () => {
     it('should assign task to staff', async () => {
       const task = mockTask();
-      const assignedTask = { ...task, assignedToStaffId: 'staff-123', status: TaskStatus.assigned };
+      const assignedTask = {
+        ...task,
+        assignedToStaffId: 'staff-123',
+        status: TaskStatus.assigned,
+      };
       mockTasksService.assign.mockResolvedValue(assignedTask);
 
       const result = await controller.assign(task.id, { staffId: 'staff-123' });
@@ -150,7 +161,10 @@ describe('TasksController', () => {
       const result = await controller.complete(task.id, completionDto);
 
       expect(result).toEqual(completedTask);
-      expect(tasksService.complete).toHaveBeenCalledWith(task.id, completionDto.completionNotes);
+      expect(tasksService.complete).toHaveBeenCalledWith(
+        task.id,
+        completionDto.completionNotes,
+      );
     });
   });
 

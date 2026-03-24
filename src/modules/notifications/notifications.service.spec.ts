@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPrismaMock, mockUserJwtPayload, MockPrisma } from '../../test-utils';
+import {
+  createPrismaMock,
+  mockUserJwtPayload,
+  MockPrisma,
+} from '../../test-utils';
 import { ActorType, DeliveryStatus } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 
@@ -65,7 +69,11 @@ describe('NotificationsService', () => {
       await service.findMyNotifications(user, false);
 
       expect(prisma.notification.findMany).toHaveBeenCalledWith({
-        where: { recipientType: user.actorType, recipientId: user.sub, isRead: false },
+        where: {
+          recipientType: user.actorType,
+          recipientId: user.sub,
+          isRead: false,
+        },
         select: expect.any(Object),
         orderBy: { createdAt: 'desc' },
         take: 50,
@@ -88,7 +96,11 @@ describe('NotificationsService', () => {
     it('should mark notification as read', async () => {
       const user = mockUserJwtPayload();
       const notification = mockNotification({ recipientId: user.sub });
-      const readNotif = { id: notification.id, isRead: true, readAt: new Date() };
+      const readNotif = {
+        id: notification.id,
+        isRead: true,
+        readAt: new Date(),
+      };
 
       prisma.notification.findFirst.mockResolvedValue(notification as any);
       prisma.notification.update.mockResolvedValue(readNotif as any);
@@ -102,7 +114,9 @@ describe('NotificationsService', () => {
       const user = mockUserJwtPayload();
       prisma.notification.findFirst.mockResolvedValue(null);
 
-      await expect(service.markAsRead('non-existent', user)).rejects.toThrow(NotFoundException);
+      await expect(service.markAsRead('non-existent', user)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

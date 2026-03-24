@@ -80,6 +80,8 @@ enum ApartmentStatus {
   maintenance
   reserved
   inactive
+  verified
+  pending
 }
 
 enum RoomType {
@@ -106,6 +108,16 @@ enum ContractStatus {
   expired
   terminated
   renewed
+}
+
+enum PartnerCooperationContractStatus {
+  draft
+  pending
+  signed
+  active
+  expired
+  terminated
+  cancelled
 }
 
 enum MemberType {
@@ -497,6 +509,7 @@ model User {
   chatConversations     ChatConversation[]
   apartments            Apartment[]
   partnerRequests       PartnerRequest[]
+  cooperationContracts  PartnerCooperationContract[] @relation("PartnerCooperationContractByPartner")
 
   @@index([phone])
   @@index([supabaseId])
@@ -591,6 +604,7 @@ model Operator {
   assignedTasks       Task[]            @relation("TaskAssignedByOperator")
   approvedApartments  Apartment[]       @relation("ApartmentApprovedByOperator")
   approvedBookings    BookingRequest[]  @relation("BookingApprovedByOperator")
+  approvedCooperationContracts PartnerCooperationContract[] @relation("PartnerCooperationContractApprovedByOperator")
   reviewedPartnerReqs PartnerRequest[]  @relation("PartnerRequestReviewedByOperator")
 
   @@index([shift])
@@ -676,6 +690,7 @@ model Apartment {
   reservations      Reservation[]
   userApartments    UserApartment[]
   ratings           ApartmentRating[]
+  cooperationContracts PartnerCooperationContract[]
 
   @@index([status])
   @@index([newWardCode])
@@ -687,6 +702,36 @@ model Apartment {
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])
   @@map("apartments")
+}
+
+model PartnerCooperationContract {
+  id                  String                           @id @default(uuid())
+  contractNumber      String                           @unique
+  apartmentId         String
+  partnerId           String
+  approvedByOperatorId String?
+  startDate           DateTime
+  endDate             DateTime
+  commissionRate      Decimal                          @db.Decimal(5, 2)
+  status              PartnerCooperationContractStatus @default(draft)
+  signedAt            DateTime?
+  contractDocumentUrl String?
+  contractPdfData     Bytes?
+  terms               String?
+  notes               String?
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
+
+  apartment           Apartment                        @relation(fields: [apartmentId], references: [id])
+  partner             User                             @relation("PartnerCooperationContractByPartner", fields: [partnerId], references: [id])
+  approvedByOperator  Operator?                        @relation("PartnerCooperationContractApprovedByOperator", fields: [approvedByOperatorId], references: [id])
+
+  @@index([apartmentId])
+  @@index([partnerId])
+  @@index([status])
+  @@index([startDate])
+  @@index([endDate])
+  @@map("partner_cooperation_contracts")
 }
 
 model ApartmentRating {

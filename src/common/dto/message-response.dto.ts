@@ -1,6 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { applyDecorators, Type } from '@nestjs/common';
-import { ApiOkResponse, ApiCreatedResponse, getSchemaPath, ApiExtraModels } from '@nestjs/swagger';
+import {
+  ApiOkResponse,
+  ApiCreatedResponse,
+  getSchemaPath,
+  ApiExtraModels,
+} from '@nestjs/swagger';
 
 // ─── Meta DTOs ──────────────────────────────────────────────────────
 
@@ -31,7 +36,12 @@ export class ResponseMetaDto {
  */
 export function ApiJsonResponse(
   dataDto: Type<any>,
-  options?: { isArray?: boolean; isPaginated?: boolean; status?: number; description?: string },
+  options?: {
+    isArray?: boolean;
+    isPaginated?: boolean;
+    status?: number;
+    description?: string;
+  },
 ) {
   const isArray = options?.isArray ?? false;
   const isPaginated = options?.isPaginated ?? false;

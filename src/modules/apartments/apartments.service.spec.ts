@@ -7,7 +7,11 @@ import {
   mockOperatorJwtPayload,
   mockAdminJwtPayload,
 } from '../../test-utils';
-import { CreateApartmentDto, UpdateApartmentDto, SearchApartmentDto } from './dto';
+import {
+  CreateApartmentDto,
+  UpdateApartmentDto,
+  SearchApartmentDto,
+} from './dto';
 import { ApartmentStatus } from '@prisma/client';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 
@@ -100,7 +104,7 @@ describe('ApartmentsService', () => {
           where: expect.objectContaining({
             city: { equals: 'Hồ Chí Minh', mode: 'insensitive' },
           }),
-        })
+        }),
       );
     });
 
@@ -116,7 +120,7 @@ describe('ApartmentsService', () => {
           where: expect.objectContaining({
             district: { equals: 'Quận 1', mode: 'insensitive' },
           }),
-        })
+        }),
       );
     });
 
@@ -134,12 +138,16 @@ describe('ApartmentsService', () => {
               { buildingName: { contains: 'building', mode: 'insensitive' } },
             ]),
           }),
-        })
+        }),
       );
     });
 
     it('should filter by price range', async () => {
-      const dtoWithPrice = { ...searchDto, minPrice: 5000000, maxPrice: 15000000 };
+      const dtoWithPrice = {
+        ...searchDto,
+        minPrice: 5000000,
+        maxPrice: 15000000,
+      };
       prisma.apartment.findMany.mockResolvedValue([]);
       prisma.apartment.count.mockResolvedValue(0);
 
@@ -150,7 +158,7 @@ describe('ApartmentsService', () => {
           where: expect.objectContaining({
             baseRentPrice: { gte: 5000000, lte: 15000000 },
           }),
-        })
+        }),
       );
     });
 
@@ -166,7 +174,7 @@ describe('ApartmentsService', () => {
           where: expect.objectContaining({
             numberOfBedrooms: { gte: 1, lte: 3 },
           }),
-        })
+        }),
       );
     });
 
@@ -181,7 +189,7 @@ describe('ApartmentsService', () => {
         expect.objectContaining({
           skip: 10,
           take: 10,
-        })
+        }),
       );
     });
   });
@@ -203,7 +211,9 @@ describe('ApartmentsService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.apartment.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -241,7 +251,7 @@ describe('ApartmentsService', () => {
             buildingName: createDto.buildingName,
             partner: { connect: { id: partner.sub } },
           }),
-        })
+        }),
       );
     });
 
@@ -259,7 +269,7 @@ describe('ApartmentsService', () => {
           data: expect.objectContaining({
             partner: { connect: { id: 'partner-456' } },
           }),
-        })
+        }),
       );
     });
 
@@ -275,7 +285,7 @@ describe('ApartmentsService', () => {
           data: expect.not.objectContaining({
             partner: expect.anything(),
           }),
-        })
+        }),
       );
     });
   });
@@ -318,18 +328,18 @@ describe('ApartmentsService', () => {
 
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
 
-      await expect(service.update('apt-123', updateDto, partner)).rejects.toThrow(
-        ForbiddenException
-      );
+      await expect(
+        service.update('apt-123', updateDto, partner),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should throw NotFoundException if apartment not found', async () => {
       const admin = mockAdminJwtPayload();
       prisma.apartment.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', updateDto, admin)).rejects.toThrow(
-        NotFoundException
-      );
+      await expect(
+        service.update('non-existent', updateDto, admin),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -354,7 +364,9 @@ describe('ApartmentsService', () => {
     it('should throw NotFoundException if apartment not found', async () => {
       prisma.apartment.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -382,7 +394,10 @@ describe('ApartmentsService', () => {
       const apartment = { ...mockApartment(), status: ApartmentStatus.rented };
       prisma.apartment.update.mockResolvedValue(apartment as any);
 
-      const result = await service.updateStatus('apt-123', ApartmentStatus.rented);
+      const result = await service.updateStatus(
+        'apt-123',
+        ApartmentStatus.rented,
+      );
 
       expect(result.status).toBe(ApartmentStatus.rented);
       expect(prisma.apartment.update).toHaveBeenCalledWith({

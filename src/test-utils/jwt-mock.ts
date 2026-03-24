@@ -2,7 +2,11 @@ import { ActorType } from '@prisma/client';
 import { JwtPayload } from '../modules/auth/auth.service';
 
 // Mock JWT payloads for different actor types
-export const mockJwtPayload = (actorType: ActorType, actorId: string, email: string): JwtPayload => ({
+export const mockJwtPayload = (
+  actorType: ActorType,
+  actorId: string,
+  email: string,
+): JwtPayload => ({
   sub: actorId,
   email,
   role: determineRoleFromActorType(actorType),
@@ -10,7 +14,9 @@ export const mockJwtPayload = (actorType: ActorType, actorId: string, email: str
   type: 'access',
 });
 
-export const mockUserJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPayload => ({
+export const mockUserJwtPayload = (
+  overrides: Partial<JwtPayload> = {},
+): JwtPayload => ({
   sub: 'user-123',
   email: 'user@example.com',
   role: 'user',
@@ -19,7 +25,9 @@ export const mockUserJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPayl
   ...overrides,
 });
 
-export const mockStaffJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPayload => ({
+export const mockStaffJwtPayload = (
+  overrides: Partial<JwtPayload> = {},
+): JwtPayload => ({
   sub: 'staff-123',
   email: 'staff@example.com',
   role: 'staff',
@@ -28,7 +36,9 @@ export const mockStaffJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPay
   ...overrides,
 });
 
-export const mockOperatorJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPayload => ({
+export const mockOperatorJwtPayload = (
+  overrides: Partial<JwtPayload> = {},
+): JwtPayload => ({
   sub: 'operator-123',
   email: 'operator@example.com',
   role: 'operator',
@@ -37,7 +47,9 @@ export const mockOperatorJwtPayload = (overrides: Partial<JwtPayload> = {}): Jwt
   ...overrides,
 });
 
-export const mockAdminJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPayload => ({
+export const mockAdminJwtPayload = (
+  overrides: Partial<JwtPayload> = {},
+): JwtPayload => ({
   sub: 'admin-123',
   email: 'admin@example.com',
   role: 'admin',
@@ -46,8 +58,11 @@ export const mockAdminJwtPayload = (overrides: Partial<JwtPayload> = {}): JwtPay
   ...overrides,
 });
 
-
-export const mockRefreshJwtPayload = (actorType: ActorType, actorId: string, email: string): JwtPayload => ({
+export const mockRefreshJwtPayload = (
+  actorType: ActorType,
+  actorId: string,
+  email: string,
+): JwtPayload => ({
   sub: actorId,
   email,
   role: determineRoleFromActorType(actorType),

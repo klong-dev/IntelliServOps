@@ -29,11 +29,7 @@ export class SupabaseStorageService {
    * @param file - Express Multer file object
    * @returns Public URL of uploaded file
    */
-  async uploadFile(
-    bucket: string,
-    path: string,
-    file: any,
-  ): Promise<string> {
+  async uploadFile(bucket: string, path: string, file: any): Promise<string> {
     if (!this.supabaseEnabled) {
       throw new Error('Supabase Storage is not enabled');
     }
@@ -60,8 +56,9 @@ export class SupabaseStorageService {
       }
 
       // Get public URL
-      const { data: publicUrl } =
-        this.supabaseClient.storage.from(bucket).getPublicUrl(data.path);
+      const { data: publicUrl } = this.supabaseClient.storage
+        .from(bucket)
+        .getPublicUrl(data.path);
 
       this.logger.log(`File uploaded successfully: ${publicUrl.publicUrl}`);
       return publicUrl.publicUrl;

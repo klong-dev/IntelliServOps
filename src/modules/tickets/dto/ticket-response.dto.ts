@@ -58,7 +58,9 @@ export class TicketDetailDto {
   @ApiProperty({ example: 'Overcharged electricity bill' })
   subject: string;
 
-  @ApiProperty({ example: 'I noticed the electricity charge is higher than expected...' })
+  @ApiProperty({
+    example: 'I noticed the electricity charge is higher than expected...',
+  })
   description: string;
 
   @ApiProperty({ example: 'medium' })

@@ -38,7 +38,10 @@ export class TasksController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'List tasks' })
   @ApiQuery({ name: 'status', required: false, enum: TaskStatus })
-  @ApiJsonResponse(TaskListItemDto, { isArray: true, description: 'List of tasks' })
+  @ApiJsonResponse(TaskListItemDto, {
+    isArray: true,
+    description: 'List of tasks',
+  })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: TaskStatus,

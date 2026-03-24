@@ -173,7 +173,10 @@ describe('AuthService', () => {
       mockPrisma.partner.findUnique.mockResolvedValueOnce(null);
 
       await expect(
-        service.login({ identifier: 'nonexistent@example.com', password: 'pass' }),
+        service.login({
+          identifier: 'nonexistent@example.com',
+          password: 'pass',
+        }),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -694,11 +697,10 @@ describe('AuthService', () => {
       mockPrisma.user.update.mockResolvedValueOnce({});
       mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({});
 
-      const result = await service.changePassword(
-        'user-id-1',
-        ActorType.user,
-        { currentPassword: 'oldpass', newPassword: 'newpass123' },
-      );
+      const result = await service.changePassword('user-id-1', ActorType.user, {
+        currentPassword: 'oldpass',
+        newPassword: 'newpass123',
+      });
 
       expect(result.message).toContain('Password changed');
       expect(mockPrisma.user.update).toHaveBeenCalledWith({
@@ -889,7 +891,9 @@ describe('AuthService', () => {
     it('should return full Google OAuth URL', () => {
       const result = service.getSupabaseUrl();
 
-      expect(result.url).toContain('https://test.supabase.co/auth/v1/authorize');
+      expect(result.url).toContain(
+        'https://test.supabase.co/auth/v1/authorize',
+      );
       expect(result.url).toContain('provider=google');
       expect(result.url).toContain('redirect_to=');
     });

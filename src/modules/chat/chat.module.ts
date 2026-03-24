@@ -24,4 +24,3 @@ import { SupabaseStorageService } from '../../shared/services/supabase-storage.s
   exports: [ChatService],
 })
 export class ChatModule {}
-

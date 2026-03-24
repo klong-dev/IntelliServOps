@@ -40,7 +40,10 @@ export class MaintenanceController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List maintenance requests' })
   @ApiQuery({ name: 'status', required: false, enum: MaintenanceStatus })
-  @ApiJsonResponse(MaintenanceListItemDto, { isArray: true, description: 'List of maintenance requests' })
+  @ApiJsonResponse(MaintenanceListItemDto, {
+    isArray: true,
+    description: 'List of maintenance requests',
+  })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: MaintenanceStatus,
@@ -51,7 +54,9 @@ export class MaintenanceController {
   @Get(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get maintenance request details' })
-  @ApiJsonResponse(MaintenanceDetailDto, { description: 'Maintenance request details' })
+  @ApiJsonResponse(MaintenanceDetailDto, {
+    description: 'Maintenance request details',
+  })
   @ApiResponse({ status: 404, description: 'Request not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.maintenanceService.findOne(id);
@@ -60,7 +65,10 @@ export class MaintenanceController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create maintenance request' })
-  @ApiJsonResponse(MaintenanceCreatedDto, { status: 201, description: 'Request created' })
+  @ApiJsonResponse(MaintenanceCreatedDto, {
+    status: 201,
+    description: 'Request created',
+  })
   async create(
     @Body() createDto: CreateMaintenanceDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -89,6 +97,10 @@ export class MaintenanceController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { resolutionNotes: string; cost?: number },
   ) {
-    return this.maintenanceService.complete(id, body.resolutionNotes, body.cost);
+    return this.maintenanceService.complete(
+      id,
+      body.resolutionNotes,
+      body.cost,
+    );
   }
 }

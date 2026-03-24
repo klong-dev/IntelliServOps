@@ -23,13 +23,17 @@ export class MessageResponseDto {
   apartmentId?: string;
 
   @ApiProperty({
-    description: 'Sender type: user/guest = "user", staff/operator/admin = "support"',
+    description:
+      'Sender type: user/guest = "user", staff/operator/admin = "support"',
     enum: ['user', 'support'],
     example: 'user',
   })
   sender: 'user' | 'support';
 
-  @ApiProperty({ description: 'Message timestamp', example: '2026-03-23T10:30:00.000Z' })
+  @ApiProperty({
+    description: 'Message timestamp',
+    example: '2026-03-23T10:30:00.000Z',
+  })
   timestamp: Date;
 }
 

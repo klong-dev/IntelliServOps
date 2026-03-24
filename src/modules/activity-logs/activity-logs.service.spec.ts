@@ -24,7 +24,10 @@ describe('ActivityLogsService', () => {
   beforeEach(async () => {
     prisma = createPrismaMock();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ActivityLogsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        ActivityLogsService,
+        { provide: PrismaService, useValue: prisma },
+      ],
     }).compile();
     service = module.get<ActivityLogsService>(ActivityLogsService);
   });
@@ -42,7 +45,9 @@ describe('ActivityLogsService', () => {
       prisma.activityLog.findMany.mockResolvedValue([]);
       await service.findAll({ actorType: ActorType.admin });
       expect(prisma.activityLog.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ actorType: ActorType.admin }) })
+        expect.objectContaining({
+          where: expect.objectContaining({ actorType: ActorType.admin }),
+        }),
       );
     });
 
@@ -50,7 +55,9 @@ describe('ActivityLogsService', () => {
       prisma.activityLog.findMany.mockResolvedValue([]);
       await service.findAll({ startDate: '2026-01-01', endDate: '2026-01-31' });
       expect(prisma.activityLog.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ createdAt: expect.any(Object) }) })
+        expect.objectContaining({
+          where: expect.objectContaining({ createdAt: expect.any(Object) }),
+        }),
       );
     });
   });
@@ -81,7 +88,13 @@ describe('ActivityLogsService', () => {
   describe('logAction', () => {
     it('should log action with convenience method', async () => {
       prisma.activityLog.create.mockResolvedValue(mockLog() as any);
-      const result = await service.logAction(ActorType.staff, 'staff-123', 'update_apartment', 'apartment', 'apt-123');
+      const result = await service.logAction(
+        ActorType.staff,
+        'staff-123',
+        'update_apartment',
+        'apartment',
+        'apt-123',
+      );
       expect(result).toBeDefined();
     });
   });
