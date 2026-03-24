@@ -627,7 +627,10 @@ model Apartment {
   maxConcurrentViewings Int              @default(2)
   floorNumber           Int?
   newWardCode           Int?             // Mã phường/xã sau sáp nhập (v2)
+  newProvinceCode       Int?             // Mã tỉnh/thành sau sáp nhập (v2), auto-resolved từ wardCode
   oldWardCode           Int?             // Mã phường/xã trước sáp nhập (v1)
+  oldDistrictCode       Int?             // Mã quận/huyện trước sáp nhập (v1), auto-resolved từ wardCode
+  oldProvinceCode       Int?             // Mã tỉnh/thành trước sáp nhập (v1), auto-resolved từ wardCode
   latitude              Decimal?         @db.Decimal(10, 8)
   longitude             Decimal?         @db.Decimal(11, 8)
   totalArea             Decimal          @db.Decimal(10, 2)
@@ -666,7 +669,10 @@ model Apartment {
 
   @@index([status])
   @@index([newWardCode])
+  @@index([newProvinceCode])
   @@index([oldWardCode])
+  @@index([oldDistrictCode])
+  @@index([oldProvinceCode])
   @@index([ownerId])
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])
