@@ -1,8 +1,10 @@
 import { OmitType, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateApartmentDto } from './create-apartment.dto';
+import { UpdateApartmentDto } from './update-apartment.dto';
 import {
   Allow,
   IsDateString,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -17,6 +19,50 @@ export class CreatePartnerCooperationApartmentDto extends OmitType(
   ['images', 'videoTourUrl', 'ownerId'] as const,
 ) {}
 
+export class SubmitPartnerCooperationRequestDto extends CreatePartnerCooperationApartmentDto {
+  @ApiPropertyOptional({
+    type: 'array',
+    items: { type: 'string', format: 'binary' },
+    description: 'Apartment images (JPEG, PNG, WebP), max 10 files',
+  })
+  @Allow()
+  images?: any[];
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    description: 'Apartment video (MP4, MOV, WEBM), max 1 file',
+  })
+  @Allow()
+  video?: any;
+}
+
+export class UpdatePartnerCooperationApartmentInUploadDto extends OmitType(
+  UpdateApartmentDto,
+  ['status'] as const,
+) {}
+
+export class UploadPartnerCooperationMediaRequestDto extends OmitType(
+  UpdatePartnerCooperationApartmentInUploadDto,
+  ['images', 'videoTourUrl', 'ownerId'] as const,
+) {
+  @ApiPropertyOptional({
+    type: 'array',
+    items: { type: 'string', format: 'binary' },
+    description: 'Apartment images (JPEG, PNG, WebP), max 10 files',
+  })
+  @Allow()
+  images?: any[];
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    description: 'Apartment video (MP4, MOV, WEBM), max 1 file',
+  })
+  @Allow()
+  video?: any;
+}
+
 export class PartnerCooperationSubmitResultDto {
   @ApiProperty({ example: 'ca5f5756-2748-4e63-86cb-179cfb966f27' })
   id: string;
@@ -24,7 +70,12 @@ export class PartnerCooperationSubmitResultDto {
   @ApiProperty({ example: 'P-1205' })
   apartmentNumber: string;
 
-  @ApiProperty({ enum: ApartmentStatus, example: ApartmentStatus.inactive })
+  @ApiProperty({
+    enum: ApartmentStatus,
+    example: ApartmentStatus.inactive,
+    description:
+      'inactive when media is missing, verified when both image and video are uploaded at submit',
+  })
   status: ApartmentStatus;
 
   @ApiProperty({ example: 'e33f798c-7978-4a86-b243-b3ac43e020ba' })
@@ -34,7 +85,7 @@ export class PartnerCooperationSubmitResultDto {
     type: [String],
     nullable: true,
     example: null,
-    description: 'Media chưa được staff upload ở bước submit',
+    description: 'Apartment images uploaded in submit step (if provided)',
   })
   images: string[] | null;
 
@@ -42,7 +93,7 @@ export class PartnerCooperationSubmitResultDto {
     type: String,
     nullable: true,
     example: null,
-    description: 'Video chưa được staff upload ở bước submit',
+    description: 'Apartment video uploaded in submit step (if provided)',
   })
   videoTourUrl: string | null;
 
@@ -60,7 +111,7 @@ export class ApartmentMediaUploadResultDto {
   @ApiProperty({ example: 'P-1205' })
   apartmentNumber: string;
 
-  @ApiProperty({ enum: ApartmentStatus, example: 'verified' })
+  @ApiProperty({ enum: ApartmentStatus, example: ApartmentStatus.verified })
   status: ApartmentStatus;
 
   @ApiPropertyOptional({
@@ -94,7 +145,7 @@ export class ApprovePartnerCooperationResultDto {
   @ApiProperty({ example: 'P-1205' })
   apartmentNumber: string;
 
-  @ApiProperty({ enum: ApartmentStatus, example: 'pending' })
+  @ApiProperty({ enum: ApartmentStatus, example: ApartmentStatus.pending })
   status: ApartmentStatus;
 
   @ApiPropertyOptional({
@@ -113,6 +164,7 @@ export class ApprovePartnerCooperationResultDto {
 
   @ApiPropertyOptional({
     type: Date,
+    format: 'date-time',
     nullable: true,
     example: '2026-03-24T10:30:00.000Z',
   })
@@ -371,4 +423,37 @@ export class CancelPartnerCooperationContractResultDto {
     example: 'Partner khong tiep tuc hop tac trong giai doan nay',
   })
   cancelReason: string | null;
+}
+
+export class RejectPartnerCooperationApartmentDto {
+  @ApiProperty({
+    example: 'Thong tin can ho chua day du, vui long cap nhat lai',
+    description: 'Ly do reject cooperation apartment',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason: string;
+}
+
+export class RejectPartnerCooperationResultDto {
+  @ApiProperty({ example: 'ca5f5756-2748-4e63-86cb-179cfb966f27' })
+  id: string;
+
+  @ApiProperty({ example: 'P-1205' })
+  apartmentNumber: string;
+
+  @ApiProperty({ enum: ApartmentStatus, example: ApartmentStatus.inactive })
+  status: ApartmentStatus;
+
+  @ApiProperty({
+    format: 'date-time',
+    example: '2026-03-24T16:20:00.000Z',
+  })
+  rejectedAt: Date;
+
+  @ApiProperty({
+    example: 'Thong tin can ho chua day du, vui long cap nhat lai',
+  })
+  rejectionReason: string;
 }
