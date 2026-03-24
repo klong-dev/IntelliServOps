@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateApartmentDto,
   CancelPartnerCooperationContractDto,
+  UpdatePartnerCooperationApartmentInUploadDto,
   UpdateApartmentDto,
   SearchApartmentDto,
   RateApartmentDto,
@@ -1093,13 +1094,36 @@ export class ApartmentsService {
   }
 
   /**
-   * Partner submits apartment cooperation info without media.
-   * Apartment is created in inactive status and waits for staff media upload + operator approval.
+   * Partner submits apartment cooperation info.
+   * Media can be uploaded at submit step or later via cooperation-media endpoint.
    */
   async submitPartnerCooperation(
     createDto: Omit<CreateApartmentDto, 'images' | 'videoTourUrl'>,
     currentUser: JwtPayload,
+    media?: { imageUrls?: string[]; videoUrl?: string },
   ) {
+    const partnerIdentity = await this.prisma.user.findUnique({
+      where: { id: currentUser.sub },
+      select: {
+        id: true,
+        identity: {
+          select: {
+            isVerified: true,
+          },
+        },
+      },
+    });
+
+    if (!partnerIdentity?.identity?.isVerified) {
+      throw new ForbiddenException(
+        'Partner must complete identity verification before submitting cooperation apartment',
+      );
+    }
+
+    const imageUrls = media?.imageUrls ?? [];
+    const videoUrl = media?.videoUrl;
+    const shouldSetVerified = imageUrls.length > 0 && Boolean(videoUrl);
+
     const data: Prisma.ApartmentCreateInput = {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
@@ -1117,8 +1141,12 @@ export class ApartmentsService {
       baseRentPrice: createDto.baseRentPrice,
       depositAmount: createDto.depositAmount,
       description: createDto.description,
+      images: imageUrls,
+      videoTourUrl: videoUrl,
       yearBuilt: createDto.yearBuilt,
-      status: ApartmentStatus.inactive,
+      status: shouldSetVerified
+        ? this.cooperationVerifiedStatus
+        : ApartmentStatus.inactive,
       owner: { connect: { id: currentUser.sub } },
     };
 
@@ -1158,15 +1186,18 @@ export class ApartmentsService {
     return apartment;
   }
 
-  async staffUploadCooperationMedia(
+  async uploadCooperationMedia(
     id: string,
     media: { imageUrls?: string[]; videoUrl?: string },
+    currentUser: JwtPayload,
+    updateDto?: UpdatePartnerCooperationApartmentInUploadDto,
   ) {
     const apartment = await this.prisma.apartment.findUnique({
       where: { id },
       select: {
         id: true,
         apartmentNumber: true,
+        ownerId: true,
         status: true,
         images: true,
         videoTourUrl: true,
@@ -1176,6 +1207,15 @@ export class ApartmentsService {
 
     if (!apartment) {
       throw new NotFoundException('Apartment not found');
+    }
+
+    if (
+      currentUser.actorType === 'user' &&
+      apartment.ownerId !== currentUser.sub
+    ) {
+      throw new ForbiddenException(
+        'You can only upload media for your own cooperation apartment',
+      );
     }
 
     if (apartment.approvedAt) {
@@ -1199,15 +1239,51 @@ export class ApartmentsService {
       (apartment.status === ApartmentStatus.inactive ||
         apartment.status === this.cooperationVerifiedStatus);
 
+    const staffCanUpdateInfo =
+      currentUser.actorType === 'staff' &&
+      updateDto &&
+      Object.keys(updateDto).length > 0;
+
+    const apartmentUpdateData: Prisma.ApartmentUpdateInput = {
+      ...(incomingImages.length > 0 ? { images: mergedImages } : {}),
+      ...(media.videoUrl ? { videoTourUrl: media.videoUrl } : {}),
+      ...(shouldSetVerified ? { status: this.cooperationVerifiedStatus } : {}),
+    };
+
+    if (staffCanUpdateInfo) {
+      const {
+        ownerId: _ignoredOwnerId,
+        images: _ignoredImages,
+        videoTourUrl: _ignoredVideo,
+        ...restUpdateDto
+      } = updateDto;
+
+      Object.assign(apartmentUpdateData, restUpdateDto);
+
+      if (updateDto.newWardCode !== undefined) {
+        apartmentUpdateData.newProvinceCode =
+          updateDto.newWardCode !== null
+            ? await this.resolveProvinceCodeFromWard(updateDto.newWardCode)
+            : null;
+      }
+
+      if (updateDto.oldWardCode !== undefined) {
+        if (updateDto.oldWardCode !== null) {
+          const oldCodes = await this.resolveOldAddressCodesFromWard(
+            updateDto.oldWardCode,
+          );
+          apartmentUpdateData.oldDistrictCode = oldCodes.districtCode ?? null;
+          apartmentUpdateData.oldProvinceCode = oldCodes.provinceCode ?? null;
+        } else {
+          apartmentUpdateData.oldDistrictCode = null;
+          apartmentUpdateData.oldProvinceCode = null;
+        }
+      }
+    }
+
     return this.prisma.apartment.update({
       where: { id },
-      data: {
-        ...(incomingImages.length > 0 ? { images: mergedImages } : {}),
-        ...(media.videoUrl ? { videoTourUrl: media.videoUrl } : {}),
-        ...(shouldSetVerified
-          ? { status: this.cooperationVerifiedStatus }
-          : {}),
-      },
+      data: apartmentUpdateData,
       select: {
         id: true,
         apartmentNumber: true,
@@ -1217,6 +1293,92 @@ export class ApartmentsService {
         updatedAt: true,
       },
     });
+  }
+
+  async rejectPartnerCooperation(
+    id: string,
+    operatorId: string,
+    reason: string,
+  ) {
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        ownerId: true,
+        status: true,
+      },
+    });
+
+    if (!apartment) {
+      throw new NotFoundException('Apartment not found');
+    }
+
+    if (
+      apartment.status === ApartmentStatus.available ||
+      apartment.status === ApartmentStatus.occupied ||
+      apartment.status === ApartmentStatus.reserved
+    ) {
+      throw new ConflictException(
+        'Apartment cannot be rejected in current status',
+      );
+    }
+
+    const rejectedAt = new Date();
+
+    const updatedApartment = await this.prisma.$transaction(async (tx) => {
+      await tx.partnerCooperationContract.updateMany({
+        where: {
+          apartmentId: id,
+          status: {
+            in: [
+              PartnerCooperationContractStatus.draft,
+              PartnerCooperationContractStatus.pending,
+              PartnerCooperationContractStatus.signed,
+              PartnerCooperationContractStatus.active,
+            ],
+          },
+        },
+        data: {
+          status: PartnerCooperationContractStatus.cancelled,
+          notes: `Rejected by operator ${operatorId}: ${reason}`,
+          endDate: rejectedAt,
+        },
+      });
+
+      return tx.apartment.update({
+        where: { id },
+        data: {
+          status: ApartmentStatus.inactive,
+        },
+        select: {
+          id: true,
+          apartmentNumber: true,
+          status: true,
+        },
+      });
+    });
+
+    if (apartment.ownerId) {
+      await this.notifySafely({
+        recipientType: ActorType.user,
+        recipientId: apartment.ownerId,
+        title: 'Can ho hop tac bi tu choi',
+        message: `Can ho ${apartment.apartmentNumber} da bi operator tu choi. Ly do: ${reason}`,
+        actionUrl: `/apartments/${id}`,
+        actionLabel: 'Xem chi tiet',
+        relatedEntityType: 'Apartment',
+        relatedEntityId: id,
+      });
+    }
+
+    return {
+      id: updatedApartment.id,
+      apartmentNumber: updatedApartment.apartmentNumber,
+      status: updatedApartment.status,
+      rejectedAt,
+      rejectionReason: reason,
+    };
   }
 
   /**

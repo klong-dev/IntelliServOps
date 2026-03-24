@@ -37,10 +37,15 @@ import {
   RateApartmentDto,
   ApartmentRatingResultDto,
   CreatePartnerCooperationApartmentDto,
+  SubmitPartnerCooperationRequestDto,
   PartnerCooperationSubmitResultDto,
   ApartmentMediaUploadResultDto,
+  UpdatePartnerCooperationApartmentInUploadDto,
+  UploadPartnerCooperationMediaRequestDto,
   ApprovePartnerCooperationResultDto,
   PartnerCooperationContractDetailDto,
+  RejectPartnerCooperationApartmentDto,
+  RejectPartnerCooperationResultDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
@@ -190,19 +195,105 @@ export class ApartmentsController {
   @ApiOperation({
     summary: 'Partner submit apartment cooperation information',
     description:
-      'Partner submits apartment information for cooperation. This endpoint accepts apartment fields except image/video and always creates apartment with inactive status.',
+      'Partner submits apartment information for cooperation and can upload apartment images/video in the same request.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    type: SubmitPartnerCooperationRequestDto,
   })
   @ApiJsonResponse(PartnerCooperationSubmitResultDto, {
     status: 201,
     description: 'Partner cooperation apartment submitted successfully',
   })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'images', maxCount: 10 },
+      { name: 'video', maxCount: 1 },
+    ]),
+  )
   async submitPartnerCooperation(
+    @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
     @Body() createDto: CreatePartnerCooperationApartmentDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
+    const isUploadedMediaFile = (
+      value: unknown,
+    ): value is UploadedMediaFile => {
+      if (!value || typeof value !== 'object') {
+        return false;
+      }
+
+      const candidate = value as Record<string, unknown>;
+      return (
+        typeof candidate.originalname === 'string' &&
+        typeof candidate.mimetype === 'string' &&
+        Buffer.isBuffer(candidate.buffer) &&
+        typeof candidate.size === 'number'
+      );
+    };
+
+    const imageFiles = (
+      Array.isArray(files?.images) ? files.images : []
+    ).filter(isUploadedMediaFile);
+    const videoFile = (Array.isArray(files?.video) ? files.video : []).find(
+      isUploadedMediaFile,
+    );
+
+    const validImageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const validVideoMimeTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
+
+    for (const imageFile of imageFiles) {
+      if (!validImageMimeTypes.includes(imageFile.mimetype)) {
+        throw new BadRequestException(
+          `Invalid image format: ${imageFile.originalname}. Allowed: JPEG, PNG, WebP`,
+        );
+      }
+    }
+
+    if (videoFile && !validVideoMimeTypes.includes(videoFile.mimetype)) {
+      throw new BadRequestException(
+        `Invalid video format: ${videoFile.originalname}. Allowed: MP4, MOV, WEBM`,
+      );
+    }
+
+    const timestamp = Date.now();
+    const imageUrls: string[] = [];
+    let videoUrl: string | undefined;
+
+    for (let i = 0; i < imageFiles.length; i++) {
+      const ext =
+        imageFiles[i].mimetype.split('/')[1] === 'jpeg'
+          ? 'jpg'
+          : imageFiles[i].mimetype.split('/')[1];
+      const filePath = `partner-${currentUser.sub}/images/${timestamp}-${i}.${ext}`;
+      const url = await this.storageService.uploadFile(
+        'apartment-cooperation',
+        filePath,
+        imageFiles[i],
+      );
+      imageUrls.push(url);
+    }
+
+    if (videoFile) {
+      const ext =
+        videoFile.mimetype === 'video/quicktime'
+          ? 'mov'
+          : videoFile.mimetype.split('/')[1];
+      const videoPath = `partner-${currentUser.sub}/video/${timestamp}.${ext}`;
+      videoUrl = await this.storageService.uploadFile(
+        'apartment-cooperation',
+        videoPath,
+        videoFile,
+      );
+    }
+
     return this.apartmentsService.submitPartnerCooperation(
       createDto,
       currentUser,
+      {
+        imageUrls,
+        videoUrl,
+      },
     );
   }
 
@@ -231,29 +322,15 @@ export class ApartmentsController {
 
   @Post(':id/cooperation-media')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.STAFF)
+  @Roles(Role.STAFF, Role.USER)
   @ApiOperation({
-    summary: 'Staff upload image and video for partner cooperation apartment',
+    summary: 'Upload media for partner cooperation apartment',
     description:
-      'Staff uploads images and/or a video for an apartment submitted by partner cooperation flow.',
+      'Partner or staff uploads images/video for a partner cooperation apartment. Staff can also update apartment information in this same request.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        images: {
-          type: 'array',
-          items: { type: 'string', format: 'binary' },
-          description: 'Apartment images (JPEG, PNG, WebP), max 10 files',
-        },
-        video: {
-          type: 'string',
-          format: 'binary',
-          description: 'Apartment video (MP4, MOV, WEBM), max 1 file',
-        },
-      },
-    },
+    type: UploadPartnerCooperationMediaRequestDto,
   })
   @ApiJsonResponse(ApartmentMediaUploadResultDto, {
     status: 201,
@@ -272,6 +349,7 @@ export class ApartmentsController {
   async uploadCooperationMedia(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
+    @Body() updateDto: UpdatePartnerCooperationApartmentInUploadDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     const isUploadedMediaFile = (
@@ -351,10 +429,15 @@ export class ApartmentsController {
       );
     }
 
-    return this.apartmentsService.staffUploadCooperationMedia(id, {
-      imageUrls,
-      videoUrl,
-    });
+    return this.apartmentsService.uploadCooperationMedia(
+      id,
+      {
+        imageUrls,
+        videoUrl,
+      },
+      currentUser,
+      updateDto,
+    );
   }
 
   @Patch(':id')
@@ -436,6 +519,31 @@ export class ApartmentsController {
     return this.apartmentsService.approvePartnerCooperation(
       id,
       currentUser.sub,
+    );
+  }
+
+  @Patch(':id/reject-cooperation')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.OPERATOR)
+  @ApiOperation({
+    summary: 'Operator reject partner cooperation apartment',
+    description:
+      'Operator rejects partner cooperation apartment, sets apartment status to inactive, and sends notification to partner with reject reason.',
+  })
+  @ApiJsonResponse(RejectPartnerCooperationResultDto, {
+    description: 'Partner cooperation apartment rejected',
+  })
+  @ApiResponse({ status: 404, description: 'Apartment not found' })
+  @ApiResponse({ status: 409, description: 'Apartment cannot be rejected' })
+  async rejectPartnerCooperation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RejectPartnerCooperationApartmentDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.apartmentsService.rejectPartnerCooperation(
+      id,
+      currentUser.sub,
+      body.reason,
     );
   }
 }
