@@ -23,6 +23,7 @@ export class CreateApartmentDto {
 
   @ApiProperty({ example: 'A-1501' })
   @IsString()
+  @IsOptional()
   @MaxLength(50)
   apartmentNumber: string;
 

@@ -440,14 +440,45 @@ export class ApartmentMutationResultDto {
   @ApiProperty({ example: 'R1-801' })
   apartmentNumber: string;
 
-  @ApiProperty({ example: '92 Nguyễn Hữu Cảnh' })
-  address: string;
+  @ApiPropertyOptional({
+    type: Number,
+    example: 26728,
+    nullable: true,
+    description: 'Mã phường/xã sau sáp nhập (v2)',
+  })
+  newWardCode: number | null;
 
-  @ApiProperty({ example: 'Hồ Chí Minh' })
-  city: string;
+  @ApiPropertyOptional({
+    type: Number,
+    example: 79,
+    nullable: true,
+    description: 'Mã tỉnh/thành sau sáp nhập (v2), auto-resolved từ wardCode',
+  })
+  newProvinceCode: number | null;
 
-  @ApiProperty({ example: 'Quận Bình Thạnh' })
-  district: string;
+  @ApiPropertyOptional({
+    type: Number,
+    example: 26731,
+    nullable: true,
+    description: 'Mã phường/xã trước sáp nhập (v1)',
+  })
+  oldWardCode: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 760,
+    nullable: true,
+    description: 'Mã quận/huyện trước sáp nhập (v1), auto-resolved từ wardCode',
+  })
+  oldDistrictCode: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 77,
+    nullable: true,
+    description: 'Mã tỉnh/thành trước sáp nhập (v1), auto-resolved từ wardCode',
+  })
+  oldProvinceCode: number | null;
 
   @ApiProperty({ example: '12000000' })
   baseRentPrice: string;

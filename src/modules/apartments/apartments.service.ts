@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateApartmentDto,
+  CancelPartnerCooperationContractDto,
   UpdateApartmentDto,
   SearchApartmentDto,
   RateApartmentDto,
@@ -463,6 +464,52 @@ export class ApartmentsService {
       : this.resolveOldWardAddress(wardCode, lookupCache);
   }
 
+  /**
+   * Resolve province code from a v2 ward code via external API
+   */
+  private async resolveProvinceCodeFromWard(
+    wardCode: number,
+  ): Promise<number | undefined> {
+    try {
+      const response = await axios.get(
+        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
+        { timeout: 15000 },
+      );
+      return response.data?.province_code ?? undefined;
+    } catch {
+      // If lookup fails, don't block the operation
+      return undefined;
+    }
+  }
+
+  /**
+   * Resolve district_code and province_code from a v1 (old) ward code
+   */
+  private async resolveOldAddressCodesFromWard(
+    wardCode: number,
+  ): Promise<{ districtCode?: number; provinceCode?: number }> {
+    try {
+      const wardResponse = await axios.get(
+        `${this.provincesBaseUrl}/api/v1/w/${wardCode}`,
+        { timeout: 15000 },
+      );
+      const districtCode = wardResponse.data?.district_code ?? undefined;
+
+      let provinceCode: number | undefined;
+      if (districtCode) {
+        const districtResponse = await axios.get(
+          `${this.provincesBaseUrl}/api/v1/d/${districtCode}`,
+          { timeout: 15000 },
+        );
+        provinceCode = districtResponse.data?.province_code ?? undefined;
+      }
+
+      return { districtCode, provinceCode };
+    } catch {
+      return {};
+    }
+  }
+
   async getApartmentAddressByWardCodes(
     newWardCode?: number | null,
     oldWardCode?: number | null,
@@ -561,6 +608,7 @@ export class ApartmentsService {
    */
   async search(searchDto: SearchApartmentDto) {
     const {
+      provinceCode,
       wardCode,
       keyword,
       addressType = 'both',
@@ -578,29 +626,45 @@ export class ApartmentsService {
       sortOrder = 'desc',
     } = searchDto;
 
-    // Build ward-code filter based on addressType
+    // Build address filter conditions
     const addressFilters: Prisma.ApartmentWhereInput[] = [];
 
+    // Province-level filter: matches newProvinceCode OR oldProvinceCode
+    if (provinceCode !== undefined) {
+      addressFilters.push({
+        OR: [
+          { newProvinceCode: provinceCode },
+          { oldProvinceCode: provinceCode },
+        ],
+      });
+    }
+
+    // District-level filter (v1 old address only)
+    if (searchDto.districtCode !== undefined) {
+      addressFilters.push({ oldDistrictCode: searchDto.districtCode });
+    }
+
+    // Ward-level filter based on addressType
     if (wardCode !== undefined) {
+      const wardFilters: Prisma.ApartmentWhereInput[] = [];
       if (addressType === 'new' || addressType === 'both') {
-        addressFilters.push({
-          newWardCode: wardCode,
-        });
+        wardFilters.push({ newWardCode: wardCode });
       }
       if (addressType === 'old' || addressType === 'both') {
-        addressFilters.push({
-          oldWardCode: wardCode,
-        });
+        wardFilters.push({ oldWardCode: wardCode });
+      }
+      if (wardFilters.length === 1) {
+        addressFilters.push(wardFilters[0]);
+      } else if (wardFilters.length > 1) {
+        addressFilters.push({ OR: wardFilters });
       }
     }
 
     // Combine all AND conditions
     const andConditions: Prisma.ApartmentWhereInput[] = [];
 
-    if (addressFilters.length === 1) {
-      andConditions.push(addressFilters[0]);
-    } else if (addressFilters.length > 1) {
-      andConditions.push({ OR: addressFilters });
+    if (addressFilters.length > 0) {
+      andConditions.push(...addressFilters);
     }
 
     if (keyword) {
@@ -959,12 +1023,34 @@ export class ApartmentsService {
    * Operator, Admin, or Partner can create
    */
   async create(createDto: CreateApartmentDto, currentUser: JwtPayload) {
+    // Auto-resolve province code from new ward code
+    let newProvinceCode: number | undefined;
+    if (createDto.newWardCode) {
+      newProvinceCode = await this.resolveProvinceCodeFromWard(
+        createDto.newWardCode,
+      );
+    }
+
+    // Auto-resolve district & province codes from old ward code
+    let oldDistrictCode: number | undefined;
+    let oldProvinceCode: number | undefined;
+    if (createDto.oldWardCode) {
+      const oldCodes = await this.resolveOldAddressCodesFromWard(
+        createDto.oldWardCode,
+      );
+      oldDistrictCode = oldCodes.districtCode;
+      oldProvinceCode = oldCodes.provinceCode;
+    }
+
     const data: Prisma.ApartmentCreateInput = {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
       floorNumber: createDto.floorNumber,
       newWardCode: createDto.newWardCode,
+      newProvinceCode,
       oldWardCode: createDto.oldWardCode,
+      oldDistrictCode,
+      oldProvinceCode,
       latitude: createDto.latitude,
       longitude: createDto.longitude,
       totalArea: createDto.totalArea,
@@ -995,7 +1081,10 @@ export class ApartmentsService {
         id: true,
         apartmentNumber: true,
         newWardCode: true,
+        newProvinceCode: true,
         oldWardCode: true,
+        oldDistrictCode: true,
+        oldProvinceCode: true,
         baseRentPrice: true,
         status: true,
         createdAt: true,
@@ -1156,14 +1245,43 @@ export class ApartmentsService {
       throw new ForbiddenException('You can only update your own apartments');
     }
 
+    // Auto-resolve province code if newWardCode is being updated
+    const data: any = { ...updateDto };
+    if (updateDto.newWardCode !== undefined) {
+      if (updateDto.newWardCode !== null) {
+        data.newProvinceCode = await this.resolveProvinceCodeFromWard(
+          updateDto.newWardCode,
+        );
+      } else {
+        data.newProvinceCode = null;
+      }
+    }
+
+    // Auto-resolve district & province codes if oldWardCode is being updated
+    if (updateDto.oldWardCode !== undefined) {
+      if (updateDto.oldWardCode !== null) {
+        const oldCodes = await this.resolveOldAddressCodesFromWard(
+          updateDto.oldWardCode,
+        );
+        data.oldDistrictCode = oldCodes.districtCode ?? null;
+        data.oldProvinceCode = oldCodes.provinceCode ?? null;
+      } else {
+        data.oldDistrictCode = null;
+        data.oldProvinceCode = null;
+      }
+    }
+
     return this.prisma.apartment.update({
       where: { id },
-      data: updateDto as any,
+      data,
       select: {
         id: true,
         apartmentNumber: true,
         newWardCode: true,
+        newProvinceCode: true,
         oldWardCode: true,
+        oldDistrictCode: true,
+        oldProvinceCode: true,
         baseRentPrice: true,
         status: true,
         updatedAt: true,
@@ -1616,6 +1734,121 @@ export class ApartmentsService {
       contractDocumentUrl: updated.contractDocumentUrl,
       cooperationContractPdfUrl: `/apartments/cooperation-contracts/${updated.id}/pdf`,
       cooperationContractPublicPdfUrl: `/apartments/cooperation-contracts/pdf/view?token=${token}`,
+    };
+  }
+
+  async cancelPartnerCooperationContract(
+    apartmentId: string,
+    currentUser: JwtPayload,
+    body?: CancelPartnerCooperationContractDto,
+  ) {
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id: apartmentId },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        ownerId: true,
+      },
+    });
+
+    if (!apartment) {
+      throw new NotFoundException('Apartment not found');
+    }
+
+    if (apartment.ownerId !== currentUser.sub) {
+      throw new ForbiddenException(
+        'You can only cancel cooperation contract of your own apartment',
+      );
+    }
+
+    const contract = await this.prisma.partnerCooperationContract.findFirst({
+      where: {
+        apartmentId,
+        partnerId: currentUser.sub,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        contractNumber: true,
+        status: true,
+        notes: true,
+        approvedByOperatorId: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(
+        'Cooperation contract not found for apartment',
+      );
+    }
+
+    if (
+      contract.status === PartnerCooperationContractStatus.cancelled ||
+      contract.status === PartnerCooperationContractStatus.terminated ||
+      contract.status === PartnerCooperationContractStatus.expired
+    ) {
+      throw new ConflictException('Cooperation contract cannot be cancelled');
+    }
+
+    const cancelledAt = new Date();
+    const cancelReason = body?.reason?.trim() || null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const cancelledContract = await tx.partnerCooperationContract.update({
+        where: { id: contract.id },
+        data: {
+          status: PartnerCooperationContractStatus.cancelled,
+          endDate: cancelledAt,
+          notes: cancelReason
+            ? `${contract.notes ?? ''}${contract.notes ? '\n' : ''}Cancelled by partner: ${cancelReason}`
+            : contract.notes,
+        },
+        select: {
+          id: true,
+          contractNumber: true,
+          status: true,
+        },
+      });
+
+      const updatedApartment = await tx.apartment.update({
+        where: { id: apartmentId },
+        data: {
+          status: ApartmentStatus.inactive,
+        },
+        select: {
+          id: true,
+          apartmentNumber: true,
+          status: true,
+        },
+      });
+
+      return { cancelledContract, updatedApartment };
+    });
+
+    if (contract.approvedByOperatorId) {
+      await this.notifySafely({
+        recipientType: ActorType.operator,
+        recipientId: contract.approvedByOperatorId,
+        title: 'Partner da huy hop dong hop tac',
+        message: `Partner da huy hop dong hop tac cua can ho ${apartment.apartmentNumber}.`,
+        actionUrl: `/apartments/${apartmentId}/cooperation-contract`,
+        actionLabel: 'Xem hop dong',
+        relatedEntityType: 'Apartment',
+        relatedEntityId: apartmentId,
+      });
+    }
+
+    return {
+      apartmentId: updated.updatedApartment.id,
+      apartmentNumber: updated.updatedApartment.apartmentNumber,
+      apartmentStatus: updated.updatedApartment.status,
+      cooperationContractId: updated.cancelledContract.id,
+      cooperationContractNumber: updated.cancelledContract.contractNumber,
+      cooperationContractStatus: updated.cancelledContract.status,
+      cancelledAt,
+      cancelReason,
     };
   }
 }

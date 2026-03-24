@@ -14,8 +14,10 @@ import {
 } from './dto';
 import {
   ContractStatus,
+  ActorType,
   ApartmentStatus,
   MemberStatus,
+  PartnerCooperationContractStatus,
   UserApartmentStatus,
   InvoiceStatus,
   InvoiceType,
@@ -24,6 +26,7 @@ import {
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { ApartmentsService } from '../apartments/apartments.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -44,7 +47,37 @@ export class ContractsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly apartmentsService: ApartmentsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  private async notifySafely(params: {
+    recipientType: ActorType;
+    recipientId: string;
+    title: string;
+    message: string;
+    actionUrl?: string;
+    actionLabel?: string;
+    relatedEntityType?: string;
+    relatedEntityId?: string;
+  }): Promise<void> {
+    try {
+      await this.notificationsService.createAndPush({
+        recipientType: params.recipientType,
+        recipientId: params.recipientId,
+        notificationType: 'info',
+        channel: 'in_app',
+        title: params.title,
+        message: params.message,
+        actionUrl: params.actionUrl,
+        actionLabel: params.actionLabel,
+        priority: 'high',
+        relatedEntityType: params.relatedEntityType,
+        relatedEntityId: params.relatedEntityId,
+      });
+    } catch {
+      // Do not block contract flow when notification delivery fails.
+    }
+  }
 
   /**
    * Generate a signed token for PDF access (valid for 5 minutes)
@@ -405,6 +438,232 @@ export class ContractsService {
     return {
       ...contractDetail,
       depositInvoice,
+    };
+  }
+
+  async signCooperationContract(
+    contractId: string,
+    currentUser: JwtPayload,
+    contractPdf: {
+      mimetype: string;
+      buffer: Buffer;
+    },
+    options?: { signedDate?: string; contractDocumentUrl?: string },
+  ) {
+    if (contractPdf.mimetype !== 'application/pdf') {
+      throw new BadRequestException(
+        `Invalid PDF format. Allowed: application/pdf. Received: ${contractPdf.mimetype}`,
+      );
+    }
+
+    const contract = await this.prisma.partnerCooperationContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        status: true,
+        partnerId: true,
+        apartmentId: true,
+        approvedByOperatorId: true,
+        apartment: {
+          select: {
+            id: true,
+            apartmentNumber: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Cooperation contract not found');
+    }
+
+    if (contract.partnerId !== currentUser.sub) {
+      throw new UnauthorizedException(
+        'You can only sign your own cooperation contract',
+      );
+    }
+
+    if (contract.apartment.status !== ('pending' as ApartmentStatus)) {
+      throw new BadRequestException(
+        'Apartment must be pending before partner signs cooperation contract',
+      );
+    }
+
+    if (
+      contract.status === PartnerCooperationContractStatus.cancelled ||
+      contract.status === PartnerCooperationContractStatus.terminated ||
+      contract.status === PartnerCooperationContractStatus.expired
+    ) {
+      throw new ConflictException('Cooperation contract cannot be signed');
+    }
+
+    const signedDate = options?.signedDate
+      ? new Date(options.signedDate)
+      : new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const signedContract = await tx.partnerCooperationContract.update({
+        where: { id: contract.id },
+        data: {
+          contractPdfData: new Uint8Array(contractPdf.buffer),
+          contractDocumentUrl: options?.contractDocumentUrl,
+          signedAt: signedDate,
+          status: PartnerCooperationContractStatus.signed,
+        },
+        select: {
+          id: true,
+          contractNumber: true,
+          status: true,
+          signedAt: true,
+          contractDocumentUrl: true,
+        },
+      });
+
+      const updatedApartment = await tx.apartment.update({
+        where: { id: contract.apartmentId },
+        data: {
+          status: ApartmentStatus.available,
+        },
+        select: {
+          id: true,
+          apartmentNumber: true,
+          status: true,
+        },
+      });
+
+      return { signedContract, updatedApartment };
+    });
+
+    const token = this.generatePdfToken(updated.signedContract.id);
+
+    if (contract.approvedByOperatorId) {
+      await this.notifySafely({
+        recipientType: ActorType.operator,
+        recipientId: contract.approvedByOperatorId,
+        title: 'Partner da ky hop dong hop tac',
+        message: `Partner da ky va upload hop dong cho can ho ${updated.updatedApartment.apartmentNumber}.`,
+        actionUrl: `/apartments/${updated.updatedApartment.id}/cooperation-contract`,
+        actionLabel: 'Xem hop dong',
+        relatedEntityType: 'Apartment',
+        relatedEntityId: updated.updatedApartment.id,
+      });
+    }
+
+    return {
+      apartmentId: updated.updatedApartment.id,
+      apartmentNumber: updated.updatedApartment.apartmentNumber,
+      apartmentStatus: updated.updatedApartment.status,
+      cooperationContractId: updated.signedContract.id,
+      cooperationContractNumber: updated.signedContract.contractNumber,
+      cooperationContractStatus: updated.signedContract.status,
+      signedDate: updated.signedContract.signedAt,
+      contractDocumentUrl: updated.signedContract.contractDocumentUrl,
+      cooperationContractPdfUrl: `/apartments/cooperation-contracts/${updated.signedContract.id}/pdf`,
+      cooperationContractPublicPdfUrl: `/apartments/cooperation-contracts/pdf/view?token=${token}`,
+    };
+  }
+
+  async cancelCooperationContract(
+    contractId: string,
+    currentUser: JwtPayload,
+    body?: { reason?: string },
+  ) {
+    const contract = await this.prisma.partnerCooperationContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        status: true,
+        notes: true,
+        partnerId: true,
+        approvedByOperatorId: true,
+        apartmentId: true,
+        apartment: {
+          select: {
+            id: true,
+            apartmentNumber: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Cooperation contract not found');
+    }
+
+    if (contract.partnerId !== currentUser.sub) {
+      throw new UnauthorizedException(
+        'You can only cancel your own cooperation contract',
+      );
+    }
+
+    if (
+      contract.status === PartnerCooperationContractStatus.cancelled ||
+      contract.status === PartnerCooperationContractStatus.terminated ||
+      contract.status === PartnerCooperationContractStatus.expired
+    ) {
+      throw new ConflictException('Cooperation contract cannot be cancelled');
+    }
+
+    const cancelledAt = new Date();
+    const cancelReason = body?.reason?.trim() || null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const cancelledContract = await tx.partnerCooperationContract.update({
+        where: { id: contract.id },
+        data: {
+          status: PartnerCooperationContractStatus.cancelled,
+          endDate: cancelledAt,
+          notes: cancelReason
+            ? `${contract.notes ?? ''}${contract.notes ? '\n' : ''}Cancelled by partner: ${cancelReason}`
+            : contract.notes,
+        },
+        select: {
+          id: true,
+          contractNumber: true,
+          status: true,
+        },
+      });
+
+      const updatedApartment = await tx.apartment.update({
+        where: { id: contract.apartmentId },
+        data: {
+          status: ApartmentStatus.inactive,
+        },
+        select: {
+          id: true,
+          apartmentNumber: true,
+          status: true,
+        },
+      });
+
+      return { cancelledContract, updatedApartment };
+    });
+
+    if (contract.approvedByOperatorId) {
+      await this.notifySafely({
+        recipientType: ActorType.operator,
+        recipientId: contract.approvedByOperatorId,
+        title: 'Partner da huy hop dong hop tac',
+        message: `Partner da huy hop dong hop tac cua can ho ${updated.updatedApartment.apartmentNumber}.`,
+        actionUrl: `/apartments/${updated.updatedApartment.id}/cooperation-contract`,
+        actionLabel: 'Xem hop dong',
+        relatedEntityType: 'Apartment',
+        relatedEntityId: updated.updatedApartment.id,
+      });
+    }
+
+    return {
+      apartmentId: updated.updatedApartment.id,
+      apartmentNumber: updated.updatedApartment.apartmentNumber,
+      apartmentStatus: updated.updatedApartment.status,
+      cooperationContractId: updated.cancelledContract.id,
+      cooperationContractNumber: updated.cancelledContract.contractNumber,
+      cooperationContractStatus: updated.cancelledContract.status,
+      cancelledAt,
+      cancelReason,
     };
   }
 

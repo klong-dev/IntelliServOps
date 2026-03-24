@@ -1,6 +1,12 @@
 import { OmitType, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateApartmentDto } from './create-apartment.dto';
-import { Allow, IsDateString, IsOptional } from 'class-validator';
+import {
+  Allow,
+  IsDateString,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import {
   ApartmentStatus,
   PartnerCooperationContractStatus,
@@ -318,4 +324,51 @@ export class PartnerCooperationContractDetailDto {
     example: '2026-03-24T10:30:00.000Z',
   })
   updatedAt: Date;
+}
+
+export class CancelPartnerCooperationContractDto {
+  @ApiPropertyOptional({
+    example: 'Partner khong tiep tuc hop tac trong giai doan nay',
+    description: 'Ly do huy hop dong hop tac',
+  })
+  @IsString()
+  @MaxLength(500)
+  @IsOptional()
+  reason?: string;
+}
+
+export class CancelPartnerCooperationContractResultDto {
+  @ApiProperty({ example: 'ca5f5756-2748-4e63-86cb-179cfb966f27' })
+  apartmentId: string;
+
+  @ApiProperty({ example: 'P-1205' })
+  apartmentNumber: string;
+
+  @ApiProperty({ enum: ApartmentStatus, example: ApartmentStatus.inactive })
+  apartmentStatus: ApartmentStatus;
+
+  @ApiProperty({ example: '3f5369be-815f-42cb-8a8b-971fbe4a3557' })
+  cooperationContractId: string;
+
+  @ApiProperty({ example: 'COOP-2026-00001' })
+  cooperationContractNumber: string;
+
+  @ApiProperty({
+    enum: PartnerCooperationContractStatus,
+    example: PartnerCooperationContractStatus.cancelled,
+  })
+  cooperationContractStatus: PartnerCooperationContractStatus;
+
+  @ApiProperty({
+    format: 'date-time',
+    example: '2026-03-24T16:20:00.000Z',
+  })
+  cancelledAt: Date;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Partner khong tiep tuc hop tac trong giai doan nay',
+  })
+  cancelReason: string | null;
 }

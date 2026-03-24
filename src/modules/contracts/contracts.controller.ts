@@ -34,6 +34,10 @@ import {
   ContractDetailDto,
   UploadContractPdfDto,
   CancelContractDto,
+  SignCooperationContractDto,
+  SignCooperationContractResultDto,
+  CancelCooperationContractDto,
+  CancelCooperationContractResultDto,
 } from './dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
@@ -41,12 +45,16 @@ import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { ContractStatus } from '@prisma/client';
+import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
 
 @ApiTags('Contracts')
 @ApiBearerAuth('JWT-auth')
 @Controller('contracts')
 export class ContractsController {
-  constructor(private readonly contractsService: ContractsService) {}
+  constructor(
+    private readonly contractsService: ContractsService,
+    private readonly storageService: SupabaseStorageService,
+  ) {}
 
   @Get()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
@@ -154,6 +162,87 @@ export class ContractsController {
     return this.contractsService.uploadSignedPdf(
       id,
       contractPdf,
+      currentUser,
+      body,
+    );
+  }
+
+  @Post('cooperation/:id/sign')
+  @Roles(Role.USER)
+  @UseInterceptors(FileInterceptor('contractPdf'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Partner upload signed cooperation contract PDF',
+    type: SignCooperationContractDto,
+  })
+  @ApiOperation({
+    summary: 'Partner sign cooperation contract',
+    description:
+      'Partner uploads signed cooperation contract PDF by cooperation contract ID.',
+  })
+  @ApiJsonResponse(SignCooperationContractResultDto, {
+    status: 201,
+    description: 'Cooperation contract signed successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid or missing PDF file' })
+  @ApiResponse({ status: 403, description: 'Not partner of this contract' })
+  @ApiResponse({ status: 404, description: 'Cooperation contract not found' })
+  @ApiResponse({ status: 409, description: 'Contract cannot be signed' })
+  async signCooperationContract(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() contractPdf: any,
+    @Body() body: SignCooperationContractDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    if (!contractPdf) {
+      throw new BadRequestException('Signed contract PDF is required');
+    }
+
+    if (contractPdf.mimetype !== 'application/pdf') {
+      throw new BadRequestException(
+        `Invalid PDF format. Allowed: application/pdf. Received: ${contractPdf.mimetype}`,
+      );
+    }
+
+    const timestamp = Date.now();
+    const storagePath = `${id}/${currentUser.sub}-${timestamp}-signed.pdf`;
+    const uploadedUrl = await this.storageService.uploadFile(
+      'apartment-cooperation-contracts',
+      storagePath,
+      contractPdf,
+    );
+
+    return this.contractsService.signCooperationContract(
+      id,
+      currentUser,
+      contractPdf,
+      {
+        signedDate: body.signedDate,
+        contractDocumentUrl: uploadedUrl,
+      },
+    );
+  }
+
+  @Patch('cooperation/:id/cancel')
+  @Roles(Role.USER)
+  @ApiOperation({
+    summary: 'Partner cancel cooperation contract',
+    description:
+      'Partner cancels cooperation contract. Contract status becomes cancelled and linked apartment status is set to inactive.',
+  })
+  @ApiJsonResponse(CancelCooperationContractResultDto, {
+    description: 'Cooperation contract cancelled successfully',
+  })
+  @ApiResponse({ status: 403, description: 'Not partner of this contract' })
+  @ApiResponse({ status: 404, description: 'Cooperation contract not found' })
+  @ApiResponse({ status: 409, description: 'Contract cannot be cancelled' })
+  cancelCooperationContract(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CancelCooperationContractDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.cancelCooperationContract(
+      id,
       currentUser,
       body,
     );

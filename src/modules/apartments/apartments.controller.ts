@@ -10,7 +10,6 @@ import {
   ParseUUIDPipe,
   UseInterceptors,
   UploadedFiles,
-  UploadedFile,
   BadRequestException,
   Res,
   StreamableFile,
@@ -25,10 +24,7 @@ import {
   ApiBody,
   ApiProduces,
 } from '@nestjs/swagger';
-import {
-  FileFieldsInterceptor,
-  FileInterceptor,
-} from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApartmentsService } from './apartments.service';
 import {
   CreateApartmentDto,
@@ -44,8 +40,6 @@ import {
   PartnerCooperationSubmitResultDto,
   ApartmentMediaUploadResultDto,
   ApprovePartnerCooperationResultDto,
-  SignPartnerCooperationContractDto,
-  PartnerSignCooperationContractResultDto,
   PartnerCooperationContractDetailDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
@@ -442,62 +436,6 @@ export class ApartmentsController {
     return this.apartmentsService.approvePartnerCooperation(
       id,
       currentUser.sub,
-    );
-  }
-
-  @Post(':id/cooperation-contract/sign')
-  @ApiBearerAuth('JWT-auth')
-  @Roles(Role.USER)
-  @UseInterceptors(FileInterceptor('contractPdf'))
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    description: 'Partner upload signed cooperation contract PDF',
-    type: SignPartnerCooperationContractDto,
-  })
-  @ApiOperation({
-    summary: 'Partner sign cooperation contract by uploading signed PDF',
-    description:
-      'Partner uploads a signed cooperation contract PDF. The uploaded file is stored and contract is marked as signed.',
-  })
-  @ApiJsonResponse(PartnerSignCooperationContractResultDto, {
-    status: 201,
-    description: 'Partner signed cooperation contract successfully',
-  })
-  @ApiResponse({ status: 400, description: 'Invalid or missing PDF file' })
-  @ApiResponse({ status: 403, description: 'Not owner of apartment' })
-  @ApiResponse({ status: 404, description: 'Apartment or contract not found' })
-  async signPartnerCooperationContract(
-    @Param('id', ParseUUIDPipe) id: string,
-    @UploadedFile() contractPdf: UploadedMediaFile | undefined,
-    @Body() body: SignPartnerCooperationContractDto,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    if (!contractPdf) {
-      throw new BadRequestException('Signed contract PDF is required');
-    }
-
-    if (contractPdf.mimetype !== 'application/pdf') {
-      throw new BadRequestException(
-        `Invalid PDF format: ${contractPdf.originalname}. Allowed: application/pdf`,
-      );
-    }
-
-    const timestamp = Date.now();
-    const storagePath = `${id}/${currentUser.sub}-${timestamp}-signed.pdf`;
-    const uploadedUrl = await this.storageService.uploadFile(
-      'apartment-cooperation-contracts',
-      storagePath,
-      contractPdf,
-    );
-
-    return this.apartmentsService.partnerSignCooperationContract(
-      id,
-      currentUser,
-      contractPdf,
-      {
-        signedDate: body.signedDate,
-        contractDocumentUrl: uploadedUrl,
-      },
     );
   }
 }
