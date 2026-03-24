@@ -43,6 +43,20 @@ export interface ContractPdfData {
   tenantSignature?: Buffer | null;
 }
 
+export interface PartnerCooperationPdfData {
+  contractNumber: string;
+  partnerName: string;
+  partnerCompanyName?: string;
+  partnerPhone?: string;
+  partnerEmail?: string;
+  apartmentNumber?: string;
+  apartmentAddress?: string;
+  cooperationStartDate: string;
+  cooperationEndDate: string;
+  monthlyRevenueCommissionRate: string;
+  notes?: string;
+}
+
 @Injectable()
 export class ContractPdfService {
   private readonly logger = new Logger(ContractPdfService.name);
@@ -129,6 +143,154 @@ export class ContractPdfService {
       this.renderArticle6(doc);
       this.renderArticle7(doc);
       this.renderSignatures(doc, data);
+
+      doc.end();
+    });
+  }
+
+  async generatePartnerCooperationPdf(
+    data: PartnerCooperationPdfData,
+  ): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 50, bottom: 50, left: 60, right: 60 },
+        bufferPages: true,
+      });
+
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      if (this.fontsAvailable) {
+        doc.registerFont('Regular', this.fontPath);
+        doc.registerFont('Bold', this.fontBoldPath);
+        doc.registerFont('Italic', this.fontItalicPath);
+      } else {
+        doc.registerFont('Regular', 'Helvetica');
+        doc.registerFont('Bold', 'Helvetica-Bold');
+        doc.registerFont('Italic', 'Helvetica-Oblique');
+      }
+
+      doc
+        .font('Bold')
+        .fontSize(13)
+        .text('CONG HOA XA HOI CHU NGHIA VIET NAM', { align: 'center' });
+      doc
+        .font('Bold')
+        .fontSize(12)
+        .text('Doc lap - Tu do - Hanh phuc', { align: 'center' });
+      doc
+        .moveTo(doc.page.width / 2 - 80, doc.y)
+        .lineTo(doc.page.width / 2 + 80, doc.y)
+        .stroke();
+
+      doc.moveDown(0.8);
+      doc
+        .font('Bold')
+        .fontSize(16)
+        .text('HOP DONG HOP TAC KHAI THAC CAN HO', { align: 'center' });
+      doc.moveDown(0.2);
+      doc
+        .font('Regular')
+        .fontSize(11)
+        .text(`So hop dong: ${data.contractNumber}`, { align: 'center' });
+
+      doc.moveDown(1);
+      doc.font('Bold').fontSize(12).text('1. THONG TIN CAC BEN');
+      doc.moveDown(0.3);
+      doc
+        .font('Regular')
+        .fontSize(11)
+        .text('Ben A (Don vi khai thac): IntelliServOps')
+        .text('Dia chi: Ho Chi Minh City, Viet Nam')
+        .text('Dien thoai: 1900 0000');
+
+      doc.moveDown(0.4);
+      doc
+        .font('Regular')
+        .fontSize(11)
+        .text(`Ben B (Partner): ${data.partnerName}`)
+        .text(`Cong ty: ${data.partnerCompanyName || 'N/A'}`)
+        .text(`Dien thoai: ${data.partnerPhone || 'N/A'}`)
+        .text(`Email: ${data.partnerEmail || 'N/A'}`);
+
+      doc.moveDown(0.8);
+      doc.font('Bold').fontSize(12).text('2. NOI DUNG HOP TAC');
+      doc.moveDown(0.3);
+      doc
+        .font('Regular')
+        .fontSize(11)
+        .text(`Can ho hop tac: ${data.apartmentNumber || 'N/A'}`)
+        .text(`Dia chi can ho: ${data.apartmentAddress || 'N/A'}`)
+        .text(
+          `Thoi han hop tac: tu ${data.cooperationStartDate} den ${data.cooperationEndDate}`,
+        )
+        .text(
+          `Ty le hoa hong tren doanh thu moi thang: ${data.monthlyRevenueCommissionRate}%`,
+        );
+
+      if (data.notes) {
+        doc.moveDown(0.3);
+        doc.text(`Dieu khoan bo sung: ${data.notes}`);
+      }
+
+      doc.moveDown(1);
+      doc.font('Bold').fontSize(12).text('3. XAC NHAN VA HIEU LUC');
+      doc.moveDown(0.3);
+      doc
+        .font('Regular')
+        .fontSize(11)
+        .text(
+          'Hop dong co hieu luc ke tu ngay duoc cac ben ky xac nhan va duoc luu tru tren he thong IntelliServOps.',
+        )
+        .text(
+          'Doanh thu hang thang duoc doi soat dinh ky, hoa hong duoc tinh theo ty le da thoa thuan o tren.',
+        );
+
+      doc.moveDown(1.5);
+      const currentY = doc.y;
+      const colWidth =
+        (doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2;
+
+      doc
+        .font('Bold')
+        .fontSize(11)
+        .text('DAI DIEN BEN A', doc.page.margins.left, currentY, {
+          width: colWidth,
+          align: 'center',
+        })
+        .font('Regular')
+        .fontSize(10)
+        .text('(Ky, ghi ro ho ten)', doc.page.margins.left, currentY + 18, {
+          width: colWidth,
+          align: 'center',
+        });
+
+      doc
+        .font('Bold')
+        .fontSize(11)
+        .text(
+          'DAI DIEN BEN B (PARTNER)',
+          doc.page.margins.left + colWidth,
+          currentY,
+          {
+            width: colWidth,
+            align: 'center',
+          },
+        )
+        .font('Regular')
+        .fontSize(10)
+        .text(
+          '(Ky, ghi ro ho ten)',
+          doc.page.margins.left + colWidth,
+          currentY + 18,
+          {
+            width: colWidth,
+            align: 'center',
+          },
+        );
 
       doc.end();
     });

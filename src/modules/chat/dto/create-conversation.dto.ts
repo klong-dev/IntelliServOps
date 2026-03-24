@@ -16,7 +16,8 @@ export class CreateConversationDto {
   title?: string;
 
   @ApiPropertyOptional({
-    description: 'Guest session ID (auto-generated if empty). Only for guest users.',
+    description:
+      'Guest session ID (auto-generated if empty). Only for guest users.',
     example: 'guest_1710000000_abc123',
   })
   @IsOptional()

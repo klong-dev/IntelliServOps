@@ -1,8 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -31,9 +27,20 @@ export class ActivityLogsController {
   @ApiQuery({ name: 'entityType', required: false })
   @ApiQuery({ name: 'entityId', required: false })
   @ApiQuery({ name: 'action', required: false })
-  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (ISO 8601)' })
-  @ApiQuery({ name: 'endDate', required: false, description: 'End date (ISO 8601)' })
-  @ApiJsonResponse(ActivityLogResponseDto, { isArray: true, description: 'List of activity logs' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Start date (ISO 8601)',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'End date (ISO 8601)',
+  })
+  @ApiJsonResponse(ActivityLogResponseDto, {
+    isArray: true,
+    description: 'List of activity logs',
+  })
   async findAll(
     @Query('actorType') actorType?: ActorType,
     @Query('actorId') actorId?: string,

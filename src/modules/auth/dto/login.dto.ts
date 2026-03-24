@@ -34,7 +34,8 @@ export class LoginDto {
 
   @ApiPropertyOptional({
     enum: LoginActorType,
-    description: 'Type of actor logging in. If not provided, system will auto-detect.',
+    description:
+      'Type of actor logging in. If not provided, system will auto-detect.',
   })
   @IsEnum(LoginActorType)
   @IsOptional()

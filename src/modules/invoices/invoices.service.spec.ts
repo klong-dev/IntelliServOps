@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InvoicesService } from './invoices.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPrismaMock, mockUserJwtPayload, mockAdminJwtPayload, mockOperatorJwtPayload } from '../../test-utils';
+import {
+  createPrismaMock,
+  mockUserJwtPayload,
+  mockAdminJwtPayload,
+  mockOperatorJwtPayload,
+} from '../../test-utils';
 import { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
 import { InvoiceStatus } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
@@ -64,7 +69,7 @@ describe('InvoicesService', () => {
           where: expect.objectContaining({
             rentalContract: { members: { some: { userId: user.sub } } },
           }),
-        })
+        }),
       );
     });
 
@@ -77,7 +82,7 @@ describe('InvoicesService', () => {
       expect(prisma.invoice.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { status: InvoiceStatus.paid },
-        })
+        }),
       );
     });
   });
@@ -100,7 +105,9 @@ describe('InvoicesService', () => {
       const admin = mockAdminJwtPayload();
       prisma.invoice.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent', admin)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('non-existent', admin)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -134,7 +141,9 @@ describe('InvoicesService', () => {
       const operator = mockOperatorJwtPayload();
       prisma.rentalContract.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(createDto, operator)).rejects.toThrow(NotFoundException);
+      await expect(service.create(createDto, operator)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -158,7 +167,9 @@ describe('InvoicesService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.invoice.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', updateDto)).rejects.toThrow(NotFoundException);
+      await expect(service.update('non-existent', updateDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -171,7 +182,9 @@ describe('InvoicesService', () => {
       expect(result.count).toBe(5);
       expect(prisma.invoice.updateMany).toHaveBeenCalledWith({
         where: {
-          status: { in: [InvoiceStatus.draft, InvoiceStatus.issued, InvoiceStatus.sent] },
+          status: {
+            in: [InvoiceStatus.draft, InvoiceStatus.issued, InvoiceStatus.sent],
+          },
           dueDate: { lt: expect.any(Date) },
         },
         data: { status: InvoiceStatus.overdue },

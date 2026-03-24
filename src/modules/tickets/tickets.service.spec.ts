@@ -2,7 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPrismaMock, mockTicket, mockUserJwtPayload, mockStaffJwtPayload, mockRentalContract, MockPrisma } from '../../test-utils';
+import {
+  createPrismaMock,
+  mockTicket,
+  mockUserJwtPayload,
+  mockStaffJwtPayload,
+  mockRentalContract,
+  MockPrisma,
+} from '../../test-utils';
 import { CreateTicketDto, UpdateTicketDto } from './dto';
 import { TicketStatus, Priority, ActorType } from '@prisma/client';
 
@@ -48,9 +55,11 @@ describe('TicketsService', () => {
 
       await service.findAll(userJwt);
 
-      expect(prisma.ticket.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ userId: userJwt.sub }),
-      }));
+      expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: userJwt.sub }),
+        }),
+      );
     });
 
     it('should filter tickets for staff (only assigned tickets)', async () => {
@@ -60,9 +69,11 @@ describe('TicketsService', () => {
 
       await service.findAll(staffUser);
 
-      expect(prisma.ticket.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ assignedToStaffId: staffUser.sub }),
-      }));
+      expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ assignedToStaffId: staffUser.sub }),
+        }),
+      );
     });
 
     it('should filter tickets by status', async () => {
@@ -72,9 +83,11 @@ describe('TicketsService', () => {
 
       await service.findAll(adminUser, TicketStatus.open);
 
-      expect(prisma.ticket.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ status: TicketStatus.open }),
-      }));
+      expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: TicketStatus.open }),
+        }),
+      );
     });
   });
 
@@ -95,7 +108,9 @@ describe('TicketsService', () => {
     it('should throw NotFoundException if ticket not found', async () => {
       prisma.ticket.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -122,11 +137,16 @@ describe('TicketsService', () => {
 
     it('should auto-find contract for user if not provided', async () => {
       const userJwt = mockUserJwtPayload();
-      const createDtoWithoutContract = { ...createDto, rentalContractId: undefined };
+      const createDtoWithoutContract = {
+        ...createDto,
+        rentalContractId: undefined,
+      };
       const activeContract = mockRentalContract();
       prisma.rentalContract.findFirst.mockResolvedValue(activeContract);
       prisma.ticket.count.mockResolvedValue(0);
-      prisma.ticket.create.mockResolvedValue(mockTicket({ rentalContractId: activeContract.id }));
+      prisma.ticket.create.mockResolvedValue(
+        mockTicket({ rentalContractId: activeContract.id }),
+      );
 
       await service.create(createDtoWithoutContract, userJwt);
 
@@ -140,17 +160,26 @@ describe('TicketsService', () => {
 
     it('should throw BadRequestException if no active contract found', async () => {
       const userJwt = mockUserJwtPayload();
-      const createDtoWithoutContract = { ...createDto, rentalContractId: undefined };
+      const createDtoWithoutContract = {
+        ...createDto,
+        rentalContractId: undefined,
+      };
       prisma.rentalContract.findFirst.mockResolvedValue(null);
 
-      await expect(service.create(createDtoWithoutContract, userJwt)).rejects.toThrow(BadRequestException);
-      await expect(service.create(createDtoWithoutContract, userJwt)).rejects.toThrow('No active contract found');
+      await expect(
+        service.create(createDtoWithoutContract, userJwt),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.create(createDtoWithoutContract, userJwt),
+      ).rejects.toThrow('No active contract found');
     });
 
     it('should generate unique ticket number', async () => {
       const userJwt = mockUserJwtPayload();
       prisma.ticket.count.mockResolvedValue(5);
-      prisma.ticket.create.mockResolvedValue(mockTicket({ ticketNumber: 'TKT-2026-00006' }));
+      prisma.ticket.create.mockResolvedValue(
+        mockTicket({ ticketNumber: 'TKT-2026-00006' }),
+      );
 
       await service.create(createDto, userJwt);
 
@@ -178,34 +207,44 @@ describe('TicketsService', () => {
     it('should throw NotFoundException if ticket not found', async () => {
       prisma.ticket.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', updateDto)).rejects.toThrow(NotFoundException);
+      await expect(service.update('non-existent', updateDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should set resolvedAt when status is resolved', async () => {
       const ticket = mockTicket();
       prisma.ticket.findUnique.mockResolvedValue(ticket);
-      prisma.ticket.update.mockResolvedValue({ ...ticket, status: TicketStatus.resolved, resolvedAt: new Date() });
+      prisma.ticket.update.mockResolvedValue({
+        ...ticket,
+        status: TicketStatus.resolved,
+        resolvedAt: new Date(),
+      });
 
       await service.update(ticket.id, { status: TicketStatus.resolved });
 
       expect(prisma.ticket.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ resolvedAt: expect.any(Date) }),
-        })
+        }),
       );
     });
 
     it('should set closedAt when status is closed', async () => {
       const ticket = mockTicket();
       prisma.ticket.findUnique.mockResolvedValue(ticket);
-      prisma.ticket.update.mockResolvedValue({ ...ticket, status: TicketStatus.closed, closedAt: new Date() });
+      prisma.ticket.update.mockResolvedValue({
+        ...ticket,
+        status: TicketStatus.closed,
+        closedAt: new Date(),
+      });
 
       await service.update(ticket.id, { status: TicketStatus.closed });
 
       expect(prisma.ticket.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ closedAt: expect.any(Date) }),
-        })
+        }),
       );
     });
   });
@@ -213,7 +252,11 @@ describe('TicketsService', () => {
   describe('assign', () => {
     it('should assign ticket to staff', async () => {
       const ticket = mockTicket();
-      const assignedTicket = { ...ticket, assignedToStaffId: 'staff-123', status: TicketStatus.in_progress };
+      const assignedTicket = {
+        ...ticket,
+        assignedToStaffId: 'staff-123',
+        status: TicketStatus.in_progress,
+      };
       prisma.ticket.update.mockResolvedValue(assignedTicket);
 
       const result = await service.assign(ticket.id, 'staff-123');
@@ -256,7 +299,11 @@ describe('TicketsService', () => {
   describe('close', () => {
     it('should close ticket', async () => {
       const ticket = mockTicket();
-      const closedTicket = { ...ticket, status: TicketStatus.closed, closedAt: new Date() };
+      const closedTicket = {
+        ...ticket,
+        status: TicketStatus.closed,
+        closedAt: new Date(),
+      };
       prisma.ticket.update.mockResolvedValue(closedTicket);
 
       const result = await service.close(ticket.id);

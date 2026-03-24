@@ -1,6 +1,13 @@
 import { PartialType, OmitType } from '@nestjs/swagger';
 import { CreateContractDto } from './create-contract.dto';
-import { IsEnum, IsOptional, IsString, IsDateString, IsNumber, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsDateString,
+  IsNumber,
+  Min,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ContractStatus } from '@prisma/client';
 
@@ -12,7 +19,9 @@ export class UpdateContractDto extends PartialType(
   @IsOptional()
   status?: ContractStatus;
 
-  @ApiPropertyOptional({ description: 'Signed date when contract is activated' })
+  @ApiPropertyOptional({
+    description: 'Signed date when contract is activated',
+  })
   @IsDateString()
   @IsOptional()
   signedDate?: string;

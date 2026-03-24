@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MaintenanceService } from './maintenance.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPrismaMock, mockUserJwtPayload, mockStaffJwtPayload, mockAdminJwtPayload } from '../../test-utils';
+import {
+  createPrismaMock,
+  mockUserJwtPayload,
+  mockStaffJwtPayload,
+  mockAdminJwtPayload,
+} from '../../test-utils';
 import { CreateMaintenanceDto, UpdateMaintenanceDto } from './dto';
 import { MaintenanceStatus, Urgency } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
@@ -54,7 +59,10 @@ describe('MaintenanceService', () => {
   describe('findAll', () => {
     it('should return all maintenance requests for admin', async () => {
       const admin = mockAdminJwtPayload();
-      const requests = [mockMaintenanceRequest(), mockMaintenanceRequest({ id: 'maint-124' })];
+      const requests = [
+        mockMaintenanceRequest(),
+        mockMaintenanceRequest({ id: 'maint-124' }),
+      ];
       prisma.maintenanceRequest.findMany.mockResolvedValue(requests as any);
 
       const result = await service.findAll(admin);
@@ -84,7 +92,9 @@ describe('MaintenanceService', () => {
 
     it('should filter by status', async () => {
       const admin = mockAdminJwtPayload();
-      const requests = [mockMaintenanceRequest({ status: MaintenanceStatus.completed })];
+      const requests = [
+        mockMaintenanceRequest({ status: MaintenanceStatus.completed }),
+      ];
       prisma.maintenanceRequest.findMany.mockResolvedValue(requests as any);
 
       const result = await service.findAll(admin, MaintenanceStatus.completed);
@@ -115,7 +125,9 @@ describe('MaintenanceService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.maintenanceRequest.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('non-existent')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -154,7 +166,9 @@ describe('MaintenanceService', () => {
       const user = mockUserJwtPayload();
       prisma.rentalContract.findFirst.mockResolvedValue(null);
 
-      await expect(service.create(createDto, user)).rejects.toThrow(NotFoundException);
+      await expect(service.create(createDto, user)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should create request without contract check for staff', async () => {
@@ -175,7 +189,9 @@ describe('MaintenanceService', () => {
       const activeContract = { id: 'contract-123' };
 
       prisma.rentalContract.findFirst.mockResolvedValue(activeContract as any);
-      prisma.maintenanceRequest.create.mockResolvedValue(mockMaintenanceRequest() as any);
+      prisma.maintenanceRequest.create.mockResolvedValue(
+        mockMaintenanceRequest() as any,
+      );
 
       await service.create(dtoWithRoom, user);
 
@@ -184,7 +200,7 @@ describe('MaintenanceService', () => {
           data: expect.objectContaining({
             room: { connect: { id: 'room-123' } },
           }),
-        })
+        }),
       );
     });
   });
@@ -218,7 +234,9 @@ describe('MaintenanceService', () => {
     it('should throw NotFoundException if request not found', async () => {
       prisma.maintenanceRequest.findUnique.mockResolvedValue(null);
 
-      await expect(service.update('non-existent', updateDto)).rejects.toThrow(NotFoundException);
+      await expect(service.update('non-existent', updateDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should update cost if provided', async () => {
@@ -251,7 +269,11 @@ describe('MaintenanceService', () => {
 
       prisma.maintenanceRequest.update.mockResolvedValue(completed as any);
 
-      const result = await service.complete('maint-123', 'Fixed successfully', 200000);
+      const result = await service.complete(
+        'maint-123',
+        'Fixed successfully',
+        200000,
+      );
 
       expect(result.status).toBe(MaintenanceStatus.completed);
       expect(prisma.maintenanceRequest.update).toHaveBeenCalledWith({

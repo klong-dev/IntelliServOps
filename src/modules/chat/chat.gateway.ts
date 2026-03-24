@@ -65,7 +65,9 @@ export class ChatGateway
   async handleConnection(client: AuthenticatedSocket) {
     try {
       const token = client.handshake.auth?.token as string | undefined;
-      const guestSessionId = client.handshake.auth?.guestSessionId as string | undefined;
+      const guestSessionId = client.handshake.auth?.guestSessionId as
+        | string
+        | undefined;
       const guestName = client.handshake.auth?.guestName as string | undefined;
 
       if (token) {
@@ -89,9 +91,7 @@ export class ChatGateway
             `Staff connected: ${payload.email} (${actorType}) [${client.id}]`,
           );
         } else {
-          this.logger.log(
-            `User connected: ${payload.email} [${client.id}]`,
-          );
+          this.logger.log(`User connected: ${payload.email} [${client.id}]`);
         }
 
         // Set online status in Redis
@@ -216,7 +216,9 @@ export class ChatGateway
       }
 
       // Return conversation details + recent messages
-      const conversation = await this.chatService.getConversation(data.conversationId);
+      const conversation = await this.chatService.getConversation(
+        data.conversationId,
+      );
       const messages = await this.chatService.getMessages(data.conversationId, {
         page: 1,
         limit: 50,
@@ -271,9 +273,10 @@ export class ChatGateway
       this.server.to('staff:inbox').emit('chat:conversation_updated', {
         conversationId: data.conversationId,
         lastMessageAt: message.timestamp,
-        lastMessageText: message.content.length > 100
-          ? message.content.substring(0, 100) + '...'
-          : message.content,
+        lastMessageText:
+          message.content.length > 100
+            ? message.content.substring(0, 100) + '...'
+            : message.content,
         senderName: fullName,
         senderType: actorType,
       });

@@ -140,7 +140,7 @@ export class TicketsService {
     }
 
     if (updateDto.priority) {
-      data.priority = updateDto.priority as Priority;
+      data.priority = updateDto.priority;
     }
 
     if (updateDto.assignedToStaffId) {

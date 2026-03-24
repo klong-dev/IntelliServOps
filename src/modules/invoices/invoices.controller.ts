@@ -40,7 +40,10 @@ export class InvoicesController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List invoices' })
   @ApiQuery({ name: 'status', required: false, enum: InvoiceStatus })
-  @ApiJsonResponse(InvoiceListItemDto, { isArray: true, description: 'List of invoices' })
+  @ApiJsonResponse(InvoiceListItemDto, {
+    isArray: true,
+    description: 'List of invoices',
+  })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: InvoiceStatus,
@@ -63,7 +66,10 @@ export class InvoicesController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Create invoice' })
-  @ApiJsonResponse(InvoiceCreatedDto, { status: 201, description: 'Invoice created' })
+  @ApiJsonResponse(InvoiceCreatedDto, {
+    status: 201,
+    description: 'Invoice created',
+  })
   async create(
     @Body() createDto: CreateInvoiceDto,
     @CurrentUser() currentUser: JwtPayload,

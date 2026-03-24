@@ -80,7 +80,7 @@ export class TransformInterceptor<T> implements NestInterceptor<
           return {
             statusCode,
             message: message as string,
-            data: data as any,
+            data: data,
             meta: { timestamp },
           };
         }

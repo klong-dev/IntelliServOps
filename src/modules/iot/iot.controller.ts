@@ -52,7 +52,10 @@ export class IoTController {
   @ApiOperation({ summary: 'List all IoT devices' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: IoTStatus })
-  @ApiJsonResponse(IoTDeviceListItemDto, { isArray: true, description: 'List of IoT devices' })
+  @ApiJsonResponse(IoTDeviceListItemDto, {
+    isArray: true,
+    description: 'List of IoT devices',
+  })
   async findAllDevices(
     @Query('apartmentId') apartmentId?: string,
     @Query('status') status?: IoTStatus,
@@ -75,7 +78,10 @@ export class IoTController {
     summary: 'Get devices by apartment',
     description: 'Tenants see only controllable active devices.',
   })
-  @ApiJsonResponse(IoTDeviceListItemDto, { isArray: true, description: 'List of apartment devices' })
+  @ApiJsonResponse(IoTDeviceListItemDto, {
+    isArray: true,
+    description: 'List of apartment devices',
+  })
   async findDevicesByApartment(
     @Param('apartmentId', ParseUUIDPipe) apartmentId: string,
     @CurrentUser() currentUser: JwtPayload,
@@ -86,7 +92,10 @@ export class IoTController {
   @Post('devices')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Register new IoT device' })
-  @ApiJsonResponse(IoTDeviceDetailDto, { status: 201, description: 'Device registered' })
+  @ApiJsonResponse(IoTDeviceDetailDto, {
+    status: 201,
+    description: 'Device registered',
+  })
   async createDevice(@Body() createDto: CreateIoTDeviceDto) {
     return this.iotService.createDevice(createDto);
   }
@@ -136,7 +145,10 @@ export class IoTController {
   @ApiOperation({ summary: 'List all utility meters' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
-  @ApiJsonResponse(UtilityMeterListItemDto, { isArray: true, description: 'List of utility meters' })
+  @ApiJsonResponse(UtilityMeterListItemDto, {
+    isArray: true,
+    description: 'List of utility meters',
+  })
   async findAllMeters(
     @Query('apartmentId') apartmentId?: string,
     @Query('status') status?: MeterStatus,
@@ -147,7 +159,9 @@ export class IoTController {
   @Get('meters/:id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get utility meter details with readings history' })
-  @ApiJsonResponse(UtilityMeterDetailDto, { description: 'Meter details with readings' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    description: 'Meter details with readings',
+  })
   async findOneMeter(@Param('id', ParseUUIDPipe) id: string) {
     return this.iotService.findOneMeter(id);
   }
@@ -155,7 +169,10 @@ export class IoTController {
   @Post('meters')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Register new utility meter' })
-  @ApiJsonResponse(UtilityMeterDetailDto, { status: 201, description: 'Meter registered' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    status: 201,
+    description: 'Meter registered',
+  })
   async createMeter(@Body() createDto: CreateUtilityMeterDto) {
     return this.iotService.createMeter(createDto);
   }
@@ -178,7 +195,10 @@ export class IoTController {
   @Post('readings')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Record utility reading' })
-  @ApiJsonResponse(UtilityReadingDto, { status: 201, description: 'Reading recorded' })
+  @ApiJsonResponse(UtilityReadingDto, {
+    status: 201,
+    description: 'Reading recorded',
+  })
   async createReading(
     @Body() createDto: CreateUtilityReadingDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -190,7 +210,10 @@ export class IoTController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get meter reading history' })
   @ApiQuery({ name: 'limit', required: false, example: 12 })
-  @ApiJsonResponse(UtilityReadingDto, { isArray: true, description: 'Reading history' })
+  @ApiJsonResponse(UtilityReadingDto, {
+    isArray: true,
+    description: 'Reading history',
+  })
   async getReadings(
     @Param('meterId', ParseUUIDPipe) meterId: string,
     @Query('limit') limit?: number,

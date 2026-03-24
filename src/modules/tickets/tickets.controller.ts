@@ -38,7 +38,10 @@ export class TicketsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List tickets' })
   @ApiQuery({ name: 'status', required: false, enum: TicketStatus })
-  @ApiJsonResponse(TicketListItemDto, { isArray: true, description: 'List of tickets' })
+  @ApiJsonResponse(TicketListItemDto, {
+    isArray: true,
+    description: 'List of tickets',
+  })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
     @Query('status') status?: TicketStatus,
@@ -58,7 +61,10 @@ export class TicketsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create ticket' })
-  @ApiJsonResponse(TicketDetailDto, { status: 201, description: 'Ticket created' })
+  @ApiJsonResponse(TicketDetailDto, {
+    status: 201,
+    description: 'Ticket created',
+  })
   async create(
     @Body() createDto: CreateTicketDto,
     @CurrentUser() currentUser: JwtPayload,

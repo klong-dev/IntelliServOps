@@ -13,7 +13,11 @@ describe('StaffNotesService', () => {
     content: 'Customer called about lease renewal',
     createdAt: new Date('2026-02-27T10:00:00Z'),
     updatedAt: new Date('2026-02-27T10:00:00Z'),
-    staff: { id: 'staff-id-1', fullName: 'Staff A', email: 'staff@example.com' },
+    staff: {
+      id: 'staff-id-1',
+      fullName: 'Staff A',
+      email: 'staff@example.com',
+    },
     user: { id: 'user-id-1', fullName: 'User B', email: 'user@example.com' },
   };
 
@@ -245,9 +249,9 @@ describe('StaffNotesService', () => {
     it('should throw NotFoundException if note not found', async () => {
       mockPrisma.staffNote.findUnique.mockResolvedValueOnce(null);
 
-      await expect(
-        service.remove('nonexistent', 'staff-id-1'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.remove('nonexistent', 'staff-id-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw ForbiddenException if not creator and not admin', async () => {

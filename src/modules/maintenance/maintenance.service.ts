@@ -125,7 +125,7 @@ export class MaintenanceService {
     }
 
     if (updateDto.priority) {
-      data.urgency = updateDto.priority as Urgency;
+      data.urgency = updateDto.priority;
     }
 
     if (updateDto.scheduledDate) {

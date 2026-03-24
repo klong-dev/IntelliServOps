@@ -8,6 +8,12 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UseInterceptors,
+  UploadedFiles,
+  UploadedFile,
+  BadRequestException,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -15,7 +21,14 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
+  ApiProduces,
 } from '@nestjs/swagger';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import { ApartmentsService } from './apartments.service';
 import {
   CreateApartmentDto,
@@ -27,16 +40,35 @@ import {
   ApartmentStatusResultDto,
   RateApartmentDto,
   ApartmentRatingResultDto,
+  CreatePartnerCooperationApartmentDto,
+  PartnerCooperationSubmitResultDto,
+  ApartmentMediaUploadResultDto,
+  ApprovePartnerCooperationResultDto,
+  SignPartnerCooperationContractDto,
+  PartnerSignCooperationContractResultDto,
+  PartnerCooperationContractDetailDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
+import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
+import type { Response } from 'express';
+
+type UploadedMediaFile = {
+  originalname: string;
+  mimetype: string;
+  buffer: Buffer;
+  size: number;
+};
 
 @ApiTags('Apartments')
 @Controller('apartments')
 export class ApartmentsController {
-  constructor(private readonly apartmentsService: ApartmentsService) {}
+  constructor(
+    private readonly apartmentsService: ApartmentsService,
+    private readonly storageService: SupabaseStorageService,
+  ) {}
 
   @Get('search')
   @Public()
@@ -71,6 +103,53 @@ export class ApartmentsController {
     @Query('addressType') addressType?: 'new' | 'old' | 'both',
   ) {
     return this.apartmentsService.findOne(id, addressType ?? 'both');
+  }
+
+  @Get('cooperation-contracts/pdf/view')
+  @Public()
+  @ApiOperation({
+    summary: 'View partner cooperation contract PDF (public token)',
+  })
+  @ApiQuery({ name: 'token', required: true, description: 'Signed PDF token' })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'Cooperation contract PDF file' })
+  async viewCooperationPdfPublic(
+    @Query('token') token: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfData =
+      await this.apartmentsService.getCooperationContractPdfPublic(token);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="cooperation-${pdfData.contractNumber}.pdf"`,
+    });
+
+    return new StreamableFile(pdfData.buffer);
+  }
+
+  @Get('cooperation-contracts/:contractId/pdf')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'Download partner cooperation contract PDF' })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'Cooperation contract PDF file' })
+  async downloadCooperationPdf(
+    @Param('contractId', ParseUUIDPipe) contractId: string,
+    @CurrentUser() currentUser: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfData = await this.apartmentsService.getCooperationContractPdf(
+      contractId,
+      currentUser,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="cooperation-${pdfData.contractNumber}.pdf"`,
+    });
+
+    return new StreamableFile(pdfData.buffer);
   }
 
   @Post(':id/rating')
@@ -109,6 +188,179 @@ export class ApartmentsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.apartmentsService.create(createDto, currentUser);
+  }
+
+  @Post('partner/cooperation')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.USER)
+  @ApiOperation({
+    summary: 'Partner submit apartment cooperation information',
+    description:
+      'Partner submits apartment information for cooperation. This endpoint accepts apartment fields except image/video and always creates apartment with inactive status.',
+  })
+  @ApiJsonResponse(PartnerCooperationSubmitResultDto, {
+    status: 201,
+    description: 'Partner cooperation apartment submitted successfully',
+  })
+  async submitPartnerCooperation(
+    @Body() createDto: CreatePartnerCooperationApartmentDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.apartmentsService.submitPartnerCooperation(
+      createDto,
+      currentUser,
+    );
+  }
+
+  @Get(':id/cooperation-contract')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({
+    summary: 'Get partner cooperation contract by apartment',
+    description:
+      'Get latest cooperation contract information for an apartment, including internal/public PDF links so partner can review the contract.',
+  })
+  @ApiJsonResponse(PartnerCooperationContractDetailDto, {
+    description: 'Partner cooperation contract details',
+  })
+  @ApiResponse({ status: 403, description: 'Not allowed to access contract' })
+  @ApiResponse({ status: 404, description: 'Apartment or contract not found' })
+  async getCooperationContract(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.apartmentsService.getCooperationContractByApartment(
+      id,
+      currentUser,
+    );
+  }
+
+  @Post(':id/cooperation-media')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.STAFF)
+  @ApiOperation({
+    summary: 'Staff upload image and video for partner cooperation apartment',
+    description:
+      'Staff uploads images and/or a video for an apartment submitted by partner cooperation flow.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        images: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Apartment images (JPEG, PNG, WebP), max 10 files',
+        },
+        video: {
+          type: 'string',
+          format: 'binary',
+          description: 'Apartment video (MP4, MOV, WEBM), max 1 file',
+        },
+      },
+    },
+  })
+  @ApiJsonResponse(ApartmentMediaUploadResultDto, {
+    status: 201,
+    description: 'Apartment media uploaded successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'No media uploaded or media format is invalid',
+  })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'images', maxCount: 10 },
+      { name: 'video', maxCount: 1 },
+    ]),
+  )
+  async uploadCooperationMedia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    const isUploadedMediaFile = (
+      value: unknown,
+    ): value is UploadedMediaFile => {
+      if (!value || typeof value !== 'object') {
+        return false;
+      }
+
+      const candidate = value as Record<string, unknown>;
+      return (
+        typeof candidate.originalname === 'string' &&
+        typeof candidate.mimetype === 'string' &&
+        Buffer.isBuffer(candidate.buffer) &&
+        typeof candidate.size === 'number'
+      );
+    };
+
+    const imageFiles = (
+      Array.isArray(files?.images) ? files.images : []
+    ).filter(isUploadedMediaFile);
+    const videoFile = (Array.isArray(files?.video) ? files.video : []).find(
+      isUploadedMediaFile,
+    );
+
+    if (imageFiles.length === 0 && !videoFile) {
+      throw new BadRequestException(
+        'At least one image or one video is required',
+      );
+    }
+
+    const validImageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const validVideoMimeTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
+
+    for (const imageFile of imageFiles) {
+      if (!validImageMimeTypes.includes(imageFile.mimetype)) {
+        throw new BadRequestException(
+          `Invalid image format: ${imageFile.originalname}. Allowed: JPEG, PNG, WebP`,
+        );
+      }
+    }
+
+    if (videoFile && !validVideoMimeTypes.includes(videoFile.mimetype)) {
+      throw new BadRequestException(
+        `Invalid video format: ${videoFile.originalname}. Allowed: MP4, MOV, WEBM`,
+      );
+    }
+
+    const timestamp = Date.now();
+    const imageUrls: string[] = [];
+    let videoUrl: string | undefined;
+
+    for (let i = 0; i < imageFiles.length; i++) {
+      const ext =
+        imageFiles[i].mimetype.split('/')[1] === 'jpeg'
+          ? 'jpg'
+          : imageFiles[i].mimetype.split('/')[1];
+      const filePath = `${id}/images/${currentUser.sub}-${timestamp}-${i}.${ext}`;
+      const url = await this.storageService.uploadFile(
+        'apartment-cooperation',
+        filePath,
+        imageFiles[i],
+      );
+      imageUrls.push(url);
+    }
+
+    if (videoFile) {
+      const ext =
+        videoFile.mimetype === 'video/quicktime'
+          ? 'mov'
+          : videoFile.mimetype.split('/')[1];
+      const videoPath = `${id}/video/${currentUser.sub}-${timestamp}.${ext}`;
+      videoUrl = await this.storageService.uploadFile(
+        'apartment-cooperation',
+        videoPath,
+        videoFile,
+      );
+    }
+
+    return this.apartmentsService.staffUploadCooperationMedia(id, {
+      imageUrls,
+      videoUrl,
+    });
   }
 
   @Patch(':id')
@@ -164,5 +416,88 @@ export class ApartmentsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.apartmentsService.approve(id, currentUser.sub);
+  }
+
+  @Patch(':id/approve-cooperation')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.OPERATOR)
+  @ApiOperation({
+    summary: 'Operator approve partner cooperation apartment',
+    description:
+      'Operator approves an apartment submitted by partner cooperation flow only after staff has uploaded at least one image and one video.',
+  })
+  @ApiJsonResponse(ApprovePartnerCooperationResultDto, {
+    description: 'Partner cooperation apartment approved',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Apartment has already been approved, is not verified, or does not have enough media',
+  })
+  @ApiResponse({ status: 404, description: 'Apartment not found' })
+  async approvePartnerCooperation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.apartmentsService.approvePartnerCooperation(
+      id,
+      currentUser.sub,
+    );
+  }
+
+  @Post(':id/cooperation-contract/sign')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.USER)
+  @UseInterceptors(FileInterceptor('contractPdf'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Partner upload signed cooperation contract PDF',
+    type: SignPartnerCooperationContractDto,
+  })
+  @ApiOperation({
+    summary: 'Partner sign cooperation contract by uploading signed PDF',
+    description:
+      'Partner uploads a signed cooperation contract PDF. The uploaded file is stored and contract is marked as signed.',
+  })
+  @ApiJsonResponse(PartnerSignCooperationContractResultDto, {
+    status: 201,
+    description: 'Partner signed cooperation contract successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid or missing PDF file' })
+  @ApiResponse({ status: 403, description: 'Not owner of apartment' })
+  @ApiResponse({ status: 404, description: 'Apartment or contract not found' })
+  async signPartnerCooperationContract(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() contractPdf: UploadedMediaFile | undefined,
+    @Body() body: SignPartnerCooperationContractDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    if (!contractPdf) {
+      throw new BadRequestException('Signed contract PDF is required');
+    }
+
+    if (contractPdf.mimetype !== 'application/pdf') {
+      throw new BadRequestException(
+        `Invalid PDF format: ${contractPdf.originalname}. Allowed: application/pdf`,
+      );
+    }
+
+    const timestamp = Date.now();
+    const storagePath = `${id}/${currentUser.sub}-${timestamp}-signed.pdf`;
+    const uploadedUrl = await this.storageService.uploadFile(
+      'apartment-cooperation-contracts',
+      storagePath,
+      contractPdf,
+    );
+
+    return this.apartmentsService.partnerSignCooperationContract(
+      id,
+      currentUser,
+      contractPdf,
+      {
+        signedDate: body.signedDate,
+        contractDocumentUrl: uploadedUrl,
+      },
+    );
   }
 }

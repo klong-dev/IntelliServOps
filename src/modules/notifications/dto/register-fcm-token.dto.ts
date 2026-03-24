@@ -10,7 +10,8 @@ export class RegisterFcmTokenDto {
   token: string;
 
   @ApiPropertyOptional({
-    description: 'Device name / identifier (e.g. "iPhone 15", "Chrome Windows")',
+    description:
+      'Device name / identifier (e.g. "iPhone 15", "Chrome Windows")',
     example: 'iPhone 15 Pro',
   })
   @IsOptional()

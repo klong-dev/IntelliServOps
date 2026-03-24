@@ -68,7 +68,10 @@ export class NotificationsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get my notifications' })
   @ApiQuery({ name: 'isRead', required: false, type: Boolean })
-  @ApiJsonResponse(NotificationResponseDto, { isArray: true, description: 'List of notifications' })
+  @ApiJsonResponse(NotificationResponseDto, {
+    isArray: true,
+    description: 'List of notifications',
+  })
   async findMyNotifications(
     @CurrentUser() currentUser: JwtPayload,
     @Query('isRead') isRead?: boolean,
@@ -86,7 +89,10 @@ export class NotificationsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Send notification (admin/operator only)' })
-  @ApiJsonResponse(NotificationResponseDto, { status: 201, description: 'Notification sent + FCM push' })
+  @ApiJsonResponse(NotificationResponseDto, {
+    status: 201,
+    description: 'Notification sent + FCM push',
+  })
   async create(@Body() createDto: CreateNotificationDto) {
     return this.notificationsService.create(createDto);
   }

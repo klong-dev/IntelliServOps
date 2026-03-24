@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -13,18 +14,269 @@ import {
 } from './dto';
 import {
   ApartmentStatus,
+  ActorType,
   ContractStatus,
   MemberStatus,
+  PartnerCooperationContractStatus,
   Prisma,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import axios from 'axios';
+import {
+  ContractPdfService,
+  type PartnerCooperationPdfData,
+} from '../contracts/contract-pdf.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class ApartmentsService {
   private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
+  private readonly pdfTokenSecret =
+    process.env.JWT_SECRET || 'pdf-token-secret';
+  private readonly pdfTokenExpiry = 5 * 60 * 1000;
+  private readonly cooperationVerifiedStatus = 'verified' as ApartmentStatus;
+  private readonly cooperationPendingStatus = 'pending' as ApartmentStatus;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly contractPdfService: ContractPdfService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
+
+  private async notifySafely(params: {
+    recipientType: ActorType;
+    recipientId: string;
+    title: string;
+    message: string;
+    actionUrl?: string;
+    actionLabel?: string;
+    relatedEntityType?: string;
+    relatedEntityId?: string;
+  }): Promise<void> {
+    try {
+      await this.notificationsService.createAndPush({
+        recipientType: params.recipientType,
+        recipientId: params.recipientId,
+        notificationType: 'info',
+        channel: 'in_app',
+        title: params.title,
+        message: params.message,
+        actionUrl: params.actionUrl,
+        actionLabel: params.actionLabel,
+        priority: 'high',
+        relatedEntityType: params.relatedEntityType,
+        relatedEntityId: params.relatedEntityId,
+      });
+    } catch {
+      // Do not block business flow when notification delivery fails.
+    }
+  }
+
+  private generatePdfToken(contractId: string): string {
+    const expiry = Date.now() + this.pdfTokenExpiry;
+    const data = `${contractId}:${expiry}`;
+    const signature = crypto
+      .createHmac('sha256', this.pdfTokenSecret)
+      .update(data)
+      .digest('hex');
+
+    return Buffer.from(`${data}:${signature}`).toString('base64url');
+  }
+
+  private verifyPdfToken(token: string): string {
+    try {
+      const decoded = Buffer.from(token, 'base64url').toString();
+      const [contractId, expiryStr, signature] = decoded.split(':');
+      const expiry = Number(expiryStr);
+
+      if (Date.now() > expiry) {
+        throw new BadRequestException('PDF token expired');
+      }
+
+      const expectedSignature = crypto
+        .createHmac('sha256', this.pdfTokenSecret)
+        .update(`${contractId}:${expiryStr}`)
+        .digest('hex');
+
+      if (expectedSignature !== signature) {
+        throw new BadRequestException('Invalid PDF token');
+      }
+
+      return contractId;
+    } catch {
+      throw new BadRequestException('Invalid PDF token');
+    }
+  }
+
+  async getCooperationContractPdfPublic(token: string) {
+    const contractId = this.verifyPdfToken(token);
+
+    const contract = await this.prisma.partnerCooperationContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        contractPdfData: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Cooperation contract not found');
+    }
+
+    if (!contract.contractPdfData) {
+      throw new NotFoundException('Cooperation contract PDF not found');
+    }
+
+    return {
+      buffer: Buffer.from(contract.contractPdfData),
+      contractNumber: contract.contractNumber,
+    };
+  }
+
+  async getCooperationContractPdf(contractId: string, currentUser: JwtPayload) {
+    const contract = await this.prisma.partnerCooperationContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        partnerId: true,
+        contractPdfData: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Cooperation contract not found');
+    }
+
+    if (
+      currentUser.actorType === 'user' &&
+      contract.partnerId !== currentUser.sub
+    ) {
+      throw new ForbiddenException(
+        'You can only access your own cooperation contract',
+      );
+    }
+
+    if (!contract.contractPdfData) {
+      throw new NotFoundException('Cooperation contract PDF not found');
+    }
+
+    return {
+      buffer: Buffer.from(contract.contractPdfData),
+      contractNumber: contract.contractNumber,
+    };
+  }
+
+  async getCooperationContractByApartment(
+    apartmentId: string,
+    currentUser: JwtPayload,
+  ) {
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id: apartmentId },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        ownerId: true,
+      },
+    });
+
+    if (!apartment) {
+      throw new NotFoundException('Apartment not found');
+    }
+
+    if (
+      currentUser.actorType === 'user' &&
+      apartment.ownerId !== currentUser.sub
+    ) {
+      throw new ForbiddenException(
+        'You can only access cooperation contract of your own apartment',
+      );
+    }
+
+    const contract = await this.prisma.partnerCooperationContract.findFirst({
+      where: { apartmentId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        contractNumber: true,
+        status: true,
+        startDate: true,
+        endDate: true,
+        commissionRate: true,
+        signedAt: true,
+        contractDocumentUrl: true,
+        contractPdfData: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(
+        'Cooperation contract not found for apartment',
+      );
+    }
+
+    const token = contract.contractPdfData
+      ? this.generatePdfToken(contract.id)
+      : null;
+
+    return {
+      apartmentId: apartment.id,
+      apartmentNumber: apartment.apartmentNumber,
+      cooperationContractId: contract.id,
+      cooperationContractNumber: contract.contractNumber,
+      cooperationContractStatus: contract.status,
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      commissionRate: Number(contract.commissionRate),
+      signedDate: contract.signedAt,
+      contractDocumentUrl: contract.contractDocumentUrl,
+      cooperationContractPdfUrl: contract.contractPdfData
+        ? `/apartments/cooperation-contracts/${contract.id}/pdf`
+        : null,
+      cooperationContractPublicPdfUrl: token
+        ? `/apartments/cooperation-contracts/pdf/view?token=${token}`
+        : null,
+      createdAt: contract.createdAt,
+      updatedAt: contract.updatedAt,
+    };
+  }
+
+  private formatDateDdMmYyyy(date: Date): string {
+    const dd = date.getDate().toString().padStart(2, '0');
+    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  private formatCurrencyVnd(value: unknown): string {
+    const normalized =
+      typeof value === 'object' &&
+      value !== null &&
+      'toNumber' in value &&
+      typeof (value as { toNumber: () => number }).toNumber === 'function'
+        ? (value as { toNumber: () => number }).toNumber()
+        : Number(value);
+
+    return Number.isFinite(normalized)
+      ? normalized.toLocaleString('vi-VN')
+      : '0';
+  }
+
+  private async generateCooperationContractNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `COOP-${year}`;
+    const count = await this.prisma.partnerCooperationContract.count({
+      where: {
+        contractNumber: { startsWith: prefix },
+      },
+    });
+
+    return `${prefix}-${String(count + 1).padStart(5, '0')}`;
+  }
 
   private toRoundedRating(value?: number | null): number | null {
     if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -52,7 +304,7 @@ export class ApartmentsService {
       timeout: 15000,
     });
 
-    return response.data;
+    return response.data as unknown;
   }
 
   async lookupNewWardFromLegacy(legacyName?: string, legacyCode?: number) {
@@ -71,7 +323,7 @@ export class ApartmentsService {
       },
     );
 
-    return response.data;
+    return response.data as unknown;
   }
 
   async lookupLegacyWardsFromNew(newWardCode: number) {
@@ -82,7 +334,7 @@ export class ApartmentsService {
       },
     );
 
-    return response.data;
+    return response.data as unknown;
   }
 
   private async resolveNewWardAddress(
@@ -720,7 +972,7 @@ export class ApartmentsService {
       numberOfBedrooms: createDto.numberOfBedrooms,
       numberOfBathrooms: createDto.numberOfBathrooms,
       furnishingStatus: createDto.furnishingStatus,
-      amenities: createDto.amenities as any,
+      amenities: createDto.amenities,
       baseRentPrice: createDto.baseRentPrice,
       depositAmount: createDto.depositAmount,
       description: createDto.description,
@@ -747,6 +999,133 @@ export class ApartmentsService {
         baseRentPrice: true,
         status: true,
         createdAt: true,
+      },
+    });
+  }
+
+  /**
+   * Partner submits apartment cooperation info without media.
+   * Apartment is created in inactive status and waits for staff media upload + operator approval.
+   */
+  async submitPartnerCooperation(
+    createDto: Omit<CreateApartmentDto, 'images' | 'videoTourUrl'>,
+    currentUser: JwtPayload,
+  ) {
+    const data: Prisma.ApartmentCreateInput = {
+      buildingName: createDto.buildingName,
+      apartmentNumber: createDto.apartmentNumber,
+      floorNumber: createDto.floorNumber,
+      newWardCode: createDto.newWardCode,
+      oldWardCode: createDto.oldWardCode,
+      latitude: createDto.latitude,
+      longitude: createDto.longitude,
+      totalArea: createDto.totalArea,
+      usableArea: createDto.usableArea,
+      numberOfBedrooms: createDto.numberOfBedrooms,
+      numberOfBathrooms: createDto.numberOfBathrooms,
+      furnishingStatus: createDto.furnishingStatus,
+      amenities: createDto.amenities,
+      baseRentPrice: createDto.baseRentPrice,
+      depositAmount: createDto.depositAmount,
+      description: createDto.description,
+      yearBuilt: createDto.yearBuilt,
+      status: ApartmentStatus.inactive,
+      owner: { connect: { id: currentUser.sub } },
+    };
+
+    const apartment = await this.prisma.apartment.create({
+      data,
+      select: {
+        id: true,
+        apartmentNumber: true,
+        status: true,
+        ownerId: true,
+        images: true,
+        videoTourUrl: true,
+        createdAt: true,
+      },
+    });
+
+    const partner = await this.prisma.user.findUnique({
+      where: { id: currentUser.sub },
+      select: {
+        createdByStaffId: true,
+      },
+    });
+
+    if (partner?.createdByStaffId) {
+      await this.notifySafely({
+        recipientType: ActorType.staff,
+        recipientId: partner.createdByStaffId,
+        title: 'Partner gui can ho hop tac moi',
+        message: `Partner vua gui can ho ${apartment.apartmentNumber} cho quy trinh hop tac.`,
+        actionUrl: `/apartments/${apartment.id}`,
+        actionLabel: 'Xem can ho',
+        relatedEntityType: 'Apartment',
+        relatedEntityId: apartment.id,
+      });
+    }
+
+    return apartment;
+  }
+
+  async staffUploadCooperationMedia(
+    id: string,
+    media: { imageUrls?: string[]; videoUrl?: string },
+  ) {
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        status: true,
+        images: true,
+        videoTourUrl: true,
+        approvedAt: true,
+      },
+    });
+
+    if (!apartment) {
+      throw new NotFoundException('Apartment not found');
+    }
+
+    if (apartment.approvedAt) {
+      throw new BadRequestException(
+        'Approved apartment cannot update cooperation media',
+      );
+    }
+
+    const existingImages = Array.isArray(apartment.images)
+      ? apartment.images.filter(
+          (image): image is string => typeof image === 'string',
+        )
+      : [];
+    const incomingImages = media.imageUrls ?? [];
+    const mergedImages = [...existingImages, ...incomingImages];
+    const effectiveVideoUrl = media.videoUrl ?? apartment.videoTourUrl;
+
+    const shouldSetVerified =
+      mergedImages.length > 0 &&
+      Boolean(effectiveVideoUrl) &&
+      (apartment.status === ApartmentStatus.inactive ||
+        apartment.status === this.cooperationVerifiedStatus);
+
+    return this.prisma.apartment.update({
+      where: { id },
+      data: {
+        ...(incomingImages.length > 0 ? { images: mergedImages } : {}),
+        ...(media.videoUrl ? { videoTourUrl: media.videoUrl } : {}),
+        ...(shouldSetVerified
+          ? { status: this.cooperationVerifiedStatus }
+          : {}),
+      },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        status: true,
+        images: true,
+        videoTourUrl: true,
+        updatedAt: true,
       },
     });
   }
@@ -857,6 +1236,12 @@ export class ApartmentsService {
             currentReading: true,
           },
         },
+        cooperationContracts: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -922,5 +1307,315 @@ export class ApartmentsService {
         approvedAt: true,
       },
     });
+  }
+
+  /**
+   * Operator approves a partner cooperation apartment after staff has uploaded media.
+   */
+  async approvePartnerCooperation(id: string, operatorId: string) {
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        buildingName: true,
+        ownerId: true,
+        newWardCode: true,
+        oldWardCode: true,
+        totalArea: true,
+        usableArea: true,
+        numberOfBedrooms: true,
+        numberOfBathrooms: true,
+        baseRentPrice: true,
+        depositAmount: true,
+        status: true,
+        images: true,
+        videoTourUrl: true,
+        approvedAt: true,
+        owner: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            address: true,
+            companyName: true,
+            commissionRate: true,
+            identity: {
+              select: {
+                nationalId: true,
+                issueDate: true,
+                address: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!apartment) {
+      throw new NotFoundException('Apartment not found');
+    }
+
+    if (apartment.approvedAt) {
+      throw new BadRequestException('Apartment has already been approved');
+    }
+
+    const hasImages =
+      Array.isArray(apartment.images) && apartment.images.length > 0;
+    const hasVideo = Boolean(apartment.videoTourUrl);
+
+    if (!hasImages || !hasVideo) {
+      throw new BadRequestException(
+        'Apartment must have at least one image and one video before approval',
+      );
+    }
+
+    if (apartment.status !== this.cooperationVerifiedStatus) {
+      throw new BadRequestException(
+        'Only verified cooperation apartment can be approved',
+      );
+    }
+
+    if (!apartment.ownerId || !apartment.owner) {
+      throw new BadRequestException(
+        'Partner owner information is required to create cooperation contract',
+      );
+    }
+    const ownerId = apartment.ownerId;
+
+    const [contractNumber, addressInfo] = await Promise.all([
+      this.generateCooperationContractNumber(),
+      this.getApartmentAddressByWardCodes(
+        apartment.newWardCode,
+        apartment.oldWardCode,
+        'both',
+        new Map<string, unknown>(),
+      ),
+    ]);
+
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setFullYear(endDate.getFullYear() + 1);
+
+    const commissionRate =
+      apartment.owner.commissionRate != null
+        ? Number(apartment.owner.commissionRate)
+        : 10;
+
+    const pdfData: PartnerCooperationPdfData = {
+      contractNumber,
+      partnerName: apartment.owner.fullName,
+      partnerCompanyName: apartment.owner.companyName ?? undefined,
+      partnerPhone: apartment.owner.phone ?? undefined,
+      partnerEmail: apartment.owner.email,
+      apartmentAddress:
+        addressInfo.displayAddress ?? apartment.buildingName ?? undefined,
+      apartmentNumber: apartment.apartmentNumber,
+      cooperationStartDate: this.formatDateDdMmYyyy(startDate),
+      cooperationEndDate: this.formatDateDdMmYyyy(endDate),
+      monthlyRevenueCommissionRate: commissionRate.toFixed(2),
+      notes: 'Hop dong hop tac khai thac can ho giua partner va IntelliServOps',
+    };
+
+    const pdfBuffer =
+      await this.contractPdfService.generatePartnerCooperationPdf(pdfData);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const contract = await tx.partnerCooperationContract.create({
+        data: {
+          contractNumber,
+          apartment: { connect: { id } },
+          partner: { connect: { id: ownerId } },
+          approvedByOperator: { connect: { id: operatorId } },
+          startDate,
+          endDate,
+          commissionRate,
+          status: PartnerCooperationContractStatus.pending,
+          terms: 'COOPERATION_CONTRACT_TEMPLATE',
+          notes:
+            'Generated when operator approved partner cooperation apartment',
+          contractPdfData: new Uint8Array(pdfBuffer),
+        },
+        select: {
+          id: true,
+          contractNumber: true,
+          status: true,
+        },
+      });
+
+      const approvedApartment = await tx.apartment.update({
+        where: { id },
+        data: {
+          status: this.cooperationPendingStatus,
+          approvedByOperator: { connect: { id: operatorId } },
+          approvedAt: new Date(),
+        },
+        select: {
+          id: true,
+          apartmentNumber: true,
+          status: true,
+          images: true,
+          videoTourUrl: true,
+          approvedAt: true,
+        },
+      });
+
+      return { approvedApartment, contract };
+    });
+
+    const token = this.generatePdfToken(result.contract.id);
+
+    await this.notifySafely({
+      recipientType: ActorType.user,
+      recipientId: ownerId,
+      title: 'Can ho hop tac da duoc duyet',
+      message: `Can ho ${result.approvedApartment.apartmentNumber} da duoc operator duyet va tao hop dong hop tac.`,
+      actionUrl: `/apartments/${id}/cooperation-contract`,
+      actionLabel: 'Xem hop dong',
+      relatedEntityType: 'Apartment',
+      relatedEntityId: id,
+    });
+
+    return {
+      ...result.approvedApartment,
+      cooperationContractId: result.contract.id,
+      cooperationContractNumber: result.contract.contractNumber,
+      cooperationContractStatus: result.contract.status,
+      cooperationContractPdfUrl: `/apartments/cooperation-contracts/${result.contract.id}/pdf`,
+      cooperationContractPublicPdfUrl: `/apartments/cooperation-contracts/pdf/view?token=${token}`,
+    };
+  }
+
+  async partnerSignCooperationContract(
+    apartmentId: string,
+    currentUser: JwtPayload,
+    contractPdf: {
+      mimetype: string;
+      buffer: Buffer;
+    },
+    options?: { signedDate?: string; contractDocumentUrl?: string },
+  ) {
+    if (contractPdf.mimetype !== 'application/pdf') {
+      throw new BadRequestException(
+        `Invalid PDF format. Allowed: application/pdf. Received: ${contractPdf.mimetype}`,
+      );
+    }
+
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id: apartmentId },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        ownerId: true,
+        status: true,
+      },
+    });
+
+    if (!apartment) {
+      throw new NotFoundException('Apartment not found');
+    }
+
+    if (apartment.ownerId !== currentUser.sub) {
+      throw new ForbiddenException(
+        'You can only sign cooperation contract of your own apartment',
+      );
+    }
+
+    if (apartment.status !== this.cooperationPendingStatus) {
+      throw new BadRequestException(
+        'Apartment must be pending before partner signs cooperation contract',
+      );
+    }
+
+    const contract = await this.prisma.partnerCooperationContract.findFirst({
+      where: {
+        apartmentId,
+        partnerId: currentUser.sub,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        contractNumber: true,
+        status: true,
+        approvedByOperatorId: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(
+        'Cooperation contract not found for apartment',
+      );
+    }
+
+    if (
+      contract.status === PartnerCooperationContractStatus.terminated ||
+      contract.status === PartnerCooperationContractStatus.expired ||
+      contract.status === PartnerCooperationContractStatus.cancelled
+    ) {
+      throw new ConflictException('Cooperation contract cannot be signed');
+    }
+
+    const signedDate = options?.signedDate
+      ? new Date(options.signedDate)
+      : new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const signedContract = await tx.partnerCooperationContract.update({
+        where: { id: contract.id },
+        data: {
+          contractPdfData: new Uint8Array(contractPdf.buffer),
+          contractDocumentUrl: options?.contractDocumentUrl,
+          signedAt: signedDate,
+          status: PartnerCooperationContractStatus.signed,
+        },
+        select: {
+          id: true,
+          contractNumber: true,
+          status: true,
+          signedAt: true,
+          contractDocumentUrl: true,
+        },
+      });
+
+      await tx.apartment.update({
+        where: { id: apartmentId },
+        data: {
+          status: ApartmentStatus.available,
+        },
+      });
+
+      return signedContract;
+    });
+
+    const token = this.generatePdfToken(updated.id);
+
+    if (contract.approvedByOperatorId) {
+      await this.notifySafely({
+        recipientType: ActorType.operator,
+        recipientId: contract.approvedByOperatorId,
+        title: 'Partner da ky hop dong hop tac',
+        message: `Partner da ky va upload hop dong cho can ho ${apartment.apartmentNumber}.`,
+        actionUrl: `/apartments/${apartmentId}/cooperation-contract`,
+        actionLabel: 'Xem hop dong',
+        relatedEntityType: 'Apartment',
+        relatedEntityId: apartmentId,
+      });
+    }
+
+    return {
+      apartmentId: apartment.id,
+      apartmentNumber: apartment.apartmentNumber,
+      apartmentStatus: ApartmentStatus.available,
+      cooperationContractId: updated.id,
+      cooperationContractNumber: updated.contractNumber,
+      cooperationContractStatus: updated.status,
+      signedDate: updated.signedAt,
+      contractDocumentUrl: updated.contractDocumentUrl,
+      cooperationContractPdfUrl: `/apartments/cooperation-contracts/${updated.id}/pdf`,
+      cooperationContractPublicPdfUrl: `/apartments/cooperation-contracts/pdf/view?token=${token}`,
+    };
   }
 }

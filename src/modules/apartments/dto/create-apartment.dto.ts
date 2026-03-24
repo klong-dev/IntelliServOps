@@ -130,7 +130,9 @@ export class CreateApartmentDto {
   @Max(2100)
   yearBuilt?: number;
 
-  @ApiPropertyOptional({ description: 'Owner user ID if listed by a specific owner' })
+  @ApiPropertyOptional({
+    description: 'Owner user ID if listed by a specific owner',
+  })
   @IsString()
   @IsOptional()
   ownerId?: string;

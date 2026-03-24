@@ -28,7 +28,7 @@ export class NotificationsService {
       return this.prisma.fcmToken.update({
         where: { token: dto.token },
         data: {
-          actorType: currentUser.actorType as ActorType,
+          actorType: currentUser.actorType,
           actorId: currentUser.sub,
           device: dto.device,
         },
@@ -38,7 +38,7 @@ export class NotificationsService {
 
     return this.prisma.fcmToken.create({
       data: {
-        actorType: currentUser.actorType as ActorType,
+        actorType: currentUser.actorType,
         actorId: currentUser.sub,
         token: dto.token,
         device: dto.device,
@@ -51,7 +51,7 @@ export class NotificationsService {
     const existing = await this.prisma.fcmToken.findFirst({
       where: {
         token,
-        actorType: currentUser.actorType as ActorType,
+        actorType: currentUser.actorType,
         actorId: currentUser.sub,
       },
     });
@@ -108,14 +108,18 @@ export class NotificationsService {
           relatedEntityId: dto.relatedEntityId ?? '',
         },
       ).catch((error) => {
-        this.logger.error(`FCM push failed for ${notification.id}: ${error.message}`);
-        this.prisma.notification.update({
-          where: { id: notification.id },
-          data: {
-            deliveryStatus: DeliveryStatus.failed,
-            failureReason: error.message,
-          },
-        }).catch(() => {}); // Swallow nested DB error
+        this.logger.error(
+          `FCM push failed for ${notification.id}: ${error.message}`,
+        );
+        this.prisma.notification
+          .update({
+            where: { id: notification.id },
+            data: {
+              deliveryStatus: DeliveryStatus.failed,
+              failureReason: error.message,
+            },
+          })
+          .catch(() => {}); // Swallow nested DB error
       });
     } else {
       // Non-push channels: mark as sent immediately
@@ -227,7 +231,7 @@ export class NotificationsService {
 
   async findMyNotifications(currentUser: JwtPayload, isRead?: boolean) {
     const where: Prisma.NotificationWhereInput = {
-      recipientType: currentUser.actorType as ActorType,
+      recipientType: currentUser.actorType,
       recipientId: currentUser.sub,
     };
 
@@ -259,7 +263,7 @@ export class NotificationsService {
   async countUnread(currentUser: JwtPayload) {
     const count = await this.prisma.notification.count({
       where: {
-        recipientType: currentUser.actorType as ActorType,
+        recipientType: currentUser.actorType,
         recipientId: currentUser.sub,
         isRead: false,
       },
@@ -272,7 +276,7 @@ export class NotificationsService {
     const notification = await this.prisma.notification.findFirst({
       where: {
         id,
-        recipientType: currentUser.actorType as ActorType,
+        recipientType: currentUser.actorType,
         recipientId: currentUser.sub,
       },
     });
@@ -291,7 +295,7 @@ export class NotificationsService {
   async markAllAsRead(currentUser: JwtPayload) {
     const result = await this.prisma.notification.updateMany({
       where: {
-        recipientType: currentUser.actorType as ActorType,
+        recipientType: currentUser.actorType,
         recipientId: currentUser.sub,
         isRead: false,
       },

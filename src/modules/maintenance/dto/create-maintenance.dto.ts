@@ -33,7 +33,11 @@ export class CreateMaintenanceDto {
   @IsEnum(MaintenanceCategory)
   category: MaintenanceCategory;
 
-  @ApiPropertyOptional({ enum: Urgency, default: 'medium', description: 'Urgency level' })
+  @ApiPropertyOptional({
+    enum: Urgency,
+    default: 'medium',
+    description: 'Urgency level',
+  })
   @IsEnum(Urgency)
   @IsOptional()
   priority?: Urgency;

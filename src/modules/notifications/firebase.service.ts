@@ -62,7 +62,9 @@ export class FirebaseService implements OnModuleInit {
       });
       return true;
     } catch (error: any) {
-      this.logger.warn(`FCM send failed [${token.slice(0, 12)}...]: ${error.message}`);
+      this.logger.warn(
+        `FCM send failed [${token.slice(0, 12)}...]: ${error.message}`,
+      );
       return false;
     }
   }

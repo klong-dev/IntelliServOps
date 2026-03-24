@@ -51,7 +51,8 @@ export class ChatController {
   @Post('upload-images')
   @ApiOperation({
     summary: 'Upload chat images (max 5)',
-    description: 'Upload image files to Supabase Storage. Returns array of public URLs to include when sending a message.',
+    description:
+      'Upload image files to Supabase Storage. Returns array of public URLs to include when sending a message.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -67,13 +68,17 @@ export class ChatController {
       required: ['images'],
     },
   })
-  @ApiResponse({ status: 201, description: 'Images uploaded successfully', type: UploadImagesResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid image format or no files provided' })
+  @ApiResponse({
+    status: 201,
+    description: 'Images uploaded successfully',
+    type: UploadImagesResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid image format or no files provided',
+  })
   @UseInterceptors(FilesInterceptor('images', 5))
-  async uploadImages(
-    @UploadedFiles() files: any[],
-    @Req() req: any,
-  ) {
+  async uploadImages(@UploadedFiles() files: any[], @Req() req: any) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one image is required');
     }
@@ -92,9 +97,16 @@ export class ChatController {
     const urls: string[] = [];
 
     for (let i = 0; i < files.length; i++) {
-      const ext = files[i].mimetype.split('/')[1] === 'jpeg' ? 'jpg' : files[i].mimetype.split('/')[1];
+      const ext =
+        files[i].mimetype.split('/')[1] === 'jpeg'
+          ? 'jpg'
+          : files[i].mimetype.split('/')[1];
       const path = `${userId}/${timestamp}-${i}.${ext}`;
-      const url = await this.storageService.uploadFile('chat-images', path, files[i]);
+      const url = await this.storageService.uploadFile(
+        'chat-images',
+        path,
+        files[i],
+      );
       urls.push(url);
     }
 
@@ -108,9 +120,14 @@ export class ChatController {
   @Get('conversations')
   @ApiOperation({
     summary: 'Get conversations list',
-    description: 'Staff/operator/admin: sees all conversations. User: sees own conversations only.',
+    description:
+      'Staff/operator/admin: sees all conversations. User: sees own conversations only.',
   })
-  @ApiResponse({ status: 200, description: 'Paginated list of conversations', type: PaginatedConversationsResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of conversations',
+    type: PaginatedConversationsResponseDto,
+  })
   async getConversations(
     @Req() req: any,
     @Query() query: QueryConversationsDto,
@@ -129,7 +146,11 @@ export class ChatController {
     summary: 'Create a new chat conversation',
     description: 'REST alternative to socket event chat:create_conversation.',
   })
-  @ApiResponse({ status: 201, description: 'Conversation created', type: ConversationResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Conversation created',
+    type: ConversationResponseDto,
+  })
   async createConversation(
     @Req() req: any,
     @Body() dto: CreateConversationDto,
@@ -141,7 +162,11 @@ export class ChatController {
   @Get('conversations/:id')
   @ApiOperation({ summary: 'Get conversation detail' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
-  @ApiResponse({ status: 200, description: 'Conversation details', type: ConversationResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Conversation details',
+    type: ConversationResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Conversation not found' })
   async getConversation(@Param('id') id: string) {
     return this.chatService.getConversation(id);
@@ -150,15 +175,17 @@ export class ChatController {
   @Get('conversations/:id/messages')
   @ApiOperation({
     summary: 'Get paginated messages',
-    description: 'Returns messages in format: { id, content, images?, apartmentId?, sender: "user"|"support", timestamp }',
+    description:
+      'Returns messages in format: { id, content, images?, apartmentId?, sender: "user"|"support", timestamp }',
   })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
-  @ApiResponse({ status: 200, description: 'Paginated messages list', type: PaginatedMessagesResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated messages list',
+    type: PaginatedMessagesResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Conversation not found' })
-  async getMessages(
-    @Param('id') id: string,
-    @Query() query: QueryMessagesDto,
-  ) {
+  async getMessages(@Param('id') id: string, @Query() query: QueryMessagesDto) {
     return this.chatService.getMessages(id, query);
   }
 
@@ -170,7 +197,11 @@ export class ChatController {
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Close a conversation (staff only)' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
-  @ApiResponse({ status: 200, description: 'Conversation closed', type: ConversationResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Conversation closed',
+    type: ConversationResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Conversation not found' })
   async closeConversation(@Req() req: any, @Param('id') id: string) {
     const user = req.user;
@@ -181,7 +212,11 @@ export class ChatController {
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Archive a conversation (staff only)' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
-  @ApiResponse({ status: 200, description: 'Conversation archived', type: ConversationResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Conversation archived',
+    type: ConversationResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Conversation not found' })
   async archiveConversation(@Param('id') id: string) {
     return this.chatService.archiveConversation(id);
@@ -191,7 +226,11 @@ export class ChatController {
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Reopen a closed conversation (staff only)' })
   @ApiParam({ name: 'id', description: 'Conversation UUID' })
-  @ApiResponse({ status: 200, description: 'Conversation reopened', type: ConversationResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Conversation reopened',
+    type: ConversationResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Conversation not found' })
   async reopenConversation(@Req() req: any, @Param('id') id: string) {
     const user = req.user;

@@ -158,6 +158,14 @@ class ApartmentUserApartmentDto {
   rentalContract: ApartmentUserApartmentContractDto;
 }
 
+class ApartmentCooperationContractDto {
+  @ApiProperty({ example: '3f5369be-815f-42cb-8a8b-971fbe4a3557' })
+  id: string;
+
+  @ApiProperty({ example: 'pending' })
+  status: string;
+}
+
 // ─── Apartment List Item DTO (search / findByOwner) ───────────────
 
 export class ApartmentListItemDto {
@@ -227,6 +235,20 @@ export class ApartmentListItemDto {
 
   @ApiPropertyOptional({ type: [String], nullable: true })
   images: string[] | null;
+
+  @ApiPropertyOptional({
+    type: [ApartmentCooperationContractDto],
+    nullable: true,
+    description:
+      'Danh sach hop dong hop tac lien quan toi apartment (thuong dung cho owner dashboard)',
+    example: [
+      {
+        id: '3f5369be-815f-42cb-8a8b-971fbe4a3557',
+        status: 'pending',
+      },
+    ],
+  })
+  cooperationContracts?: ApartmentCooperationContractDto[] | null;
 
   @ApiPropertyOptional({
     type: WardAddressDto,

@@ -3,7 +3,13 @@ import { AuthController } from './auth.controller';
 import { AuthService, AuthResponse } from './auth.service';
 import { mockUserJwtPayload, mockUser } from '../../test-utils';
 import { ActorType } from '@prisma/client';
-import { LoginDto, RefreshTokenDto, SubmitGuestInfoDto, RequestOtpDto, VerifyOtpDto } from './dto';
+import {
+  LoginDto,
+  RefreshTokenDto,
+  SubmitGuestInfoDto,
+  RequestOtpDto,
+  VerifyOtpDto,
+} from './dto';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -115,7 +121,9 @@ describe('AuthController', () => {
       const result = await controller.refresh(refreshTokenDto);
 
       expect(result).toEqual(expectedTokens);
-      expect(authService.refresh).toHaveBeenCalledWith(refreshTokenDto.refreshToken);
+      expect(authService.refresh).toHaveBeenCalledWith(
+        refreshTokenDto.refreshToken,
+      );
       expect(authService.refresh).toHaveBeenCalledTimes(1);
     });
   });
@@ -130,7 +138,9 @@ describe('AuthController', () => {
 
       await controller.logout(refreshTokenDto);
 
-      expect(authService.logout).toHaveBeenCalledWith(refreshTokenDto.refreshToken);
+      expect(authService.logout).toHaveBeenCalledWith(
+        refreshTokenDto.refreshToken,
+      );
       expect(authService.logout).toHaveBeenCalledTimes(1);
     });
   });
@@ -145,7 +155,10 @@ describe('AuthController', () => {
         nationalId: '123456789',
       };
 
-      const currentUser = mockUserJwtPayload({ sub: 'staff-123', actorType: ActorType.staff });
+      const currentUser = mockUserJwtPayload({
+        sub: 'staff-123',
+        actorType: ActorType.staff,
+      });
 
       const expectedResponse = {
         message: 'Guest information submitted',
@@ -157,7 +170,10 @@ describe('AuthController', () => {
       const result = await controller.submitGuestInfo(submitDto, currentUser);
 
       expect(result).toEqual(expectedResponse);
-      expect(authService.submitGuestInfo).toHaveBeenCalledWith(submitDto, currentUser.sub);
+      expect(authService.submitGuestInfo).toHaveBeenCalledWith(
+        submitDto,
+        currentUser.sub,
+      );
       expect(authService.submitGuestInfo).toHaveBeenCalledTimes(1);
     });
   });
@@ -254,7 +270,9 @@ describe('AuthController', () => {
       const result = await controller.sendDirectOtp(requestOtpDto);
 
       expect(result).toEqual(expectedResponse);
-      expect(authService.sendDirectOtp).toHaveBeenCalledWith(requestOtpDto.phone);
+      expect(authService.sendDirectOtp).toHaveBeenCalledWith(
+        requestOtpDto.phone,
+      );
       expect(authService.sendDirectOtp).toHaveBeenCalledTimes(1);
     });
   });

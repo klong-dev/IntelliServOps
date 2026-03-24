@@ -1,4 +1,10 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsArray } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsArray,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MessageType } from '@prisma/client';
 
@@ -31,7 +37,14 @@ export class SendMessageDto {
 
   @ApiPropertyOptional({
     description: 'File attachments array',
-    example: [{ url: 'https://storage.example.com/file.pdf', filename: 'contract.pdf', mimeType: 'application/pdf', size: 1024 }],
+    example: [
+      {
+        url: 'https://storage.example.com/file.pdf',
+        filename: 'contract.pdf',
+        mimeType: 'application/pdf',
+        size: 1024,
+      },
+    ],
   })
   @IsOptional()
   attachments?: Array<{

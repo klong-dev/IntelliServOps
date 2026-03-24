@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
-import { mockTicket, mockUserJwtPayload, mockStaffJwtPayload } from '../../test-utils';
+import {
+  mockTicket,
+  mockUserJwtPayload,
+  mockStaffJwtPayload,
+} from '../../test-utils';
 import { CreateTicketDto, UpdateTicketDto } from './dto';
 import { TicketStatus, Priority } from '@prisma/client';
 
@@ -47,7 +51,10 @@ describe('TicketsController', () => {
       const result = await controller.findAll(currentUser);
 
       expect(result).toEqual(tickets);
-      expect(ticketsService.findAll).toHaveBeenCalledWith(currentUser, undefined);
+      expect(ticketsService.findAll).toHaveBeenCalledWith(
+        currentUser,
+        undefined,
+      );
     });
 
     it('should filter tickets by status', async () => {
@@ -58,7 +65,10 @@ describe('TicketsController', () => {
       const result = await controller.findAll(currentUser, TicketStatus.open);
 
       expect(result).toEqual(tickets);
-      expect(ticketsService.findAll).toHaveBeenCalledWith(currentUser, TicketStatus.open);
+      expect(ticketsService.findAll).toHaveBeenCalledWith(
+        currentUser,
+        TicketStatus.open,
+      );
     });
   });
 
@@ -90,7 +100,10 @@ describe('TicketsController', () => {
       const result = await controller.create(createDto, currentUser);
 
       expect(result).toEqual(createdTicket);
-      expect(ticketsService.create).toHaveBeenCalledWith(createDto, currentUser);
+      expect(ticketsService.create).toHaveBeenCalledWith(
+        createDto,
+        currentUser,
+      );
     });
   });
 
@@ -118,10 +131,15 @@ describe('TicketsController', () => {
       const assignedTicket = { ...ticket, assignedToStaffId: 'staff-123' };
       mockTicketsService.assign.mockResolvedValue(assignedTicket);
 
-      const result = await controller.assign(ticket.id, { staffId: 'staff-123' });
+      const result = await controller.assign(ticket.id, {
+        staffId: 'staff-123',
+      });
 
       expect(result).toEqual(assignedTicket);
-      expect(ticketsService.assign).toHaveBeenCalledWith(ticket.id, 'staff-123');
+      expect(ticketsService.assign).toHaveBeenCalledWith(
+        ticket.id,
+        'staff-123',
+      );
     });
   });
 
@@ -135,7 +153,10 @@ describe('TicketsController', () => {
       const result = await controller.resolve(ticket.id, resolveDto);
 
       expect(result).toEqual(resolvedTicket);
-      expect(ticketsService.resolve).toHaveBeenCalledWith(ticket.id, resolveDto.resolutionNotes);
+      expect(ticketsService.resolve).toHaveBeenCalledWith(
+        ticket.id,
+        resolveDto.resolutionNotes,
+      );
     });
   });
 

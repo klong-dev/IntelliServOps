@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConversationStatus, MessageType, SenderType } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -29,13 +34,15 @@ export class ChatService {
     userId?: string,
     senderName?: string,
   ) {
-    const guestSessionId = !userId
-      ? dto.guestSessionId || uuidv4()
-      : undefined;
+    const guestSessionId = !userId ? dto.guestSessionId || uuidv4() : undefined;
 
     const conversation = await this.prisma.chatConversation.create({
       data: {
-        title: dto.title || (userId ? `Chat với ${senderName || 'User'}` : `Chat với ${dto.guestName || 'Khách'}`),
+        title:
+          dto.title ||
+          (userId
+            ? `Chat với ${senderName || 'User'}`
+            : `Chat với ${dto.guestName || 'Khách'}`),
         userId: userId || null,
         guestSessionId: guestSessionId || null,
         guestName: dto.guestName || null,
@@ -45,7 +52,14 @@ export class ChatService {
       },
       include: {
         user: userId
-          ? { select: { id: true, fullName: true, email: true, profileImageUrl: true } }
+          ? {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImageUrl: true,
+              },
+            }
           : false,
       },
     });
@@ -100,7 +114,12 @@ export class ChatService {
         take: limit,
         include: {
           user: {
-            select: { id: true, fullName: true, email: true, profileImageUrl: true },
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              profileImageUrl: true,
+            },
           },
           _count: { select: { messages: true } },
         },
@@ -127,7 +146,12 @@ export class ChatService {
       where: { id: conversationId },
       include: {
         user: {
-          select: { id: true, fullName: true, email: true, profileImageUrl: true },
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImageUrl: true,
+          },
         },
         _count: { select: { messages: true } },
       },
@@ -164,7 +188,9 @@ export class ChatService {
     }
 
     if (conversation.status !== ConversationStatus.active) {
-      throw new ForbiddenException('Cannot send message to a closed conversation');
+      throw new ForbiddenException(
+        'Cannot send message to a closed conversation',
+      );
     }
 
     // Create message and update conversation in a transaction
