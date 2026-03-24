@@ -17,7 +17,7 @@ export class CreatePayOSPaymentLinkDto {
     example: 'https://app.intelliservops.com/payment/success',
   })
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   returnUrl?: string;
 
   @ApiPropertyOptional({
@@ -25,7 +25,7 @@ export class CreatePayOSPaymentLinkDto {
     example: 'https://app.intelliservops.com/payment/cancel',
   })
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   cancelUrl?: string;
 
   @ApiPropertyOptional({
