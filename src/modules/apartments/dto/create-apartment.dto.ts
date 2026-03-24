@@ -120,7 +120,7 @@ export class CreateApartmentDto {
   images?: string[];
 
   @ApiPropertyOptional({ example: 'https://youtube.com/watch?v=...' })
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   @IsOptional()
   videoTourUrl?: string;
 

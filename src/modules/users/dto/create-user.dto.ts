@@ -70,7 +70,7 @@ export class CreateUserDto {
     example: 'https://example.com/avatar.jpg',
     description: 'Profile image URL',
   })
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   @IsOptional()
   profileImageUrl?: string;
 
