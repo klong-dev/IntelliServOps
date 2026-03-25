@@ -311,67 +311,6 @@ export class ApartmentsService {
 
 
 
-  private async resolveWardAddress(
-    wardCode: number,
-    cache: Map<string, any>,
-  ) {
-    try {
-      const wardKey = `v2:w:${wardCode}`;
-      let ward = cache.get(wardKey);
-      if (!ward) {
-        const wardResponse = await axios.get(
-          `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
-          {
-            timeout: 15000,
-          },
-        );
-        ward = wardResponse.data;
-        cache.set(wardKey, ward);
-      }
-
-      let provinceName: string | null = null;
-      if (ward?.province_code) {
-        const provinceKey = `v2:p:${ward.province_code}`;
-        let province = cache.get(provinceKey);
-        if (!province) {
-          const provinceResponse = await axios.get(
-            `${this.provincesBaseUrl}/api/v2/p/${ward.province_code}`,
-            {
-              timeout: 15000,
-            },
-          );
-          province = provinceResponse.data;
-          cache.set(provinceKey, province);
-        }
-        provinceName = province?.name ?? null;
-      }
-
-      const wardName = ward?.name ?? null;
-      const fullAddress = [wardName, provinceName].filter(Boolean).join(', ');
-
-      return {
-        wardCode,
-        wardName,
-        districtCode: null,
-        districtName: null,
-        provinceCode: ward?.province_code ?? null,
-        provinceName,
-        fullAddress,
-      };
-    } catch {
-      // Return null-safe fallback when external API lookup fails
-      return null;
-    }
-  }
-
-  async getWardAddressByCode(
-    wardCode: number,
-    cache?: Map<string, any>,
-  ) {
-    const lookupCache = cache ?? new Map<string, any>();
-    return this.resolveWardAddress(wardCode, lookupCache);
-  }
-
   /**
    * Resolve province code from a v2 ward code via external API
    */
@@ -388,24 +327,6 @@ export class ApartmentsService {
       // If lookup fails, don't block the operation
       return undefined;
     }
-  }
-
-
-
-  async getApartmentAddressByWardCodes(
-    wardCode?: number | null,
-    cache?: Map<string, any>,
-  ) {
-    const lookupCache = cache ?? new Map<string, any>();
-
-    const resolved =
-      wardCode != null
-        ? await this.resolveWardAddress(wardCode, lookupCache)
-        : null;
-
-    return {
-      displayAddress: resolved?.fullAddress ?? null,
-    };
   }
 
   /**
@@ -550,21 +471,10 @@ export class ApartmentsService {
       ]),
     );
 
-    const lookupCache = new Map<string, any>();
-    const items = await Promise.all(
-      apartments.map(async (apartment: any) => {
-        const addressInfo = await this.getApartmentAddressByWardCodes(
-          apartment.wardCode,
-          lookupCache,
-        );
-
-        return {
-          ...apartment,
-          rating: ratingMap.get(apartment.id) ?? null,
-          address: addressInfo.displayAddress,
-        };
-      }),
-    );
+    const items = apartments.map((apartment: any) => ({
+      ...apartment,
+      rating: ratingMap.get(apartment.id) ?? null,
+    }));
 
     return {
       items,
@@ -676,15 +586,9 @@ export class ApartmentsService {
       throw new NotFoundException('Apartment not found');
     }
 
-    const addressInfo = await this.getApartmentAddressByWardCodes(
-      apartment.wardCode,
-      new Map<string, any>(),
-    );
-
     return {
       ...apartment,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
-      address: addressInfo.displayAddress,
     };
   }
 
@@ -1302,6 +1206,7 @@ export class ApartmentsService {
         buildingName: true,
         ownerId: true,
         wardCode: true,
+        streetAddress: true,
         totalArea: true,
         usableArea: true,
         numberOfBedrooms: true,
@@ -1364,13 +1269,7 @@ export class ApartmentsService {
     }
     const ownerId = apartment.ownerId;
 
-    const [contractNumber, addressInfo] = await Promise.all([
-      this.generateCooperationContractNumber(),
-      this.getApartmentAddressByWardCodes(
-        apartment.wardCode,
-        new Map<string, unknown>(),
-      ),
-    ]);
+    const contractNumber = await this.generateCooperationContractNumber();
 
     const startDate = new Date();
     const endDate = new Date(startDate);
@@ -1388,7 +1287,7 @@ export class ApartmentsService {
       partnerPhone: apartment.owner.phone ?? undefined,
       partnerEmail: apartment.owner.email,
       apartmentAddress:
-        addressInfo.displayAddress ?? apartment.buildingName ?? undefined,
+        apartment.streetAddress ?? apartment.buildingName ?? undefined,
       apartmentNumber: apartment.apartmentNumber,
       cooperationStartDate: this.formatDateDdMmYyyy(startDate),
       cooperationEndDate: this.formatDateDdMmYyyy(endDate),
