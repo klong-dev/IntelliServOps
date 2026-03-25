@@ -181,8 +181,7 @@ export class ContractsService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
             buildingName: true,
           },
         },
@@ -212,12 +211,10 @@ export class ContractsService {
 
         const addressInfo = contract.apartment
           ? await this.apartmentsService.getApartmentAddressByWardCodes(
-              contract.apartment.newWardCode,
-              contract.apartment.oldWardCode,
-              'both',
+              contract.apartment.wardCode,
               lookupCache,
             )
-          : { newAddress: null, oldAddress: null, displayAddress: null };
+          : { resolvedAddress: null, displayAddress: null };
 
         return {
           ...contract,
@@ -247,8 +244,7 @@ export class ContractsService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
             numberOfBedrooms: true,
             numberOfBathrooms: true,
             totalArea: true,
@@ -307,12 +303,10 @@ export class ContractsService {
     const pdfToken = contractPdfData ? this.generatePdfToken(id) : null;
     const addressInfo = contract.apartment
       ? await this.apartmentsService.getApartmentAddressByWardCodes(
-          contract.apartment.newWardCode,
-          contract.apartment.oldWardCode,
-          'both',
+          contract.apartment.wardCode,
           new Map<string, any>(),
         )
-      : { newAddress: null, oldAddress: null, displayAddress: null };
+      : { resolvedAddress: null, displayAddress: null };
 
     return {
       ...rest,

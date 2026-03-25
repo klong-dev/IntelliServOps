@@ -309,160 +309,67 @@ export class ApartmentsService {
     return response.data as unknown;
   }
 
-  async lookupNewWardFromLegacy(legacyName?: string, legacyCode?: number) {
-    if (!legacyName && !legacyCode) {
-      return [];
-    }
 
-    const response = await axios.get(
-      `${this.provincesBaseUrl}/api/v2/w/from-legacy/`,
-      {
-        params: {
-          ...(legacyName ? { legacy_name: legacyName } : {}),
-          ...(legacyCode ? { legacy_code: legacyCode } : {}),
-        },
-        timeout: 15000,
-      },
-    );
 
-    return response.data as unknown;
-  }
-
-  async lookupLegacyWardsFromNew(newWardCode: number) {
-    const response = await axios.get(
-      `${this.provincesBaseUrl}/api/v2/w/${newWardCode}/to-legacies/`,
-      {
-        timeout: 15000,
-      },
-    );
-
-    return response.data as unknown;
-  }
-
-  private async resolveNewWardAddress(
+  private async resolveWardAddress(
     wardCode: number,
     cache: Map<string, any>,
   ) {
-    const wardKey = `v2:w:${wardCode}`;
-    let ward = cache.get(wardKey);
-    if (!ward) {
-      const wardResponse = await axios.get(
-        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
-        {
-          timeout: 15000,
-        },
-      );
-      ward = wardResponse.data;
-      cache.set(wardKey, ward);
-    }
-
-    let provinceName: string | null = null;
-    if (ward?.province_code) {
-      const provinceKey = `v2:p:${ward.province_code}`;
-      let province = cache.get(provinceKey);
-      if (!province) {
-        const provinceResponse = await axios.get(
-          `${this.provincesBaseUrl}/api/v2/p/${ward.province_code}`,
+    try {
+      const wardKey = `v2:w:${wardCode}`;
+      let ward = cache.get(wardKey);
+      if (!ward) {
+        const wardResponse = await axios.get(
+          `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
           {
             timeout: 15000,
           },
         );
-        province = provinceResponse.data;
-        cache.set(provinceKey, province);
+        ward = wardResponse.data;
+        cache.set(wardKey, ward);
       }
-      provinceName = province?.name ?? null;
-    }
 
-    const wardName = ward?.name ?? null;
-    const fullAddress = [wardName, provinceName].filter(Boolean).join(', ');
-
-    return {
-      wardCode,
-      wardName,
-      districtCode: null,
-      districtName: null,
-      provinceCode: ward?.province_code ?? null,
-      provinceName,
-      fullAddress,
-    };
-  }
-
-  private async resolveOldWardAddress(
-    wardCode: number,
-    cache: Map<string, any>,
-  ) {
-    const wardKey = `v1:w:${wardCode}`;
-    let ward = cache.get(wardKey);
-    if (!ward) {
-      const wardResponse = await axios.get(
-        `${this.provincesBaseUrl}/api/v1/w/${wardCode}`,
-        {
-          timeout: 15000,
-        },
-      );
-      ward = wardResponse.data;
-      cache.set(wardKey, ward);
-    }
-
-    let district: any = null;
-    if (ward?.district_code) {
-      const districtKey = `v1:d:${ward.district_code}`;
-      district = cache.get(districtKey);
-      if (!district) {
-        const districtResponse = await axios.get(
-          `${this.provincesBaseUrl}/api/v1/d/${ward.district_code}`,
-          {
-            timeout: 15000,
-          },
-        );
-        district = districtResponse.data;
-        cache.set(districtKey, district);
+      let provinceName: string | null = null;
+      if (ward?.province_code) {
+        const provinceKey = `v2:p:${ward.province_code}`;
+        let province = cache.get(provinceKey);
+        if (!province) {
+          const provinceResponse = await axios.get(
+            `${this.provincesBaseUrl}/api/v2/p/${ward.province_code}`,
+            {
+              timeout: 15000,
+            },
+          );
+          province = provinceResponse.data;
+          cache.set(provinceKey, province);
+        }
+        provinceName = province?.name ?? null;
       }
+
+      const wardName = ward?.name ?? null;
+      const fullAddress = [wardName, provinceName].filter(Boolean).join(', ');
+
+      return {
+        wardCode,
+        wardName,
+        districtCode: null,
+        districtName: null,
+        provinceCode: ward?.province_code ?? null,
+        provinceName,
+        fullAddress,
+      };
+    } catch {
+      // Return null-safe fallback when external API lookup fails
+      return null;
     }
-
-    let province: any = null;
-    if (district?.province_code) {
-      const provinceKey = `v1:p:${district.province_code}`;
-      province = cache.get(provinceKey);
-      if (!province) {
-        const provinceResponse = await axios.get(
-          `${this.provincesBaseUrl}/api/v1/p/${district.province_code}`,
-          {
-            timeout: 15000,
-          },
-        );
-        province = provinceResponse.data;
-        cache.set(provinceKey, province);
-      }
-    }
-
-    const wardName = ward?.name ?? null;
-    const districtName = district?.name ?? null;
-    const provinceName = province?.name ?? null;
-    const fullAddress = [wardName, districtName, provinceName]
-      .filter(Boolean)
-      .join(', ');
-
-    return {
-      wardCode,
-      wardName,
-      districtCode: ward?.district_code ?? null,
-      districtName,
-      provinceCode: district?.province_code ?? null,
-      provinceName,
-      fullAddress,
-    };
   }
 
   async getWardAddressByCode(
     wardCode: number,
-    addressType: 'new' | 'old' = 'new',
     cache?: Map<string, any>,
   ) {
     const lookupCache = cache ?? new Map<string, any>();
-    return addressType === 'new'
-      ? this.resolveNewWardAddress(wardCode, lookupCache)
-      : this.resolveOldWardAddress(wardCode, lookupCache);
+    return this.resolveWardAddress(wardCode, lookupCache);
   }
 
   /**
@@ -483,123 +390,22 @@ export class ApartmentsService {
     }
   }
 
-  /**
-   * Resolve district_code and province_code from a v1 (old) ward code
-   */
-  private async resolveOldAddressCodesFromWard(
-    wardCode: number,
-  ): Promise<{ districtCode?: number; provinceCode?: number }> {
-    try {
-      const wardResponse = await axios.get(
-        `${this.provincesBaseUrl}/api/v1/w/${wardCode}`,
-        { timeout: 15000 },
-      );
-      const districtCode = wardResponse.data?.district_code ?? undefined;
 
-      let provinceCode: number | undefined;
-      if (districtCode) {
-        const districtResponse = await axios.get(
-          `${this.provincesBaseUrl}/api/v1/d/${districtCode}`,
-          { timeout: 15000 },
-        );
-        provinceCode = districtResponse.data?.province_code ?? undefined;
-      }
-
-      return { districtCode, provinceCode };
-    } catch {
-      return {};
-    }
-  }
 
   async getApartmentAddressByWardCodes(
-    newWardCode?: number | null,
-    oldWardCode?: number | null,
-    addressType: 'new' | 'old' | 'both' = 'both',
+    wardCode?: number | null,
     cache?: Map<string, any>,
   ) {
     const lookupCache = cache ?? new Map<string, any>();
-    const includeNew = addressType === 'new' || addressType === 'both';
-    const includeOld = addressType === 'old' || addressType === 'both';
 
-    let resolvedNewWardCode = newWardCode ?? null;
-    let resolvedOldWardCode = oldWardCode ?? null;
-
-    // Fallback: if only old ward code exists, map legacy(old) -> new ward code
-    if (
-      includeNew &&
-      resolvedNewWardCode == null &&
-      resolvedOldWardCode != null
-    ) {
-      const mapKey = `legacy_to_new:${resolvedOldWardCode}`;
-      let mapped = lookupCache.get(mapKey);
-      if (!mapped) {
-        mapped = await this.lookupNewWardFromLegacy(
-          undefined,
-          resolvedOldWardCode,
-        );
-        lookupCache.set(mapKey, mapped);
-      }
-
-      const first = Array.isArray(mapped) ? mapped[0] : null;
-      const rawCode =
-        first?.ward?.code ?? first?.code ?? first?.ward_code ?? null;
-      const codeFromMapping =
-        typeof rawCode === 'number' ? rawCode : Number(rawCode);
-      if (Number.isFinite(codeFromMapping)) {
-        resolvedNewWardCode = codeFromMapping;
-      }
-    }
-
-    // Fallback: if only new ward code exists, map new ward code -> legacy(old)
-    if (
-      includeOld &&
-      resolvedOldWardCode == null &&
-      resolvedNewWardCode != null
-    ) {
-      const mapKey = `new_to_legacy:${resolvedNewWardCode}`;
-      let mapped = lookupCache.get(mapKey);
-      if (!mapped) {
-        mapped = await this.lookupLegacyWardsFromNew(resolvedNewWardCode);
-        lookupCache.set(mapKey, mapped);
-      }
-
-      const first = Array.isArray(mapped) ? mapped[0] : null;
-      const candidateCode =
-        Array.isArray(mapped) && mapped.length > 1
-          ? (mapped.find(
-              (item: any) => Number(item?.code) !== resolvedNewWardCode,
-            )?.code ?? first?.code)
-          : first?.code;
-      const rawCode =
-        candidateCode ?? first?.legacy_code ?? first?.ward_code ?? null;
-      const codeFromMapping =
-        typeof rawCode === 'number' ? rawCode : Number(rawCode);
-      if (Number.isFinite(codeFromMapping)) {
-        resolvedOldWardCode = codeFromMapping;
-      }
-    }
-
-    const newAddress =
-      includeNew && resolvedNewWardCode != null
-        ? await this.resolveNewWardAddress(resolvedNewWardCode, lookupCache)
+    const resolvedAddress =
+      wardCode != null
+        ? await this.resolveWardAddress(wardCode, lookupCache)
         : null;
-
-    const oldAddress =
-      includeOld && resolvedOldWardCode != null
-        ? await this.resolveOldWardAddress(resolvedOldWardCode, lookupCache)
-        : null;
-
-    const displayAddress =
-      addressType === 'new'
-        ? (newAddress?.fullAddress ?? null)
-        : addressType === 'old'
-          ? (oldAddress?.fullAddress ?? null)
-          : (newAddress?.fullAddress ?? oldAddress?.fullAddress ?? null);
 
     return {
-      newAddress,
-      oldAddress,
-      displayAddress,
+      resolvedAddress,
+      displayAddress: resolvedAddress?.fullAddress ?? null,
     };
   }
 
@@ -612,7 +418,6 @@ export class ApartmentsService {
       provinceCode,
       wardCode,
       keyword,
-      addressType = 'both',
       minBedrooms,
       maxBedrooms,
       minPrice,
@@ -630,35 +435,12 @@ export class ApartmentsService {
     // Build address filter conditions
     const addressFilters: Prisma.ApartmentWhereInput[] = [];
 
-    // Province-level filter: matches newProvinceCode OR oldProvinceCode
     if (provinceCode !== undefined) {
-      addressFilters.push({
-        OR: [
-          { newProvinceCode: provinceCode },
-          { oldProvinceCode: provinceCode },
-        ],
-      });
+      addressFilters.push({ provinceCode });
     }
 
-    // District-level filter (v1 old address only)
-    if (searchDto.districtCode !== undefined) {
-      addressFilters.push({ oldDistrictCode: searchDto.districtCode });
-    }
-
-    // Ward-level filter based on addressType
     if (wardCode !== undefined) {
-      const wardFilters: Prisma.ApartmentWhereInput[] = [];
-      if (addressType === 'new' || addressType === 'both') {
-        wardFilters.push({ newWardCode: wardCode });
-      }
-      if (addressType === 'old' || addressType === 'both') {
-        wardFilters.push({ oldWardCode: wardCode });
-      }
-      if (wardFilters.length === 1) {
-        addressFilters.push(wardFilters[0]);
-      } else if (wardFilters.length > 1) {
-        addressFilters.push({ OR: wardFilters });
-      }
+      addressFilters.push({ wardCode });
     }
 
     // Combine all AND conditions
@@ -719,7 +501,6 @@ export class ApartmentsService {
 
     const skip = (page - 1) * limit;
 
-    // Build dynamic select based on addressType
     const apartmentSelect: Prisma.ApartmentSelect = {
       id: true,
       buildingName: true,
@@ -734,15 +515,8 @@ export class ApartmentsService {
       status: true,
       images: true,
       createdAt: true,
+      wardCode: true,
     };
-
-    // Include only relevant address fields based on addressType
-    if (addressType === 'new' || addressType === 'both') {
-      apartmentSelect.newWardCode = true;
-    }
-    if (addressType === 'old' || addressType === 'both') {
-      apartmentSelect.oldWardCode = true;
-    }
 
     const [apartments, total] = await Promise.all([
       this.prisma.apartment.findMany({
@@ -781,27 +555,15 @@ export class ApartmentsService {
     const items = await Promise.all(
       apartments.map(async (apartment: any) => {
         const addressInfo = await this.getApartmentAddressByWardCodes(
-          apartment.newWardCode,
-          apartment.oldWardCode,
-          'both',
+          apartment.wardCode,
           lookupCache,
         );
-
-        const displayAddress =
-          addressType === 'new'
-            ? (addressInfo.newAddress?.fullAddress ?? null)
-            : addressType === 'old'
-              ? (addressInfo.oldAddress?.fullAddress ?? null)
-              : (addressInfo.newAddress?.fullAddress ??
-                addressInfo.oldAddress?.fullAddress ??
-                null);
 
         return {
           ...apartment,
           rating: ratingMap.get(apartment.id) ?? null,
-          newAddress: addressInfo.newAddress,
-          oldAddress: addressInfo.oldAddress,
-          address: displayAddress,
+          resolvedAddress: addressInfo.resolvedAddress,
+          address: addressInfo.displayAddress,
         };
       }),
     );
@@ -818,7 +580,7 @@ export class ApartmentsService {
   /**
    * Get apartment by ID with full details
    */
-  async findOne(id: string, addressType: 'new' | 'old' | 'both' = 'both') {
+  async findOne(id: string) {
     const [apartment, ratingAggregate] = await Promise.all([
       this.prisma.apartment.findUnique({
         where: { id },
@@ -917,27 +679,15 @@ export class ApartmentsService {
     }
 
     const addressInfo = await this.getApartmentAddressByWardCodes(
-      apartment.newWardCode,
-      apartment.oldWardCode,
-      'both',
+      apartment.wardCode,
       new Map<string, any>(),
     );
-
-    const address =
-      addressType === 'new'
-        ? (addressInfo.newAddress?.fullAddress ?? null)
-        : addressType === 'old'
-          ? (addressInfo.oldAddress?.fullAddress ?? null)
-          : (addressInfo.newAddress?.fullAddress ??
-            addressInfo.oldAddress?.fullAddress ??
-            null);
 
     return {
       ...apartment,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
-      newAddress: addressInfo.newAddress,
-      oldAddress: addressInfo.oldAddress,
-      address,
+      resolvedAddress: addressInfo.resolvedAddress,
+      address: addressInfo.displayAddress,
     };
   }
 
@@ -1024,34 +774,20 @@ export class ApartmentsService {
    * Operator, Admin, or Partner can create
    */
   async create(createDto: CreateApartmentDto, currentUser: JwtPayload) {
-    // Auto-resolve province code from new ward code
-    let newProvinceCode: number | undefined;
-    if (createDto.newWardCode) {
-      newProvinceCode = await this.resolveProvinceCodeFromWard(
-        createDto.newWardCode,
+    // Auto-resolve province code from ward code
+    let provinceCode: number | undefined;
+    if (createDto.wardCode) {
+      provinceCode = await this.resolveProvinceCodeFromWard(
+        createDto.wardCode,
       );
-    }
-
-    // Auto-resolve district & province codes from old ward code
-    let oldDistrictCode: number | undefined;
-    let oldProvinceCode: number | undefined;
-    if (createDto.oldWardCode) {
-      const oldCodes = await this.resolveOldAddressCodesFromWard(
-        createDto.oldWardCode,
-      );
-      oldDistrictCode = oldCodes.districtCode;
-      oldProvinceCode = oldCodes.provinceCode;
     }
 
     const data: Prisma.ApartmentCreateInput = {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
       floorNumber: createDto.floorNumber,
-      newWardCode: createDto.newWardCode,
-      newProvinceCode,
-      oldWardCode: createDto.oldWardCode,
-      oldDistrictCode,
-      oldProvinceCode,
+      wardCode: createDto.wardCode,
+      provinceCode,
       latitude: createDto.latitude,
       longitude: createDto.longitude,
       totalArea: createDto.totalArea,
@@ -1081,11 +817,8 @@ export class ApartmentsService {
       select: {
         id: true,
         apartmentNumber: true,
-        newWardCode: true,
-        newProvinceCode: true,
-        oldWardCode: true,
-        oldDistrictCode: true,
-        oldProvinceCode: true,
+        wardCode: true,
+        provinceCode: true,
         baseRentPrice: true,
         status: true,
         createdAt: true,
@@ -1128,8 +861,7 @@ export class ApartmentsService {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
       floorNumber: createDto.floorNumber,
-      newWardCode: createDto.newWardCode,
-      oldWardCode: createDto.oldWardCode,
+      wardCode: createDto.wardCode,
       latitude: createDto.latitude,
       longitude: createDto.longitude,
       totalArea: createDto.totalArea,
@@ -1260,24 +992,11 @@ export class ApartmentsService {
 
       Object.assign(apartmentUpdateData, restUpdateDto);
 
-      if (updateDto.newWardCode !== undefined) {
-        apartmentUpdateData.newProvinceCode =
-          updateDto.newWardCode !== null
-            ? await this.resolveProvinceCodeFromWard(updateDto.newWardCode)
+      if (updateDto.wardCode !== undefined) {
+        apartmentUpdateData.provinceCode =
+          updateDto.wardCode !== null
+            ? await this.resolveProvinceCodeFromWard(updateDto.wardCode)
             : null;
-      }
-
-      if (updateDto.oldWardCode !== undefined) {
-        if (updateDto.oldWardCode !== null) {
-          const oldCodes = await this.resolveOldAddressCodesFromWard(
-            updateDto.oldWardCode,
-          );
-          apartmentUpdateData.oldDistrictCode = oldCodes.districtCode ?? null;
-          apartmentUpdateData.oldProvinceCode = oldCodes.provinceCode ?? null;
-        } else {
-          apartmentUpdateData.oldDistrictCode = null;
-          apartmentUpdateData.oldProvinceCode = null;
-        }
       }
     }
 
@@ -1407,29 +1126,15 @@ export class ApartmentsService {
       throw new ForbiddenException('You can only update your own apartments');
     }
 
-    // Auto-resolve province code if newWardCode is being updated
+    // Auto-resolve province code if wardCode is being updated
     const data: any = { ...updateDto };
-    if (updateDto.newWardCode !== undefined) {
-      if (updateDto.newWardCode !== null) {
-        data.newProvinceCode = await this.resolveProvinceCodeFromWard(
-          updateDto.newWardCode,
+    if (updateDto.wardCode !== undefined) {
+      if (updateDto.wardCode !== null) {
+        data.provinceCode = await this.resolveProvinceCodeFromWard(
+          updateDto.wardCode,
         );
       } else {
-        data.newProvinceCode = null;
-      }
-    }
-
-    // Auto-resolve district & province codes if oldWardCode is being updated
-    if (updateDto.oldWardCode !== undefined) {
-      if (updateDto.oldWardCode !== null) {
-        const oldCodes = await this.resolveOldAddressCodesFromWard(
-          updateDto.oldWardCode,
-        );
-        data.oldDistrictCode = oldCodes.districtCode ?? null;
-        data.oldProvinceCode = oldCodes.provinceCode ?? null;
-      } else {
-        data.oldDistrictCode = null;
-        data.oldProvinceCode = null;
+        data.provinceCode = null;
       }
     }
 
@@ -1439,11 +1144,8 @@ export class ApartmentsService {
       select: {
         id: true,
         apartmentNumber: true,
-        newWardCode: true,
-        newProvinceCode: true,
-        oldWardCode: true,
-        oldDistrictCode: true,
-        oldProvinceCode: true,
+        wardCode: true,
+        provinceCode: true,
         baseRentPrice: true,
         status: true,
         updatedAt: true,
@@ -1600,8 +1302,7 @@ export class ApartmentsService {
         apartmentNumber: true,
         buildingName: true,
         ownerId: true,
-        newWardCode: true,
-        oldWardCode: true,
+        wardCode: true,
         totalArea: true,
         usableArea: true,
         numberOfBedrooms: true,
@@ -1667,9 +1368,7 @@ export class ApartmentsService {
     const [contractNumber, addressInfo] = await Promise.all([
       this.generateCooperationContractNumber(),
       this.getApartmentAddressByWardCodes(
-        apartment.newWardCode,
-        apartment.oldWardCode,
-        'both',
+        apartment.wardCode,
         new Map<string, unknown>(),
       ),
     ]);

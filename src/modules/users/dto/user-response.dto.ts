@@ -10,10 +10,7 @@ class ContractApartmentSummaryDto {
   apartmentNumber: string;
 
   @ApiPropertyOptional({ type: Number, example: 26728, nullable: true })
-  newWardCode: number | null;
-
-  @ApiPropertyOptional({ type: Number, example: 26731, nullable: true })
-  oldWardCode: number | null;
+  wardCode: number | null;
 }
 
 class ContractSummaryDto {

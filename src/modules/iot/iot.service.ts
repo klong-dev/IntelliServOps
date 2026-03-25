@@ -45,8 +45,7 @@ export class IoTService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
         room: {
@@ -65,8 +64,7 @@ export class IoTService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
         room: {
@@ -286,8 +284,7 @@ export class IoTService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
       },
@@ -303,8 +300,7 @@ export class IoTService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
         readings: {

@@ -14,8 +14,7 @@ import { ApartmentStatus, FurnishingStatus } from '@prisma/client';
 export class SearchApartmentDto {
   @ApiPropertyOptional({
     example: 79,
-    description:
-      'Province code filter. Matches apartments by newProvinceCode (v2) OR oldProvinceCode (v1).',
+    description: 'Province code filter.',
   })
   @IsInt()
   @IsOptional()
@@ -23,34 +22,13 @@ export class SearchApartmentDto {
   provinceCode?: number;
 
   @ApiPropertyOptional({
-    example: 760,
-    description:
-      'District code filter (v1 - pre-merger only). Filters apartments by oldDistrictCode.',
-  })
-  @IsInt()
-  @IsOptional()
-  @Type(() => Number)
-  districtCode?: number;
-
-  @ApiPropertyOptional({
     example: 26728,
-    description:
-      'Ward code filter. Uses newWardCode when addressType=new, oldWardCode when addressType=old, both when addressType=both',
+    description: 'Ward code filter.',
   })
   @IsInt()
   @IsOptional()
   @Type(() => Number)
   wardCode?: number;
-
-  @ApiPropertyOptional({
-    example: 'new',
-    enum: ['new', 'old', 'both'],
-    description:
-      'Address type to search: new (post-merger), old (pre-merger), both (default: both)',
-  })
-  @IsString()
-  @IsOptional()
-  addressType?: 'new' | 'old' | 'both';
 
   @ApiPropertyOptional({ example: 'Vinhomes' })
   @IsString()

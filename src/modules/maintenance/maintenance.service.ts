@@ -33,8 +33,7 @@ export class MaintenanceService {
         apartment: {
           select: {
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
       },
@@ -49,8 +48,7 @@ export class MaintenanceService {
         apartment: {
           select: {
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
         room: {

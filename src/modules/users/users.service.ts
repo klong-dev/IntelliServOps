@@ -170,8 +170,7 @@ export class UsersService {
                   select: {
                     id: true,
                     apartmentNumber: true,
-                    newWardCode: true,
-                    oldWardCode: true,
+                    wardCode: true,
                   },
                 },
               },

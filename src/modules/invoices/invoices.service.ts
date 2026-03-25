@@ -41,8 +41,7 @@ export class InvoicesService {
             apartment: {
               select: {
                 apartmentNumber: true,
-                newWardCode: true,
-                oldWardCode: true,
+                wardCode: true,
               },
             },
           },
@@ -61,8 +60,7 @@ export class InvoicesService {
             apartment: {
               select: {
                 apartmentNumber: true,
-                newWardCode: true,
-                oldWardCode: true,
+                wardCode: true,
               },
             },
             members: {
