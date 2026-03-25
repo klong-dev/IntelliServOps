@@ -250,12 +250,7 @@ export class ApartmentListItemDto {
   })
   cooperationContracts?: ApartmentCooperationContractDto[] | null;
 
-  @ApiPropertyOptional({
-    type: WardAddressDto,
-    nullable: true,
-    description: 'Địa chỉ đã resolve từ mã địa chỉ (v2)',
-  })
-  resolvedAddress?: WardAddressDto | null;
+
 
   @ApiPropertyOptional({
     type: String,
@@ -366,12 +361,7 @@ export class ApartmentDetailDto {
   @ApiPropertyOptional({ type: Number, nullable: true })
   yearBuilt: number | null;
 
-  @ApiPropertyOptional({
-    type: WardAddressDto,
-    nullable: true,
-    description: 'Dia chi resolve theo ma phuong/xa (v2)',
-  })
-  resolvedAddress?: WardAddressDto | null;
+
 
   @ApiPropertyOptional({
     type: String,

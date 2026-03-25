@@ -41,7 +41,6 @@ describe('ContractsService', () => {
     prisma = createPrismaMock();
     apartmentsService = {
       getApartmentAddressByWardCodes: jest.fn().mockResolvedValue({
-        resolvedAddress: null,
         displayAddress: null,
       }),
     };

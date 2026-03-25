@@ -214,7 +214,7 @@ export class ContractsService {
               contract.apartment.wardCode,
               lookupCache,
             )
-          : { resolvedAddress: null, displayAddress: null };
+          : { displayAddress: null };
 
         return {
           ...contract,
@@ -306,7 +306,7 @@ export class ContractsService {
           contract.apartment.wardCode,
           new Map<string, any>(),
         )
-      : { resolvedAddress: null, displayAddress: null };
+      : { displayAddress: null };
 
     return {
       ...rest,
