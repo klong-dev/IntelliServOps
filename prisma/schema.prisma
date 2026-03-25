@@ -650,6 +650,7 @@ model Apartment {
   floorNumber           Int?
   wardCode              Int?             // Mã phường/xã (v2)
   provinceCode          Int?             // Mã tỉnh/thành (v2), auto-resolved từ wardCode
+  streetAddress         String?          // Địa chỉ cụ thể (số nhà, ngõ, hẻm, đường...)
   latitude              Decimal?         @db.Decimal(10, 8)
   longitude             Decimal?         @db.Decimal(11, 8)
   totalArea             Decimal          @db.Decimal(10, 2)
