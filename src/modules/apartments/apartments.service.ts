@@ -436,6 +436,8 @@ export class ApartmentsService {
       images: true,
       createdAt: true,
       wardCode: true,
+      provinceCode: true,
+      streetAddress: true,
     };
 
     const [apartments, total] = await Promise.all([
