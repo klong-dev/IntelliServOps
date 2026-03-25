@@ -194,6 +194,14 @@ export class ApartmentListItemDto {
   wardCode?: number | null;
 
   @ApiPropertyOptional({
+    type: Number,
+    example: 79,
+    nullable: true,
+    description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
+  })
+  provinceCode?: number | null;
+
+  @ApiPropertyOptional({
     type: String,
     nullable: true,
     example: '12 Nguyễn Huệ, Phường Bến Nghé',
@@ -286,6 +294,14 @@ export class ApartmentDetailDto {
     description: 'Mã phường/xã (v2)',
   })
   wardCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 79,
+    nullable: true,
+    description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
+  })
+  provinceCode?: number | null;
 
   @ApiPropertyOptional({
     type: String,
