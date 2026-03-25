@@ -50,8 +50,7 @@ export class TasksService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
       },
@@ -77,8 +76,7 @@ export class TasksService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
         maintenanceRequest: {

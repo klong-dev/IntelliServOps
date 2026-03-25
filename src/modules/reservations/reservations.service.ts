@@ -58,8 +58,7 @@ export class ReservationsService {
         id: true,
         status: true,
         apartmentNumber: true,
-        newWardCode: true,
-        oldWardCode: true,
+        wardCode: true,
       },
     });
 
@@ -153,8 +152,7 @@ export class ReservationsService {
             select: {
               id: true,
               apartmentNumber: true,
-              newWardCode: true,
-              oldWardCode: true,
+              wardCode: true,
               baseRentPrice: true,
             },
           },
@@ -295,8 +293,7 @@ export class ReservationsService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
             baseRentPrice: true,
           },
         },
@@ -357,8 +354,7 @@ export class ReservationsService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
             baseRentPrice: true,
           },
         },
@@ -453,8 +449,7 @@ export class ReservationsService {
             select: {
               id: true,
               apartmentNumber: true,
-              newWardCode: true,
-              oldWardCode: true,
+              wardCode: true,
               baseRentPrice: true,
             },
           },

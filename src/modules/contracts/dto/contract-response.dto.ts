@@ -10,24 +10,14 @@ class ContractApartmentDto {
   apartmentNumber: string;
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
-  newWardCode: number | null;
-
-  @ApiPropertyOptional({ type: Number, nullable: true, example: 26731 })
-  oldWardCode: number | null;
+  wardCode: number | null;
 
   @ApiPropertyOptional({
     type: () => WardAddressDto,
     nullable: true,
-    description: 'Resolved address from new ward code (v2)',
+    description: 'Resolved address (v2)',
   })
-  newAddress?: WardAddressDto | null;
-
-  @ApiPropertyOptional({
-    type: () => WardAddressDto,
-    nullable: true,
-    description: 'Resolved address from old ward code (v1)',
-  })
-  oldAddress?: WardAddressDto | null;
+  resolvedAddress?: WardAddressDto | null;
 
   @ApiPropertyOptional({
     type: String,

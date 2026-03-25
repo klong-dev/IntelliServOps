@@ -189,17 +189,9 @@ export class ApartmentListItemDto {
     type: Number,
     example: 26728,
     nullable: true,
-    description: 'Mã phường/xã sau sáp nhập (v2)',
+    description: 'Mã phường/xã (v2)',
   })
-  newWardCode?: number | null;
-
-  @ApiPropertyOptional({
-    type: Number,
-    example: 26731,
-    nullable: true,
-    description: 'Mã phường/xã trước sáp nhập (v1)',
-  })
-  oldWardCode?: number | null;
+  wardCode?: number | null;
 
   @ApiProperty({ example: '55' })
   totalArea: string;
@@ -253,21 +245,14 @@ export class ApartmentListItemDto {
   @ApiPropertyOptional({
     type: WardAddressDto,
     nullable: true,
-    description: 'Địa chỉ đã resolve từ mã địa chỉ sau sáp nhập (v2)',
+    description: 'Địa chỉ đã resolve từ mã địa chỉ (v2)',
   })
-  newAddress?: WardAddressDto | null;
-
-  @ApiPropertyOptional({
-    type: WardAddressDto,
-    nullable: true,
-    description: 'Địa chỉ đã resolve từ mã địa chỉ trước sáp nhập (v1)',
-  })
-  oldAddress?: WardAddressDto | null;
+  resolvedAddress?: WardAddressDto | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'Dia chi hien thi theo addressType dang filter (new/old/both)',
+    description: 'Dia chi hien thi',
   })
   address?: string | null;
 
@@ -304,17 +289,9 @@ export class ApartmentDetailDto {
     type: Number,
     example: 26728,
     nullable: true,
-    description: 'Mã phường/xã sau sáp nhập (v2)',
+    description: 'Mã phường/xã (v2)',
   })
-  newWardCode?: number | null;
-
-  @ApiPropertyOptional({
-    type: Number,
-    example: 26731,
-    nullable: true,
-    description: 'Mã phường/xã trước sáp nhập (v1)',
-  })
-  oldWardCode?: number | null;
+  wardCode?: number | null;
 
   @ApiPropertyOptional({ type: String, example: '10.788', nullable: true })
   latitude: string | null;
@@ -376,22 +353,14 @@ export class ApartmentDetailDto {
   @ApiPropertyOptional({
     type: WardAddressDto,
     nullable: true,
-    description: 'Dia chi resolve theo ma phuong/xa sau sap nhap (v2)',
+    description: 'Dia chi resolve theo ma phuong/xa (v2)',
   })
-  newAddress?: WardAddressDto | null;
-
-  @ApiPropertyOptional({
-    type: WardAddressDto,
-    nullable: true,
-    description: 'Dia chi resolve theo ma phuong/xa truoc sap nhap (v1)',
-  })
-  oldAddress?: WardAddressDto | null;
+  resolvedAddress?: WardAddressDto | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description:
-      'Dia chi hien thi theo addressType query (new/old/both) khi lay chi tiet can ho',
+    description: 'Dia chi hien thi',
   })
   address?: string | null;
 
@@ -444,41 +413,17 @@ export class ApartmentMutationResultDto {
     type: Number,
     example: 26728,
     nullable: true,
-    description: 'Mã phường/xã sau sáp nhập (v2)',
+    description: 'Mã phường/xã (v2)',
   })
-  newWardCode: number | null;
+  wardCode: number | null;
 
   @ApiPropertyOptional({
     type: Number,
     example: 79,
     nullable: true,
-    description: 'Mã tỉnh/thành sau sáp nhập (v2), auto-resolved từ wardCode',
+    description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
   })
-  newProvinceCode: number | null;
-
-  @ApiPropertyOptional({
-    type: Number,
-    example: 26731,
-    nullable: true,
-    description: 'Mã phường/xã trước sáp nhập (v1)',
-  })
-  oldWardCode: number | null;
-
-  @ApiPropertyOptional({
-    type: Number,
-    example: 760,
-    nullable: true,
-    description: 'Mã quận/huyện trước sáp nhập (v1), auto-resolved từ wardCode',
-  })
-  oldDistrictCode: number | null;
-
-  @ApiPropertyOptional({
-    type: Number,
-    example: 77,
-    nullable: true,
-    description: 'Mã tỉnh/thành trước sáp nhập (v1), auto-resolved từ wardCode',
-  })
-  oldProvinceCode: number | null;
+  provinceCode: number | null;
 
   @ApiProperty({ example: '12000000' })
   baseRentPrice: string;

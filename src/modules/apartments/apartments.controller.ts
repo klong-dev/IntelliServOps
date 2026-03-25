@@ -88,20 +88,12 @@ export class ApartmentsController {
   @Get(':id')
   @Public()
   @ApiOperation({ summary: 'Get apartment details' })
-  @ApiQuery({
-    name: 'addressType',
-    required: false,
-    enum: ['new', 'old', 'both'],
-    description:
-      'Address type for display address: new (v2), old (v1), both (default)',
-  })
   @ApiJsonResponse(ApartmentDetailDto, { description: 'Apartment details' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('addressType') addressType?: 'new' | 'old' | 'both',
   ) {
-    return this.apartmentsService.findOne(id, addressType ?? 'both');
+    return this.apartmentsService.findOne(id);
   }
 
   @Get('cooperation-contracts/pdf/view')

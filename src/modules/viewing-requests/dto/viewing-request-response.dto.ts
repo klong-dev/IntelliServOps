@@ -153,10 +153,7 @@ class UserMyViewingApartmentDto {
   buildingName: string | null;
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
-  newWardCode: number | null;
-
-  @ApiPropertyOptional({ type: Number, nullable: true, example: 26731 })
-  oldWardCode: number | null;
+  wardCode: number | null;
 }
 
 class UserMyViewingContactRequestDto {

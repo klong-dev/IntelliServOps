@@ -98,8 +98,7 @@ export class ViewingRequestsService {
         apartment: {
           select: {
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
       },
@@ -330,8 +329,7 @@ export class ViewingRequestsService {
               id: true,
               apartmentNumber: true,
               buildingName: true,
-              newWardCode: true,
-              oldWardCode: true,
+              wardCode: true,
             },
           },
           assignedStaff: {
@@ -420,8 +418,7 @@ export class ViewingRequestsService {
           select: {
             id: true,
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
       },
@@ -504,8 +501,7 @@ export class ViewingRequestsService {
         apartment: {
           select: {
             apartmentNumber: true,
-            newWardCode: true,
-            oldWardCode: true,
+            wardCode: true,
           },
         },
         assignedStaff: {

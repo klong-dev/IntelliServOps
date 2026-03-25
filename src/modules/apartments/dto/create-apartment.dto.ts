@@ -36,19 +36,11 @@ export class CreateApartmentDto {
 
   @ApiPropertyOptional({
     example: 26728,
-    description: 'Mã phường/xã sau sáp nhập (v2)',
+    description: 'Mã phường/xã (v2)',
   })
   @IsInt()
   @IsOptional()
-  newWardCode?: number;
-
-  @ApiPropertyOptional({
-    example: 26731,
-    description: 'Mã phường/xã trước sáp nhập (v1)',
-  })
-  @IsInt()
-  @IsOptional()
-  oldWardCode?: number;
+  wardCode?: number;
 
   @ApiPropertyOptional({ example: 10.8012 })
   @IsNumber()

@@ -64,8 +64,7 @@ export class TicketsService {
             apartment: {
               select: {
                 apartmentNumber: true,
-                newWardCode: true,
-                oldWardCode: true,
+                wardCode: true,
               },
             },
           },
