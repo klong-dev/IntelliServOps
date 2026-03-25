@@ -11,6 +11,16 @@ class ContractApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
   wardCode: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 79 })
+  provinceCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12 Nguyễn Huệ, Phường Bến Nghé',
+  })
+  streetAddress: string | null;
 }
 
 
