@@ -193,6 +193,14 @@ export class ApartmentListItemDto {
   })
   wardCode?: number | null;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12 Nguyễn Huệ, Phường Bến Nghé',
+    description: 'Địa chỉ cụ thể (số nhà, ngõ, hẻm, đường...)',
+  })
+  streetAddress?: string | null;
+
   @ApiProperty({ example: '55' })
   totalArea: string;
 
@@ -292,6 +300,14 @@ export class ApartmentDetailDto {
     description: 'Mã phường/xã (v2)',
   })
   wardCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12 Nguyễn Huệ, Phường Bến Nghé',
+    description: 'Địa chỉ cụ thể (số nhà, ngõ, hẻm, đường...)',
+  })
+  streetAddress?: string | null;
 
   @ApiPropertyOptional({ type: String, example: '10.788', nullable: true })
   latitude: string | null;
@@ -424,6 +440,14 @@ export class ApartmentMutationResultDto {
     description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
   })
   provinceCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12 Nguyễn Huệ, Phường Bến Nghé',
+    description: 'Địa chỉ cụ thể (số nhà, ngõ, hẻm, đường...)',
+  })
+  streetAddress: string | null;
 
   @ApiProperty({ example: '12000000' })
   baseRentPrice: string;

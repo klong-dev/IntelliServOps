@@ -42,6 +42,14 @@ export class CreateApartmentDto {
   @IsOptional()
   wardCode?: number;
 
+  @ApiPropertyOptional({
+    example: '12 Nguyễn Huệ, Phường Bến Nghé',
+    description: 'Địa chỉ cụ thể (số nhà, ngõ, hẻm, đường...)',
+  })
+  @IsString()
+  @IsOptional()
+  streetAddress?: string;
+
   @ApiPropertyOptional({ example: 10.8012 })
   @IsNumber()
   @IsOptional()
