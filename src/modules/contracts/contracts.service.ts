@@ -202,32 +202,17 @@ export class ContractsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const lookupCache = new Map<string, any>();
-    const items = await Promise.all(
-      contracts.map(async ({ contractPdfData, ...contract }) => {
+    const items = contracts.map(({ contractPdfData, ...contract }) => {
         const pdfToken = contractPdfData
           ? this.generatePdfToken(contract.id)
           : null;
 
-        const addressInfo = contract.apartment
-          ? await this.apartmentsService.getApartmentAddressByWardCodes(
-              contract.apartment.wardCode,
-              lookupCache,
-            )
-          : { displayAddress: null };
-
         return {
           ...contract,
-          apartment: contract.apartment
-            ? {
-                ...contract.apartment,
-                ...addressInfo,
-              }
-            : contract.apartment,
           hasPdf: !!contractPdfData,
           pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
         };
-      }),
+      },
     );
 
     return items;
@@ -301,21 +286,9 @@ export class ContractsService {
       contract as any;
 
     const pdfToken = contractPdfData ? this.generatePdfToken(id) : null;
-    const addressInfo = contract.apartment
-      ? await this.apartmentsService.getApartmentAddressByWardCodes(
-          contract.apartment.wardCode,
-          new Map<string, any>(),
-        )
-      : { displayAddress: null };
 
     return {
       ...rest,
-      apartment: contract.apartment
-        ? {
-            ...contract.apartment,
-            ...addressInfo,
-          }
-        : contract.apartment,
       hasPdf: !!contractPdfData,
       pdfUrl: `/contracts/${id}/pdf`,
       publicPdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,

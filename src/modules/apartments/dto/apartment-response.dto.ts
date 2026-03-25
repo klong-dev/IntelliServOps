@@ -250,15 +250,6 @@ export class ApartmentListItemDto {
   })
   cooperationContracts?: ApartmentCooperationContractDto[] | null;
 
-
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    description: 'Dia chi hien thi',
-  })
-  address?: string | null;
-
   @ApiProperty()
   createdAt: Date;
 
@@ -360,15 +351,6 @@ export class ApartmentDetailDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true })
   yearBuilt: number | null;
-
-
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    description: 'Dia chi hien thi',
-  })
-  address?: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   ownerId: string | null;

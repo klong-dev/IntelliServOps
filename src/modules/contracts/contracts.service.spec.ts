@@ -20,7 +20,7 @@ import {
 describe('ContractsService', () => {
   let service: ContractsService;
   let prisma: ReturnType<typeof createPrismaMock>;
-  let apartmentsService: { getApartmentAddressByWardCodes: jest.Mock };
+  let apartmentsService: Record<string, jest.Mock>;
 
   const mockContract = (overrides = {}) => ({
     id: 'contract-123',
@@ -39,11 +39,8 @@ describe('ContractsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
-    apartmentsService = {
-      getApartmentAddressByWardCodes: jest.fn().mockResolvedValue({
-        displayAddress: null,
-      }),
-    };
+    apartmentsService = {};
+
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
