@@ -11,16 +11,8 @@ class ContractApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
   wardCode: number | null;
-
-
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    description: 'Display address derived from resolved ward data',
-  })
-  displayAddress?: string | null;
 }
+
 
 class WardAddressDto {
   @ApiProperty({ example: 26728 })
