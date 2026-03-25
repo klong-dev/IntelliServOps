@@ -398,14 +398,13 @@ export class ApartmentsService {
   ) {
     const lookupCache = cache ?? new Map<string, any>();
 
-    const resolvedAddress =
+    const resolved =
       wardCode != null
         ? await this.resolveWardAddress(wardCode, lookupCache)
         : null;
 
     return {
-      resolvedAddress,
-      displayAddress: resolvedAddress?.fullAddress ?? null,
+      displayAddress: resolved?.fullAddress ?? null,
     };
   }
 
@@ -562,7 +561,6 @@ export class ApartmentsService {
         return {
           ...apartment,
           rating: ratingMap.get(apartment.id) ?? null,
-          resolvedAddress: addressInfo.resolvedAddress,
           address: addressInfo.displayAddress,
         };
       }),
@@ -686,7 +684,6 @@ export class ApartmentsService {
     return {
       ...apartment,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
-      resolvedAddress: addressInfo.resolvedAddress,
       address: addressInfo.displayAddress,
     };
   }
