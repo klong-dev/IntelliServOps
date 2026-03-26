@@ -183,6 +183,7 @@ export class ContractsService {
             apartmentNumber: true,
             wardCode: true,
             buildingName: true,
+            streetAddress: true,
           },
         },
         members: {
@@ -203,17 +204,16 @@ export class ContractsService {
     });
 
     const items = contracts.map(({ contractPdfData, ...contract }) => {
-        const pdfToken = contractPdfData
-          ? this.generatePdfToken(contract.id)
-          : null;
+      const pdfToken = contractPdfData
+        ? this.generatePdfToken(contract.id)
+        : null;
 
-        return {
-          ...contract,
-          hasPdf: !!contractPdfData,
-          pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
-        };
-      },
-    );
+      return {
+        ...contract,
+        hasPdf: !!contractPdfData,
+        pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+      };
+    });
 
     return items;
   }
