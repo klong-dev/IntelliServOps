@@ -90,9 +90,7 @@ export class ApartmentsController {
   @ApiOperation({ summary: 'Get apartment details' })
   @ApiJsonResponse(ApartmentDetailDto, { description: 'Apartment details' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
-  async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.apartmentsService.findOne(id);
   }
 
@@ -312,7 +310,7 @@ export class ApartmentsController {
     );
   }
 
-  @Post(':id/cooperation-media')
+  @Patch(':id/cooperation-media')
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.STAFF, Role.USER)
   @ApiOperation({
@@ -325,8 +323,8 @@ export class ApartmentsController {
     type: UploadPartnerCooperationMediaRequestDto,
   })
   @ApiJsonResponse(ApartmentMediaUploadResultDto, {
-    status: 201,
-    description: 'Apartment media uploaded successfully',
+    status: 200,
+    description: 'Apartment media updated successfully',
   })
   @ApiResponse({
     status: 400,
