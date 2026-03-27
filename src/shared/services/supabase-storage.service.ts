@@ -8,10 +8,13 @@ export class SupabaseStorageService {
   private readonly logger = new Logger(SupabaseStorageService.name);
   private readonly supabaseClient: SupabaseClient;
   private readonly supabaseEnabled: boolean;
+  private readonly chatImagesBucket: string;
+  private readonly chatImagesFallbackBucket = 'apartment-cooperation';
 
   constructor(private readonly configService: ConfigService) {
     const supabaseConfig = this.configService.get('supabase');
     this.supabaseEnabled = supabaseConfig?.enabled || false;
+    this.chatImagesBucket = supabaseConfig?.chatImagesBucket || 'chat-images';
 
     if (this.supabaseEnabled) {
       this.supabaseClient = createClient(
@@ -19,6 +22,26 @@ export class SupabaseStorageService {
         supabaseConfig.anonKey,
       );
       this.logger.log('Supabase Storage initialized');
+    }
+  }
+
+  async uploadChatImage(path: string, file: any): Promise<string> {
+    try {
+      return await this.uploadFile(this.chatImagesBucket, path, file);
+    } catch (error) {
+      if (
+        this.isBucketNotFoundError(error) &&
+        this.chatImagesBucket !== this.chatImagesFallbackBucket
+      ) {
+        const fallbackPath = `chat/${path}`;
+        this.logger.warn(
+          `Bucket ${this.chatImagesBucket} not found. Falling back to ${this.chatImagesFallbackBucket}/${fallbackPath}`,
+        );
+
+        return this.uploadFile(this.chatImagesFallbackBucket, fallbackPath, file);
+      }
+
+      throw error;
     }
   }
 
@@ -167,5 +190,13 @@ export class SupabaseStorageService {
     } catch (error) {
       this.logger.error(`Error deleting file: ${error.message}`, error.stack);
     }
+  }
+
+  private isBucketNotFoundError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    return error.message.toLowerCase().includes('bucket not found');
   }
 }

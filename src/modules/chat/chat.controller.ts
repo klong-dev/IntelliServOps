@@ -102,11 +102,7 @@ export class ChatController {
           ? 'jpg'
           : files[i].mimetype.split('/')[1];
       const path = `${userId}/${timestamp}-${i}.${ext}`;
-      const url = await this.storageService.uploadFile(
-        'chat-images',
-        path,
-        files[i],
-      );
+      const url = await this.storageService.uploadChatImage(path, files[i]);
       urls.push(url);
     }
 
