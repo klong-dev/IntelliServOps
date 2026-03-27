@@ -72,7 +72,12 @@ export class ConversationResponseDto {
   @ApiPropertyOptional({ description: 'Guest email' })
   guestEmail?: string;
 
-  @ApiProperty({ enum: ['active', 'closed', 'archived'], example: 'active' })
+  @ApiProperty({
+    enum: ['active', 'closed', 'archived'],
+    example: 'active',
+    description:
+      '`closed` chi ton tai voi du lieu cu; luong hien tai su dung `active` va `archived`.',
+  })
   status: string;
 
   @ApiPropertyOptional({ description: 'Last message timestamp (ISO)' })

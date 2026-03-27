@@ -3,7 +3,7 @@
 > **Namespace:** `/chat`  
 > **Protocol:** Socket.IO v4  
 > **Base URL:** `ws://<host>:<port>/chat`  
-> **Cập nhật:** 2026-03-23
+> **Cập nhật:** 2026-03-27
 
 ---
 
@@ -111,7 +111,7 @@ socket.emit('chat:send_message', {
 
 ### `chat:create_conversation`
 
-Tạo cuộc trò chuyện mới. Sau khi tạo, tất cả staff online sẽ nhận được thông báo.
+Tạo hoặc nối tiếp cuộc trò chuyện. Với user đã đăng nhập, hoặc guest có `guestSessionId`, server sẽ ưu tiên trả lại conversation gần nhất chưa bị `archived` thay vì tạo conversation mới.
 
 ```ts
 socket.emit('chat:create_conversation', {
@@ -123,6 +123,10 @@ socket.emit('chat:create_conversation', {
 ```
 
 → Server trả về qua `chat:conversation_created`
+
+Ghi chú:
+- Nếu conversation cũ đang ở trạng thái `closed` từ dữ liệu trước đây, server sẽ tự đưa về `active` và tiếp tục dùng lại cùng `conversationId`.
+- Chỉ khi thật sự tạo conversation mới thì staff mới nhận `chat:new_conversation`.
 
 ---
 
@@ -215,9 +219,9 @@ setInterval(() => socket.emit('chat:heartbeat'), 30_000);
 |---|---|---|
 | `chat:session` | Ngay sau kết nối (guest) | `{ guestSessionId: string }` |
 | `chat:conversation_created` | Sau khi tạo conversation | `ChatConversation` object |
-| `chat:new_conversation` | Staff: có conversation mới | `ChatConversation` object |
+| `chat:new_conversation` | Staff: có conversation mới thật sự | `ChatConversation` object |
 | `chat:new_message` | Có tin nhắn mới trong room | `Message` object *(xem interface ở trên)* |
-| `chat:conversation_updated` | Conversation có tin nhắn mới | `{ conversationId, lastMessageAt, lastMessageText, senderName, senderType }` |
+| `chat:conversation_updated` | Conversation được cập nhật hoặc được nối lại | `{ conversationId, status, lastMessageAt, lastMessageText, senderName, senderType }` |
 | `chat:conversation_data` | Sau khi join conversation | `{ conversation, messages: { data: Message[], meta } }` |
 | `chat:staff_joined` | Staff vào conversation | `{ conversationId, staffName, actorType }` |
 | `chat:user_typing` | Ai đó đang gõ | `{ conversationId, actorType, actorId, fullName }` |
@@ -240,7 +244,7 @@ setInterval(() => socket.emit('chat:heartbeat'), 30_000);
   guestSessionId: string | null;
   guestName: string | null;
   guestEmail: string | null;
-  status: 'active' | 'closed' | 'archived';
+  status: 'active' | 'archived' | 'closed'; // `closed` chỉ còn là dữ liệu cũ/historical
   lastMessageAt: string | null;     // ISO datetime
   lastMessageText: string | null;
   metadata: object | null;
@@ -273,10 +277,8 @@ setInterval(() => socket.emit('chat:heartbeat'), 30_000);
 | `GET` | `/api/v1/chat/conversations` | Danh sách conversations (phân trang) |
 | `GET` | `/api/v1/chat/conversations/:id` | Chi tiết conversation |
 | `GET` | `/api/v1/chat/conversations/:id/messages` | Lịch sử tin nhắn (phân trang, format `Message`) |
-| `POST` | `/api/v1/chat/conversations` | Tạo conversation (thay thế cho socket) |
-| `PATCH` | `/api/v1/chat/conversations/:id/close` | Đóng conversation *(staff only)* |
+| `POST` | `/api/v1/chat/conversations` | Tạo hoặc nối tiếp conversation hiện có (thay thế cho socket) |
 | `PATCH` | `/api/v1/chat/conversations/:id/archive` | Lưu trữ *(staff only)* |
-| `PATCH` | `/api/v1/chat/conversations/:id/reopen` | Mở lại *(staff only)* |
 
 ---
 

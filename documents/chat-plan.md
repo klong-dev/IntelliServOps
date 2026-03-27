@@ -158,7 +158,7 @@ Business logic:
 - `getConversations()` — Paginated list (for staff: all active; for user: own conversations)
 - `getMessages()` — Paginated messages for a conversation
 - `markMessagesRead()` — Mark messages as read
-- `closeConversation()` / `archiveConversation()`
+- `archiveConversation()`
 - `getOnlineStaff()` — Read from Redis
 
 #### [NEW] [chat.controller.ts](file:///c:/Users/user/Desktop/VSCode/NestJS/IntelliRentOps/src/modules/chat/chat.controller.ts)
@@ -166,8 +166,7 @@ Business logic:
 REST API endpoints for history retrieval (the gateway handles real-time):
 - `GET /chat/conversations` — List conversations (staff sees all, user sees own)
 - `GET /chat/conversations/:id/messages` — Paginated message history
-- `POST /chat/conversations` — Create conversation (optional, can also be done via socket)
-- `PATCH /chat/conversations/:id/close` — Close conversation
+- `POST /chat/conversations` — Create or resume conversation (optional, can also be done via socket)
 - `PATCH /chat/conversations/:id/archive` — Archive conversation
 
 #### [NEW] DTOs
