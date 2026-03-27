@@ -20,6 +20,18 @@ export class ChatService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly conversationInclude = {
+    user: {
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        profileImageUrl: true,
+      },
+    },
+    _count: { select: { messages: true } },
+  } as const;
+
   // ============================================================================
   // Conversation Management
   // ============================================================================
@@ -34,7 +46,38 @@ export class ChatService {
     userId?: string,
     senderName?: string,
   ) {
+    const result = await this.createOrReuseConversation(dto, userId, senderName);
+    return result.conversation;
+  }
+
+  async createOrReuseConversation(
+    dto: CreateConversationDto,
+    userId?: string,
+    senderName?: string,
+  ) {
     const guestSessionId = !userId ? dto.guestSessionId || uuidv4() : undefined;
+    const existingConversation = await this.findReusableConversation({
+      userId,
+      guestSessionId,
+    });
+
+    if (existingConversation) {
+      if (existingConversation.status === ConversationStatus.closed) {
+        await this.prisma.chatConversation.update({
+          where: { id: existingConversation.id },
+          data: { status: ConversationStatus.active },
+        });
+      }
+
+      this.logger.log(
+        `Conversation reused: ${existingConversation.id} (${userId ? 'user' : 'guest'})`,
+      );
+
+      return {
+        conversation: await this.getConversation(existingConversation.id),
+        action: 'reused' as const,
+      };
+    }
 
     const conversation = await this.prisma.chatConversation.create({
       data: {
@@ -50,25 +93,17 @@ export class ChatService {
         status: ConversationStatus.active,
         metadata: dto.metadata || undefined,
       },
-      include: {
-        user: userId
-          ? {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-                profileImageUrl: true,
-              },
-            }
-          : false,
-      },
+      select: { id: true },
     });
 
     this.logger.log(
       `Conversation created: ${conversation.id} (${userId ? 'user' : 'guest'})`,
     );
 
-    return conversation;
+    return {
+      conversation: await this.getConversation(conversation.id),
+      action: 'created' as const,
+    };
   }
 
   /**
@@ -112,17 +147,7 @@ export class ChatService {
         orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
         skip,
         take: limit,
-        include: {
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              profileImageUrl: true,
-            },
-          },
-          _count: { select: { messages: true } },
-        },
+        include: this.conversationInclude,
       }),
       this.prisma.chatConversation.count({ where }),
     ]);
@@ -144,17 +169,7 @@ export class ChatService {
   async getConversation(conversationId: string) {
     const conversation = await this.prisma.chatConversation.findUnique({
       where: { id: conversationId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-            profileImageUrl: true,
-          },
-        },
-        _count: { select: { messages: true } },
-      },
+      include: this.conversationInclude,
     });
 
     if (!conversation) {
@@ -187,9 +202,9 @@ export class ChatService {
       throw new NotFoundException('Conversation not found');
     }
 
-    if (conversation.status !== ConversationStatus.active) {
+    if (conversation.status === ConversationStatus.archived) {
       throw new ForbiddenException(
-        'Cannot send message to a closed conversation',
+        'Cannot send message to an archived conversation',
       );
     }
 
@@ -211,6 +226,7 @@ export class ChatService {
       this.prisma.chatConversation.update({
         where: { id: dto.conversationId },
         data: {
+          status: ConversationStatus.active,
           lastMessageAt: new Date(),
           lastMessageText:
             dto.content.length > 100
@@ -221,6 +237,29 @@ export class ChatService {
     ]);
 
     return this.mapToFrontendMessage(message);
+  }
+
+  private async findReusableConversation(options: {
+    userId?: string;
+    guestSessionId?: string;
+  }) {
+    const { userId, guestSessionId } = options;
+
+    if (!userId && !guestSessionId) {
+      return null;
+    }
+
+    return this.prisma.chatConversation.findFirst({
+      where: {
+        status: { not: ConversationStatus.archived },
+        ...(userId ? { userId } : { guestSessionId }),
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        status: true,
+      },
+    });
   }
 
   /**
@@ -317,36 +356,6 @@ export class ChatService {
   // ============================================================================
 
   /**
-   * Close a conversation
-   */
-  async closeConversation(conversationId: string, closedByName?: string) {
-    const conversation = await this.prisma.chatConversation.findUnique({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
-
-    // Create a system message
-    await this.prisma.chatMessage.create({
-      data: {
-        conversationId,
-        senderType: SenderType.system,
-        messageType: MessageType.system,
-        content: closedByName
-          ? `Cuộc trò chuyện đã được đóng bởi ${closedByName}`
-          : 'Cuộc trò chuyện đã được đóng',
-      },
-    });
-
-    return this.prisma.chatConversation.update({
-      where: { id: conversationId },
-      data: { status: ConversationStatus.closed },
-    });
-  }
-
-  /**
    * Archive a conversation
    */
   async archiveConversation(conversationId: string) {
@@ -364,37 +373,4 @@ export class ChatService {
     });
   }
 
-  /**
-   * Reopen a closed conversation
-   */
-  async reopenConversation(conversationId: string, reopenedByName?: string) {
-    const conversation = await this.prisma.chatConversation.findUnique({
-      where: { id: conversationId },
-    });
-
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
-
-    if (conversation.status === ConversationStatus.active) {
-      return conversation;
-    }
-
-    // Create a system message
-    await this.prisma.chatMessage.create({
-      data: {
-        conversationId,
-        senderType: SenderType.system,
-        messageType: MessageType.system,
-        content: reopenedByName
-          ? `Cuộc trò chuyện đã được mở lại bởi ${reopenedByName}`
-          : 'Cuộc trò chuyện đã được mở lại',
-      },
-    });
-
-    return this.prisma.chatConversation.update({
-      where: { id: conversationId },
-      data: { status: ConversationStatus.active },
-    });
-  }
 }

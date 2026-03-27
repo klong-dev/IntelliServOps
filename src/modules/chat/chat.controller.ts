@@ -136,19 +136,20 @@ export class ChatController {
     const isStaff = ['staff', 'operator', 'admin'].includes(user.actorType);
 
     return this.chatService.getConversations(query, {
-      userId: isStaff ? undefined : user.id,
+      userId: isStaff ? undefined : user?.sub || user?.id,
       isStaff,
     });
   }
 
   @Post('conversations')
   @ApiOperation({
-    summary: 'Create a new chat conversation',
-    description: 'REST alternative to socket event chat:create_conversation.',
+    summary: 'Create or resume a chat conversation',
+    description:
+      'REST alternative to socket event chat:create_conversation. Logged-in users and guests with an existing session will reuse their latest non-archived conversation instead of creating a new one.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Conversation created',
+    description: 'Conversation created or resumed',
     type: ConversationResponseDto,
   })
   async createConversation(
@@ -156,7 +157,11 @@ export class ChatController {
     @Body() dto: CreateConversationDto,
   ) {
     const user = req.user;
-    return this.chatService.createConversation(dto, user.id, user.fullName);
+    return this.chatService.createConversation(
+      dto,
+      user?.sub || user?.id,
+      user?.fullName || user?.email,
+    );
   }
 
   @Get('conversations/:id')
@@ -193,21 +198,6 @@ export class ChatController {
   // Conversation Actions (Staff only)
   // ============================================================================
 
-  @Patch('conversations/:id/close')
-  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
-  @ApiOperation({ summary: 'Close a conversation (staff only)' })
-  @ApiParam({ name: 'id', description: 'Conversation UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Conversation closed',
-    type: ConversationResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'Conversation not found' })
-  async closeConversation(@Req() req: any, @Param('id') id: string) {
-    const user = req.user;
-    return this.chatService.closeConversation(id, user.fullName || user.email);
-  }
-
   @Patch('conversations/:id/archive')
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({ summary: 'Archive a conversation (staff only)' })
@@ -220,20 +210,5 @@ export class ChatController {
   @ApiResponse({ status: 404, description: 'Conversation not found' })
   async archiveConversation(@Param('id') id: string) {
     return this.chatService.archiveConversation(id);
-  }
-
-  @Patch('conversations/:id/reopen')
-  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
-  @ApiOperation({ summary: 'Reopen a closed conversation (staff only)' })
-  @ApiParam({ name: 'id', description: 'Conversation UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Conversation reopened',
-    type: ConversationResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'Conversation not found' })
-  async reopenConversation(@Req() req: any, @Param('id') id: string) {
-    const user = req.user;
-    return this.chatService.reopenConversation(id, user.fullName || user.email);
   }
 }

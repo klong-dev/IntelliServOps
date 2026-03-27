@@ -149,7 +149,7 @@ export class ChatGateway
   // ============================================================================
 
   /**
-   * Create a new conversation
+   * Create or resume a conversation
    * Emitted by users or guests to start chatting
    */
   @SubscribeMessage('chat:create_conversation')
@@ -169,11 +169,12 @@ export class ChatGateway
         metadata: data.metadata,
       };
 
-      const conversation = await this.chatService.createConversation(
+      const result = await this.chatService.createOrReuseConversation(
         dto,
         actorType !== SenderType.guest ? actorId : undefined,
         fullName,
       );
+      const { conversation, action } = result;
 
       // Join the conversation room
       const roomId = `conversation:${conversation.id}`;
@@ -182,8 +183,19 @@ export class ChatGateway
       // Emit to the client
       client.emit('chat:conversation_created', conversation);
 
-      // Broadcast to all staff that a new conversation started
-      this.server.to('staff:inbox').emit('chat:new_conversation', conversation);
+      if (action === 'created') {
+        // Broadcast to all staff that a new conversation started
+        this.server.to('staff:inbox').emit('chat:new_conversation', conversation);
+      } else {
+        this.server.to('staff:inbox').emit('chat:conversation_updated', {
+          conversationId: conversation.id,
+          status: conversation.status,
+          lastMessageAt: conversation.lastMessageAt,
+          lastMessageText: conversation.lastMessageText,
+          senderName: fullName,
+          senderType: actorType,
+        });
+      }
 
       return conversation;
     } catch (error) {
