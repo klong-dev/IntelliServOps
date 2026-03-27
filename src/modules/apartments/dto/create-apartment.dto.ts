@@ -11,7 +11,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { FurnishingStatus } from '@prisma/client';
 
 export class CreateApartmentDto {
@@ -90,6 +90,34 @@ export class CreateApartmentDto {
   @ApiPropertyOptional({
     example: ['air_conditioning', 'wifi', 'parking', 'gym'],
     description: 'List of amenities',
+  })
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Fallback for clients that send comma-separated amenities.
+    }
+
+    return trimmed
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
   })
   @IsArray()
   @IsOptional()
