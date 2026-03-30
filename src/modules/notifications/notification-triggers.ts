@@ -294,13 +294,13 @@ export class NotificationTriggers {
   @OnEvent('viewing_request.staff_assigned')
   async onViewingRequestStaffAssigned(payload: {
     staffId: string;
-    contactRequestId: string;
+    contactRequestId?: string;
     appointmentId?: string;
     apartmentId: string;
     requesterName: string;
   }) {
     this.logger.log(
-      `Trigger: viewing_request.staff_assigned -> ${payload.contactRequestId}`,
+      `Trigger: viewing_request.staff_assigned -> ${payload.appointmentId ?? payload.contactRequestId}`,
     );
 
     await this.notifications.createAndPush({
@@ -312,13 +312,16 @@ export class NotificationTriggers {
       message: `${payload.requesterName} vua tao lich xem can ho.`,
       actionUrl: payload.appointmentId
         ? `/viewing-requests/appointments/${payload.appointmentId}`
-        : `/viewing-requests/${payload.contactRequestId}`,
+        : `/viewing-requests`,
       actionLabel: 'Xem chi tiet',
       priority: Priority.high,
       relatedEntityType: payload.appointmentId
         ? 'Appointment'
         : 'ContactRequest',
-      relatedEntityId: payload.appointmentId ?? payload.contactRequestId,
+      relatedEntityId:
+        payload.appointmentId ??
+        payload.contactRequestId ??
+        payload.apartmentId,
     });
   }
 
@@ -363,6 +366,34 @@ export class NotificationTriggers {
       channel: NotificationChannel.push,
       title: 'Lich xem da duoc xac nhan',
       message: 'Nhan vien da xac nhan lich xem can ho cua ban.',
+      actionUrl: `/viewing-requests/appointments/${payload.appointmentId}`,
+      actionLabel: 'Xem lich hen',
+      priority: Priority.high,
+      relatedEntityType: 'Appointment',
+      relatedEntityId: payload.appointmentId,
+    });
+  }
+
+  @OnEvent('viewing_request.denied_by_staff')
+  async onViewingRequestDeniedByStaff(payload: {
+    userId: string;
+    appointmentId: string;
+    apartmentId: string;
+    reason?: string;
+  }) {
+    this.logger.log(
+      `Trigger: viewing_request.denied_by_staff -> ${payload.appointmentId}`,
+    );
+
+    await this.notifications.createAndPush({
+      recipientType: ActorType.user,
+      recipientId: payload.userId,
+      notificationType: NotificationType.warning,
+      channel: NotificationChannel.push,
+      title: 'Lich xem da bi tu choi',
+      message: payload.reason?.trim()
+        ? `Nhan vien da tu choi lich xem: ${payload.reason.trim()}`
+        : 'Nhan vien da tu choi lich xem can ho cua ban.',
       actionUrl: `/viewing-requests/appointments/${payload.appointmentId}`,
       actionLabel: 'Xem lich hen',
       priority: Priority.high,
