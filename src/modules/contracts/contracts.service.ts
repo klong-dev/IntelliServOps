@@ -11,6 +11,7 @@ import {
   UpdateContractDto,
   UploadContractPdfDto,
   CancelContractDto,
+  AddContractMemberDto,
 } from './dto';
 import {
   ContractStatus,
@@ -19,14 +20,17 @@ import {
   MemberStatus,
   PartnerCooperationContractStatus,
   UserApartmentStatus,
+  ReservationStatus,
   InvoiceStatus,
   InvoiceType,
   PaymentMethodType,
+  MemberType,
   Prisma,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { ApartmentsService } from '../apartments/apartments.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ContractPdfData, ContractPdfService } from './contract-pdf.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -48,7 +52,142 @@ export class ContractsService {
     private readonly prisma: PrismaService,
     private readonly apartmentsService: ApartmentsService,
     private readonly notificationsService: NotificationsService,
+    private readonly contractPdfService: ContractPdfService,
   ) {}
+
+  private formatDate(d: Date): string {
+    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1)
+      .toString()
+      .padStart(2, '0')}/${d.getFullYear()}`;
+  }
+
+  private formatCurrency(amount: Prisma.Decimal | number | null | undefined) {
+    if (amount === null || amount === undefined) {
+      return undefined;
+    }
+    const num =
+      typeof amount === 'object' && 'toNumber' in amount
+        ? amount.toNumber()
+        : Number(amount);
+    if (!Number.isFinite(num)) {
+      return undefined;
+    }
+    return num.toLocaleString('vi-VN');
+  }
+
+  async regenerateContractPdf(contractId: string): Promise<void> {
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        startDate: true,
+        endDate: true,
+        monthlyRent: true,
+        depositAmount: true,
+        paymentDueDay: true,
+        paymentMethod: true,
+        specialConditions: true,
+        landlordSignature: true,
+        tenantSignature: true,
+        apartment: {
+          select: {
+            apartmentNumber: true,
+            buildingName: true,
+            totalArea: true,
+            usableArea: true,
+            numberOfBedrooms: true,
+            numberOfBathrooms: true,
+          },
+        },
+        members: {
+          where: { status: MemberStatus.active },
+          select: {
+            memberType: true,
+            isPrimaryContact: true,
+            user: {
+              select: {
+                fullName: true,
+                phone: true,
+                email: true,
+                identity: {
+                  select: {
+                    nationalId: true,
+                    issueDate: true,
+                    address: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    const members = contract.members;
+    const primaryMember =
+      members.find((m) => m.memberType === 'primary' || m.isPrimaryContact) ||
+      members[0];
+
+    const apartmentAddress = [
+      contract.apartment?.buildingName,
+      contract.apartment?.apartmentNumber,
+    ]
+      .filter(Boolean)
+      .join(' - ');
+
+    const tenantMembers = members.map((member) => ({
+      fullName: member.user.fullName || undefined,
+      idNumber: member.user.identity?.nationalId || undefined,
+      idIssueDate: member.user.identity?.issueDate || undefined,
+      address: member.user.identity?.address || undefined,
+      phone: member.user.phone || undefined,
+      email: member.user.email || undefined,
+      memberType: member.memberType,
+    }));
+
+    const pdfData: ContractPdfData = {
+      contractNumber: contract.contractNumber,
+      tenantName: primaryMember?.user.fullName || undefined,
+      tenantIdNumber: primaryMember?.user.identity?.nationalId || undefined,
+      tenantIdIssueDate: primaryMember?.user.identity?.issueDate || undefined,
+      tenantAddress: primaryMember?.user.identity?.address || undefined,
+      tenantPhone: primaryMember?.user.phone || undefined,
+      tenantEmail: primaryMember?.user.email || undefined,
+      tenantMembers,
+      apartmentAddress: apartmentAddress || undefined,
+      apartmentNumber: contract.apartment?.apartmentNumber || undefined,
+      apartmentArea: contract.apartment?.totalArea?.toString() || undefined,
+      apartmentUsableArea:
+        contract.apartment?.usableArea?.toString() || undefined,
+      apartmentBedrooms: contract.apartment?.numberOfBedrooms || undefined,
+      apartmentBathrooms: contract.apartment?.numberOfBathrooms || undefined,
+      startDate: this.formatDate(contract.startDate),
+      endDate: this.formatDate(contract.endDate),
+      monthlyRent: this.formatCurrency(contract.monthlyRent),
+      depositAmount: this.formatCurrency(contract.depositAmount),
+      paymentDueDay: contract.paymentDueDay,
+      paymentMethod: contract.paymentMethod,
+      specialConditions: contract.specialConditions || undefined,
+      landlordSignature: contract.landlordSignature
+        ? Buffer.from(contract.landlordSignature)
+        : null,
+      tenantSignature: contract.tenantSignature
+        ? Buffer.from(contract.tenantSignature)
+        : null,
+    };
+
+    const pdfBuffer = await this.contractPdfService.generateContractPdf(pdfData);
+
+    await this.prisma.rentalContract.update({
+      where: { id: contractId },
+      data: { contractPdfData: new Uint8Array(pdfBuffer) },
+    });
+  }
 
   private async notifySafely(params: {
     recipientType: ActorType;
@@ -243,6 +382,11 @@ export class ContractsService {
                 fullName: true,
                 email: true,
                 phone: true,
+                identity: {
+                  select: {
+                    nationalId: true,
+                  },
+                },
               },
             },
           },
@@ -286,9 +430,20 @@ export class ContractsService {
       contract as any;
 
     const pdfToken = contractPdfData ? this.generatePdfToken(id) : null;
+    const membersWithNationalId = (rest.members ?? []).map((member: any) => ({
+      ...member,
+      user: {
+        id: member.user.id,
+        fullName: member.user.fullName,
+        email: member.user.email,
+        phone: member.user.phone,
+        nationalId: member.user.identity?.nationalId || null,
+      },
+    }));
 
     return {
       ...rest,
+      members: membersWithNationalId,
       hasPdf: !!contractPdfData,
       pdfUrl: `/contracts/${id}/pdf`,
       publicPdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
@@ -378,7 +533,7 @@ export class ContractsService {
       contractPdfData: new Uint8Array(contractPdf.buffer),
       status: ContractStatus.signed,
     };
-    // lo lo
+
     if (body?.signedDate) {
       updateData.signedDate = new Date(body.signedDate);
     }
@@ -390,6 +545,14 @@ export class ContractsService {
     await this.prisma.rentalContract.update({
       where: { id },
       data: updateData,
+    });
+
+    await this.prisma.reservation.updateMany({
+      where: { createdContractId: id },
+      data: {
+        status: ReservationStatus.confirmed,
+        cancelReason: null,
+      },
     });
 
     const depositInvoice =
@@ -892,9 +1055,9 @@ export class ContractsService {
     const terminatedAt = new Date();
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.reservation.update({
+      await tx.reservation.updateMany({
         where: { createdContractId: id },
-        data: { status: 'cancelled' },
+        data: { status: ReservationStatus.cancelled },
       });
 
       await tx.rentalContract.update({
@@ -927,6 +1090,99 @@ export class ContractsService {
     });
 
     return await this.findOne(id, currentUser);
+  }
+
+  async addMemberByNationalId(
+    contractId: string,
+    body: AddContractMemberDto,
+    currentUser: JwtPayload,
+  ) {
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        status: true,
+        members: {
+          select: {
+            userId: true,
+            memberType: true,
+            isPrimaryContact: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (
+      contract.status === ContractStatus.signed ||
+      contract.status === ContractStatus.active ||
+      contract.status === ContractStatus.terminated ||
+      contract.status === ContractStatus.expired
+    ) {
+      throw new ConflictException('Cannot add members after contract is signed');
+    }
+
+    if (currentUser.actorType === 'user') {
+      const hasPermission = contract.members.some(
+        (member) => member.userId === currentUser.sub,
+      );
+      if (!hasPermission) {
+        throw new NotFoundException('Contract not found');
+      }
+    }
+
+    const normalizedNationalId = body.nationalId.trim();
+    if (!normalizedNationalId) {
+      throw new BadRequestException('nationalId is required');
+    }
+
+    const identity = await this.prisma.userIdentity.findFirst({
+      where: {
+        nationalId: normalizedNationalId,
+        isVerified: true,
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            isActive: true,
+            isVerified: true,
+          },
+        },
+      },
+    });
+
+    if (!identity || !identity.user.isActive || !identity.user.isVerified) {
+      throw new BadRequestException(
+        'No active verified user found for this CCCD number',
+      );
+    }
+
+    const existedMember = contract.members.some(
+      (member) => member.userId === identity.userId,
+    );
+    if (existedMember) {
+      throw new ConflictException('This user is already a contract member');
+    }
+
+    await this.prisma.userContractMember.create({
+      data: {
+        userId: identity.userId,
+        rentalContractId: contractId,
+        memberType: body.memberType ?? MemberType.co_tenant,
+        isPrimaryContact: body.isPrimaryContact ?? false,
+        sharePercentage: body.sharePercentage,
+        status: MemberStatus.active,
+      },
+    });
+
+    await this.regenerateContractPdf(contractId);
+
+    return this.findOne(contractId, currentUser);
   }
 
   private async generateContractNumber(): Promise<string> {

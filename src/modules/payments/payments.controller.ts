@@ -23,11 +23,13 @@ import {
   PaymentCreatedDto,
   PayOSPaymentLinkCreatedDto,
 } from './dto';
+import { SimulatePaymentSuccessDto } from './dto/simulate-payment-success.dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { PaymentStatus } from '@prisma/client';
+import type { Webhook } from '@payos/node/lib/resources';
 
 @ApiTags('Payments')
 @ApiBearerAuth('JWT-auth')
@@ -110,6 +112,28 @@ export class PaymentsController {
     return this.paymentsService.createPayOSPayment(createDto, currentUser);
   }
 
+  @Post('invoice/:invoiceId/mock-success')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({
+    summary: 'Simulate successful payment by invoice ID',
+    description:
+      'Bypass PayOS and mark the invoice payment as successful for testing/development flows.',
+  })
+  @ApiJsonResponse(PaymentDetailDto, {
+    description: 'Payment marked successful and invoice updated to paid',
+  })
+  simulateSuccessByInvoice(
+    @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+    @Body() body: SimulatePaymentSuccessDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.paymentsService.simulateSuccessByInvoice(
+      invoiceId,
+      currentUser,
+      body.transactionId,
+    );
+  }
+
   @Post(':id/confirm')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Confirm payment' })
@@ -126,7 +150,7 @@ export class PaymentsController {
   @Public()
   @ApiOperation({ summary: 'PayOS webhook' })
   @ApiResponse({ status: 200, description: 'Webhook processed' })
-  async handlePayOSWebhook(@Body() body: any) {
+  async handlePayOSWebhook(@Body() body: Webhook) {
     return this.paymentsService.handlePayOSWebhook(body);
   }
 }

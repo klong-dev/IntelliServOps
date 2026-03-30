@@ -8,6 +8,53 @@ import type { JwtPayload } from '../auth/auth.service';
 export class InvoicesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly invoiceContractSelect = {
+    id: true,
+    contractNumber: true,
+    startDate: true,
+    endDate: true,
+    monthlyRent: true,
+    depositAmount: true,
+    paymentDueDay: true,
+    paymentMethod: true,
+    status: true,
+    signedDate: true,
+    contractDocumentUrl: true,
+    contractTerms: true,
+    specialConditions: true,
+    terminationDate: true,
+    terminationReason: true,
+    earlyTerminationFee: true,
+    createdAt: true,
+    updatedAt: true,
+    apartment: {
+      select: {
+        id: true,
+        apartmentNumber: true,
+        wardCode: true,
+      },
+    },
+    members: {
+      select: {
+        memberType: true,
+        isPrimaryContact: true,
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+      },
+    },
+    createdByStaff: {
+      select: {
+        id: true,
+        fullName: true,
+      },
+    },
+  } as const;
+
   async findAll(currentUser: JwtPayload, status?: InvoiceStatus) {
     const where: Prisma.InvoiceWhereInput = {};
 
@@ -22,7 +69,7 @@ export class InvoicesService {
       };
     }
 
-    return this.prisma.invoice.findMany({
+    const invoices = await this.prisma.invoice.findMany({
       where,
       select: {
         id: true,
@@ -35,20 +82,16 @@ export class InvoicesService {
         billingPeriodEnd: true,
         createdAt: true,
         rentalContract: {
-          select: {
-            id: true,
-            contractNumber: true,
-            apartment: {
-              select: {
-                apartmentNumber: true,
-                wardCode: true,
-              },
-            },
-          },
+          select: this.invoiceContractSelect,
         },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return invoices.map((invoice) => ({
+      ...invoice,
+      contract: invoice.rentalContract,
+    }));
   }
 
   async findOne(id: string, currentUser: JwtPayload) {
@@ -56,19 +99,7 @@ export class InvoicesService {
       where: { id },
       include: {
         rentalContract: {
-          include: {
-            apartment: {
-              select: {
-                apartmentNumber: true,
-                wardCode: true,
-              },
-            },
-            members: {
-              include: {
-                user: { select: { id: true, fullName: true, email: true } },
-              },
-            },
-          },
+          select: this.invoiceContractSelect,
         },
         payments: {
           select: {
@@ -96,7 +127,10 @@ export class InvoicesService {
       }
     }
 
-    return invoice;
+    return {
+      ...invoice,
+      contract: invoice.rentalContract,
+    };
   }
 
   async create(createDto: CreateInvoiceDto, _currentUser: JwtPayload) {

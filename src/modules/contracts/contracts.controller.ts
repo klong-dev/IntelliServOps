@@ -34,6 +34,7 @@ import {
   ContractDetailDto,
   UploadContractPdfDto,
   CancelContractDto,
+  AddContractMemberDto,
   SignCooperationContractDto,
   SignCooperationContractResultDto,
   CancelCooperationContractDto,
@@ -313,5 +314,26 @@ export class ContractsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.contractsService.cancelByUser(id, body, currentUser);
+  }
+
+  @Post(':id/members')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({
+    summary: 'Add contract member by CCCD',
+    description:
+      'Add a verified user into a draft/pending contract by CCCD number and regenerate contract PDF. Signed contracts cannot add members.',
+  })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Contract member added successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid or unverified CCCD' })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({ status: 409, description: 'Contract cannot add members' })
+  async addMemberByNationalId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: AddContractMemberDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.addMemberByNationalId(id, body, currentUser);
   }
 }
