@@ -7,17 +7,13 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CreateUserViewingRequestDto, MyViewingRequestsQueryDto } from './dto';
+import { StaffAcceptViewingRequestDto } from './dto/staff-accept-viewing-request.dto';
+import { StaffDenyViewingRequestDto } from './dto/staff-deny-viewing-request.dto';
 import {
-  CreateViewingRequestDto,
-  CreateAppointmentDto,
-  CreateUserViewingRequestDto,
-  MyViewingRequestsQueryDto,
-} from './dto';
-import {
-  ContactRequestStatus,
   AppointmentStatus,
   PreferredContactMethod,
-  ContactSource,
+  Prisma,
   Staff,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
@@ -30,107 +26,8 @@ export class ViewingRequestsService {
   ) {}
 
   /**
-   * Guest submits a viewing request for an apartment.
-   * Auto-assigns the closest Staff based on district/city matching.
-   */
-  async create(createDto: CreateViewingRequestDto) {
-    // Verify apartment exists and is available
-    const apartment = await this.prisma.apartment.findUnique({
-      where: { id: createDto.apartmentId },
-      select: {
-        id: true,
-        apartmentNumber: true,
-        status: true,
-      },
-    });
-
-    if (!apartment) {
-      throw new NotFoundException('Apartment not found');
-    }
-
-    if (apartment.status !== 'available') {
-      throw new BadRequestException('Apartment is not available for viewing');
-    }
-
-    // Find or create guest
-    let guest = await this.prisma.guest.findUnique({
-      where: { email: createDto.email },
-    });
-
-    if (!guest) {
-      guest = await this.prisma.guest.create({
-        data: {
-          email: createDto.email,
-          phone: createDto.phone,
-          fullName: createDto.fullName,
-          preferredContactMethod: PreferredContactMethod.phone,
-        },
-      });
-    }
-
-    // Find active staff (location-based matching removed after address schema refactor)
-
-    const assignedStaff = this.assignStaff(await this.findBestMatchingStaff());
-    // Create contact request
-    const contactRequest = await this.prisma.contactRequest.create({
-      data: {
-        guest: { connect: { id: guest.id } },
-        apartment: { connect: { id: createDto.apartmentId } },
-        fullName: createDto.fullName,
-        email: createDto.email,
-        phone: createDto.phone,
-        preferredMoveInDate: createDto.preferredMoveInDate
-          ? new Date(createDto.preferredMoveInDate)
-          : undefined,
-        message: createDto.message,
-        numberOfOccupants: createDto.numberOfOccupants,
-        preferredContactTime: createDto.preferredContactTime,
-        preferredContactMethod: PreferredContactMethod.phone,
-        source: ContactSource.website,
-        status: ContactRequestStatus.new,
-      },
-      select: {
-        id: true,
-        fullName: true,
-        phone: true,
-        email: true,
-        status: true,
-        apartment: {
-          select: {
-            apartmentNumber: true,
-            wardCode: true,
-          },
-        },
-      },
-    });
-
-    if (assignedStaff) {
-      this.eventEmitter.emit('viewing_request.staff_assigned', {
-        staffId: assignedStaff.id,
-        contactRequestId: contactRequest.id,
-        apartmentId: createDto.apartmentId,
-        requesterName: createDto.fullName,
-      });
-    }
-
-    return {
-      ...contactRequest,
-      assignedStaff: assignedStaff
-        ? {
-            id: assignedStaff.id,
-            fullName: assignedStaff.fullName,
-            phone: assignedStaff.phone,
-          }
-        : null,
-      message: assignedStaff
-        ? 'Request submitted. Staff will contact you soon.'
-        : 'Request submitted. Our team will contact you soon.',
-    };
-  }
-
-  /**
    * Authenticated user books a viewing appointment.
-   * Flow: validate apartment + user profile, check slot, create contact request and appointment.
+   * Flow: validate apartment + user profile, check slot, and create appointment.
    */
   async createUserViewingBooking(
     createDto: CreateUserViewingRequestDto,
@@ -165,8 +62,6 @@ export class ViewingRequestsService {
         'User phone number is required to book a viewing appointment',
       );
     }
-    const userPhone = user.phone;
-
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: createDto.apartmentId },
       select: {
@@ -186,7 +81,9 @@ export class ViewingRequestsService {
       throw new BadRequestException('Apartment is not available for viewing');
     }
 
-    const assignedStaff = this.assignStaff(await this.findBestMatchingStaff());
+    const assignedStaff = this.assignStaff(
+      await this.findBestMatchingStaff(appointmentTime, 30),
+    );
     if (!assignedStaff) {
       throw new BadRequestException('No active staff available to assign');
     }
@@ -211,37 +108,17 @@ export class ViewingRequestsService {
         guest = await tx.guest.create({
           data: {
             email: user.email,
-            phone: userPhone,
+            phone: user.phone,
             fullName: user.fullName,
             preferredContactMethod: PreferredContactMethod.phone,
           },
         });
       }
 
-      const contactRequest = await tx.contactRequest.create({
-        data: {
-          guest: { connect: { id: guest.id } },
-          apartment: { connect: { id: apartment.id } },
-          fullName: user.fullName,
-          email: user.email,
-          phone: userPhone,
-          message: createDto.note,
-          notes: createDto.note,
-          preferredContactMethod: PreferredContactMethod.phone,
-          source: ContactSource.mobile_app,
-          status: ContactRequestStatus.scheduled,
-          firstContactedAt: new Date(),
-        },
-        select: {
-          id: true,
-        },
-      });
-
       const appointment = await tx.appointment.create({
         data: {
           guest: { connect: { id: guest.id } },
           apartment: { connect: { id: apartment.id } },
-          contactRequest: { connect: { id: contactRequest.id } },
           assignedStaff: { connect: { id: assignedStaff.id } },
           appointmentDate,
           appointmentTime,
@@ -258,7 +135,6 @@ export class ViewingRequestsService {
       });
 
       return {
-        contactRequestId: contactRequest.id,
         appointmentId: appointment.id,
         apartmentId: apartment.id,
         apartmentNumber: apartment.apartmentNumber,
@@ -276,7 +152,6 @@ export class ViewingRequestsService {
 
     this.eventEmitter.emit('viewing_request.staff_assigned', {
       staffId: result.assignedStaff.id,
-      contactRequestId: result.contactRequestId,
       appointmentId: result.appointmentId,
       apartmentId: result.apartmentId,
       requesterName: user.fullName,
@@ -339,15 +214,6 @@ export class ViewingRequestsService {
               phone: true,
             },
           },
-          contactRequest: {
-            select: {
-              id: true,
-              status: true,
-              message: true,
-              notes: true,
-              receivedAt: true,
-            },
-          },
         },
         orderBy: {
           appointmentTime: 'desc',
@@ -363,11 +229,10 @@ export class ViewingRequestsService {
       appointmentAt: appointment.appointmentTime,
       durationMinutes: appointment.durationMinutes,
       status: appointment.status,
-      note: appointment.guestNotes ?? appointment.contactRequest?.notes ?? null,
+      note: appointment.guestNotes ?? null,
       cancelledAt: appointment.cancelledAt,
       apartment: appointment.apartment,
       assignedStaff: appointment.assignedStaff,
-      contactRequest: appointment.contactRequest,
       createdAt: appointment.createdAt,
     }));
 
@@ -381,145 +246,49 @@ export class ViewingRequestsService {
   }
 
   /**
-   * Get viewing requests assigned to the current staff.
-   * Matches based on staff's working district/city.
+   * Get appointments assigned to the current staff.
    */
   async getMyAssigned(currentUser: JwtPayload) {
-    // Get staff's location
     const staff = await this.prisma.staff.findUnique({
       where: { id: currentUser.sub },
-      select: { workingCity: true, workingDistrict: true },
+      select: { id: true },
     });
 
     if (!staff) {
       throw new NotFoundException('Staff not found');
     }
 
-    // Find contact requests to be handled by staff
-    const where: any = {
-      status: {
-        in: [ContactRequestStatus.new, ContactRequestStatus.contacted],
-      },
-      apartmentId: { not: null },
-    };
-
-    return this.prisma.contactRequest.findMany({
-      where,
-      select: {
-        id: true,
-        fullName: true,
-        phone: true,
-        email: true,
-        preferredContactTime: true,
-        message: true,
-        status: true,
-        receivedAt: true,
-        apartment: {
-          select: {
-            id: true,
-            apartmentNumber: true,
-            wardCode: true,
-          },
+    return this.prisma.appointment.findMany({
+      where: {
+        assignedStaffId: currentUser.sub,
+        status: {
+          in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
         },
-      },
-      orderBy: { receivedAt: 'desc' },
-    });
-  }
-
-  /**
-   * Staff creates appointment from viewing request.
-   * Checks slot limit before creating.
-   */
-  async createAppointment(
-    contactRequestId: string,
-    createDto: CreateAppointmentDto,
-    currentUser: JwtPayload,
-  ) {
-    // Get contact request with apartment details
-    const contactRequest = await this.prisma.contactRequest.findUnique({
-      where: { id: contactRequestId },
-      include: {
-        apartment: {
-          select: {
-            id: true,
-            maxConcurrentViewings: true,
-            buildingName: true,
-          },
-        },
-        guest: { select: { id: true } },
-      },
-    });
-
-    if (!contactRequest) {
-      throw new NotFoundException('Contact request not found');
-    }
-
-    if (!contactRequest.apartment) {
-      throw new BadRequestException(
-        'Contact request has no associated apartment',
-      );
-    }
-
-    // Parse appointment datetime
-    const appointmentDate = new Date(createDto.appointmentDate);
-    const [hours, minutes] = createDto.appointmentTime.split(':').map(Number);
-    const appointmentTime = new Date(createDto.appointmentDate);
-    appointmentTime.setHours(hours, minutes, 0, 0);
-
-    // Check slot limit for this time slot
-    const slotLimit = contactRequest.apartment.maxConcurrentViewings;
-    await this.checkSlotAvailability(
-      contactRequest.apartment.id,
-      contactRequest.apartment.buildingName,
-      appointmentTime,
-      createDto.durationMinutes || 30,
-      slotLimit,
-    );
-
-    // Create appointment
-    const appointment = await this.prisma.appointment.create({
-      data: {
-        apartment: { connect: { id: contactRequest.apartment.id } },
-        contactRequest: { connect: { id: contactRequestId } },
-        assignedStaff: { connect: { id: currentUser.sub } },
-        ...(contactRequest.guest && {
-          guest: { connect: { id: contactRequest.guest.id } },
-        }),
-        appointmentDate,
-        appointmentTime,
-        durationMinutes: createDto.durationMinutes || 30,
-        meetingLocation: createDto.meetingLocation,
-        staffNotes: createDto.staffNotes,
-        status: AppointmentStatus.scheduled,
       },
       select: {
         id: true,
-        appointmentDate: true,
         appointmentTime: true,
         durationMinutes: true,
         status: true,
+        guestNotes: true,
+        guest: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+            email: true,
+          },
+        },
         apartment: {
           select: {
+            id: true,
             apartmentNumber: true,
             wardCode: true,
           },
         },
-        assignedStaff: {
-          select: { fullName: true, phone: true },
-        },
       },
+      orderBy: { appointmentTime: 'asc' },
     });
-
-    // Update contact request status
-    await this.prisma.contactRequest.update({
-      where: { id: contactRequestId },
-      data: {
-        status: ContactRequestStatus.scheduled,
-        firstContactedAt: new Date(),
-      },
-    });
-
-    return appointment;
   }
 
   /**
@@ -591,30 +360,184 @@ export class ViewingRequestsService {
     }
 
     if (appointment.status !== AppointmentStatus.confirmed) {
-      await this.prisma.appointment.update({
+      const confirmedAppointment = await this.prisma.appointment.update({
         where: { id: appointmentId },
         data: { status: AppointmentStatus.confirmed },
+        select: {
+          id: true,
+          guestId: true,
+          apartmentId: true,
+          assignedStaffId: true,
+          appointmentDate: true,
+          appointmentTime: true,
+          durationMinutes: true,
+          meetingLocation: true,
+          type: true,
+          status: true,
+          guestNotes: true,
+          staffNotes: true,
+          outcome: true,
+          followupRequired: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
-    }
 
-    if (appointment.guest?.email) {
-      const user = await this.prisma.user.findUnique({
-        where: { email: appointment.guest.email },
-        select: { id: true },
-      });
-
-      if (user) {
-        this.eventEmitter.emit('viewing_request.confirmed_by_staff', {
-          userId: user.id,
-          appointmentId,
-          apartmentId: appointment.apartmentId,
+      if (appointment.guest?.email) {
+        const user = await this.prisma.user.findUnique({
+          where: { email: appointment.guest.email },
+          select: { id: true },
         });
+
+        if (user) {
+          this.eventEmitter.emit('viewing_request.confirmed_by_staff', {
+            userId: user.id,
+            appointmentId,
+            apartmentId: appointment.apartmentId,
+          });
+        }
       }
+
+      return confirmedAppointment;
     }
 
-    return {
-      message: 'Appointment confirmed successfully.',
-    };
+    return this.prisma.appointment.findUniqueOrThrow({
+      where: { id: appointmentId },
+      select: {
+        id: true,
+        guestId: true,
+        apartmentId: true,
+        assignedStaffId: true,
+        appointmentDate: true,
+        appointmentTime: true,
+        durationMinutes: true,
+        meetingLocation: true,
+        type: true,
+        status: true,
+        guestNotes: true,
+        staffNotes: true,
+        outcome: true,
+        followupRequired: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async acceptViewingRequest(
+    dto: StaffAcceptViewingRequestDto,
+    currentUser: JwtPayload,
+  ) {
+    return this.confirmAppointment(dto.appointmentId, currentUser);
+  }
+
+  async denyViewingRequest(
+    dto: StaffDenyViewingRequestDto,
+    currentUser: JwtPayload,
+  ) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: dto.appointmentId },
+      select: {
+        id: true,
+        assignedStaffId: true,
+        status: true,
+        apartmentId: true,
+        guest: {
+          select: {
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    if (appointment.assignedStaffId !== currentUser.sub) {
+      throw new ForbiddenException('You are not assigned to this appointment');
+    }
+
+    if (
+      appointment.status === AppointmentStatus.confirmed ||
+      appointment.status === AppointmentStatus.completed ||
+      appointment.status === AppointmentStatus.no_show
+    ) {
+      throw new BadRequestException(
+        `Cannot deny appointment with status '${appointment.status}'`,
+      );
+    }
+
+    let deniedAppointment;
+
+    if (appointment.status !== AppointmentStatus.cancelled) {
+      deniedAppointment = await this.prisma.appointment.update({
+        where: { id: dto.appointmentId },
+        data: {
+          status: AppointmentStatus.cancelled,
+          cancelledAt: new Date(),
+          cancellationReason: dto.reason?.trim() || 'Denied by assigned staff',
+        },
+        select: {
+          id: true,
+          guestId: true,
+          apartmentId: true,
+          assignedStaffId: true,
+          appointmentDate: true,
+          appointmentTime: true,
+          durationMinutes: true,
+          meetingLocation: true,
+          type: true,
+          status: true,
+          guestNotes: true,
+          staffNotes: true,
+          outcome: true,
+          followupRequired: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (appointment.guest?.email) {
+        const user = await this.prisma.user.findUnique({
+          where: { email: appointment.guest.email },
+          select: { id: true },
+        });
+
+        if (user) {
+          this.eventEmitter.emit('viewing_request.denied_by_staff', {
+            userId: user.id,
+            appointmentId: appointment.id,
+            apartmentId: appointment.apartmentId,
+            reason: dto.reason,
+          });
+        }
+      }
+
+      return deniedAppointment;
+    }
+
+    return this.prisma.appointment.findUniqueOrThrow({
+      where: { id: dto.appointmentId },
+      select: {
+        id: true,
+        guestId: true,
+        apartmentId: true,
+        assignedStaffId: true,
+        appointmentDate: true,
+        appointmentTime: true,
+        durationMinutes: true,
+        meetingLocation: true,
+        type: true,
+        status: true,
+        guestNotes: true,
+        staffNotes: true,
+        outcome: true,
+        followupRequired: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   /**
@@ -639,19 +562,55 @@ export class ViewingRequestsService {
     }
 
     if (appointment.status !== AppointmentStatus.completed) {
-      await this.prisma.appointment.update({
+      return this.prisma.appointment.update({
         where: { id: appointmentId },
         data: { status: AppointmentStatus.completed },
+        select: {
+          id: true,
+          guestId: true,
+          apartmentId: true,
+          assignedStaffId: true,
+          appointmentDate: true,
+          appointmentTime: true,
+          durationMinutes: true,
+          meetingLocation: true,
+          type: true,
+          status: true,
+          guestNotes: true,
+          staffNotes: true,
+          outcome: true,
+          followupRequired: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
     }
 
-    return {
-      message: 'Done job confirmed. Appointment marked as completed.',
-    };
+    return this.prisma.appointment.findUniqueOrThrow({
+      where: { id: appointmentId },
+      select: {
+        id: true,
+        guestId: true,
+        apartmentId: true,
+        assignedStaffId: true,
+        appointmentDate: true,
+        appointmentTime: true,
+        durationMinutes: true,
+        meetingLocation: true,
+        type: true,
+        status: true,
+        guestNotes: true,
+        staffNotes: true,
+        outcome: true,
+        followupRequired: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   /**
-   * Staff or user cancels an appointment.
+   * Assigned staff or appointment owner user cancels an appointment.
    */
   async cancelAppointment(appointmentId: string, currentUser: JwtPayload) {
     const appointment = await this.prisma.appointment.findUnique({
@@ -698,11 +657,33 @@ export class ViewingRequestsService {
     }
 
     if (appointment.status !== AppointmentStatus.cancelled) {
-      await this.prisma.appointment.update({
+      const cancelledAppointment = await this.prisma.appointment.update({
         where: { id: appointmentId },
         data: {
           status: AppointmentStatus.cancelled,
           cancelledAt: new Date(),
+          cancellationReason:
+            currentUser.actorType === 'staff'
+              ? 'Cancelled by assigned staff'
+              : 'Cancelled by user',
+        },
+        select: {
+          id: true,
+          guestId: true,
+          apartmentId: true,
+          assignedStaffId: true,
+          appointmentDate: true,
+          appointmentTime: true,
+          durationMinutes: true,
+          meetingLocation: true,
+          type: true,
+          status: true,
+          guestNotes: true,
+          staffNotes: true,
+          outcome: true,
+          followupRequired: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
 
@@ -712,11 +693,31 @@ export class ViewingRequestsService {
           appointmentId: appointment.id,
         });
       }
+
+      return cancelledAppointment;
     }
 
-    return {
-      message: 'Appointment cancelled successfully.',
-    };
+    return this.prisma.appointment.findUniqueOrThrow({
+      where: { id: appointmentId },
+      select: {
+        id: true,
+        guestId: true,
+        apartmentId: true,
+        assignedStaffId: true,
+        appointmentDate: true,
+        appointmentTime: true,
+        durationMinutes: true,
+        meetingLocation: true,
+        type: true,
+        status: true,
+        guestNotes: true,
+        staffNotes: true,
+        outcome: true,
+        followupRequired: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   getRandomInt = (min: number, max: number): number => {
@@ -734,22 +735,50 @@ export class ViewingRequestsService {
   };
 
   /**
-   * Find available active staff
+   * Find active customer service staff.
+   * If appointment time is provided, exclude only staff that already has
+   * an overlapping confirmed appointment in that time window.
    */
-  private async findBestMatchingStaff() {
-    return await this.prisma.staff.findMany({
-      where: {
-        isActive: true,
-        role: 'customer_service',
-        appointments: {
-          none: {
-            status: {
-              in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
+  private async findBestMatchingStaff(
+    appointmentTime?: Date,
+    durationMinutes = 30,
+  ) {
+    const where: Prisma.StaffWhereInput = {
+      isActive: true,
+      role: 'customer_service',
+    };
+
+    if (appointmentTime) {
+      const slotStart = appointmentTime;
+      const slotEnd = new Date(
+        appointmentTime.getTime() + durationMinutes * 60000,
+      );
+
+      where.appointments = {
+        none: {
+          status: AppointmentStatus.confirmed,
+          OR: [
+            {
+              // Existing confirmed appointment starts during requested slot
+              appointmentTime: { gte: slotStart, lt: slotEnd },
             },
-          },
+            {
+              // Requested slot starts during existing confirmed slot
+              AND: [
+                { appointmentTime: { lte: slotStart } },
+                {
+                  appointmentTime: {
+                    gt: new Date(slotStart.getTime() - durationMinutes * 60000),
+                  },
+                },
+              ],
+            },
+          ],
         },
-      },
-    });
+      };
+    }
+
+    return await this.prisma.staff.findMany({ where });
   }
 
   /**
@@ -769,14 +798,9 @@ export class ViewingRequestsService {
     );
 
     // Build filter for same building
-    const apartmentFilter: any = {};
-
-    if (buildingName) {
-      apartmentFilter.buildingName = buildingName;
-    } else {
-      // No building grouping, check only the specific apartment
-      apartmentFilter.id = apartmentId;
-    }
+    const apartmentFilter: Prisma.ApartmentWhereInput = buildingName
+      ? { buildingName }
+      : { id: apartmentId };
 
     // Count overlapping appointments
     const existingCount = await this.prisma.appointment.count({
