@@ -6,9 +6,14 @@ import {
   IsBoolean,
   IsDateString,
   MaxLength,
+  IsIn,
+  IsInt,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IoTDeviceType } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { MQTT_CONTROL_TYPES } from '../iot-mqtt.types';
 
 export class CreateIoTDeviceDto {
   @ApiProperty({ example: 'Smart Lock - Front Door' })
@@ -77,6 +82,45 @@ export class CreateIoTDeviceDto {
   @ApiPropertyOptional({ description: 'Device configuration JSON' })
   @IsOptional()
   configuration?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    example: 'ESP_A101',
+    description: 'MQTT target device identifier used as topic prefix',
+  })
+  @IsString()
+  @IsOptional()
+  mqttEspId?: string;
+
+  @ApiPropertyOptional({
+    enum: MQTT_CONTROL_TYPES,
+    example: 'door',
+    description:
+      'MQTT control topic for this device. When omitted, generic control falls back from deviceType where possible.',
+  })
+  @IsIn(MQTT_CONTROL_TYPES)
+  @IsOptional()
+  mqttControlType?: (typeof MQTT_CONTROL_TYPES)[number];
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'MQTT relay/channel index appended to the payload',
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  mqttChannelId?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'Optional door-password channel. Defaults to mqttChannelId when omitted.',
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  mqttDoorPasswordChannelId?: number;
 
   @ApiPropertyOptional()
   @IsString()

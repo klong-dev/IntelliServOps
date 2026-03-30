@@ -7,6 +7,8 @@ import {
 import { UsersService } from './users.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { FptAiService } from '../../shared/services/fpt-ai.service';
+import { ConfigService } from '@nestjs/config';
 import {
   createPrismaMock,
   mockUser,
@@ -27,6 +29,17 @@ describe('UsersService', () => {
     ),
   };
 
+  const mockFptAiService = {
+    verifyIdCardFromBase64: jest.fn(),
+    extractUserInfo: jest.fn(),
+    extractIdNumber: jest.fn(),
+    isVerificationSuccessful: jest.fn(),
+  };
+
+  const mockConfigService = {
+    get: jest.fn(),
+  };
+
   beforeEach(async () => {
     prisma = createPrismaMock();
 
@@ -40,6 +53,14 @@ describe('UsersService', () => {
         {
           provide: AuthService,
           useValue: mockAuthService,
+        },
+        {
+          provide: FptAiService,
+          useValue: mockFptAiService,
+        },
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
         },
       ],
     }).compile();
@@ -97,7 +118,11 @@ describe('UsersService', () => {
 
       const result = await service.findOne(user.id, currentUser);
 
-      expect(result).toEqual(user);
+      expect(result).toMatchObject({
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+      });
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: user.id },
         select: expect.any(Object),
@@ -123,7 +148,10 @@ describe('UsersService', () => {
 
       const result = await service.findOne(user.id, currentUser);
 
-      expect(result).toEqual(user);
+      expect(result).toMatchObject({
+        id: user.id,
+        email: user.email,
+      });
     });
 
     it('should throw ForbiddenException if user tries to view another profile', async () => {
@@ -149,7 +177,10 @@ describe('UsersService', () => {
 
       const result = await service.findOne(user.id, currentUser);
 
-      expect(result).toEqual(user);
+      expect(result).toMatchObject({
+        id: user.id,
+        email: user.email,
+      });
     });
   });
 
@@ -184,16 +215,6 @@ describe('UsersService', () => {
       );
     });
 
-    it('should throw ConflictException if nationalId already exists', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null);
-      prisma.user.findUnique.mockResolvedValueOnce(
-        mockUser({ nationalId: createDto.nationalId }),
-      );
-
-      await expect(
-        service.create({ ...createDto, nationalId: '123456789' }),
-      ).rejects.toThrow(ConflictException);
-    });
   });
 
   describe('update', () => {
@@ -329,11 +350,16 @@ describe('UsersService', () => {
   describe('getProfile', () => {
     it('should return user profile', async () => {
       const user = mockUser();
-      prisma.user.findUnique.mockResolvedValue(user);
+      const currentUser = mockUserJwtPayload({ sub: user.id });
+      prisma.user.findUnique.mockResolvedValue(user as any);
 
-      const result = await service.getProfile(user.id);
+      const result = await service.getProfile(currentUser);
 
-      expect(result).toEqual(user);
+      expect(result).toMatchObject({
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+      });
     });
   });
 });

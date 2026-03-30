@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FirebaseService } from './firebase.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
@@ -12,6 +13,9 @@ import { NotFoundException } from '@nestjs/common';
 describe('NotificationsService', () => {
   let service: NotificationsService;
   let prisma: MockPrisma;
+  const firebase = {
+    sendToMultipleDevices: jest.fn().mockResolvedValue([]),
+  };
 
   const mockNotification = (overrides = {}) => ({
     id: 'notif-123',
@@ -30,11 +34,14 @@ describe('NotificationsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    prisma.fcmToken.findMany.mockResolvedValue([] as any);
+    prisma.notification.update.mockResolvedValue({} as any);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: FirebaseService, useValue: firebase },
       ],
     }).compile();
 

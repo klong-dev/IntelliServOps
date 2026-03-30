@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ContractsService } from './contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ApartmentsService } from '../apartments/apartments.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
@@ -21,6 +22,9 @@ describe('ContractsService', () => {
   let service: ContractsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let apartmentsService: Record<string, jest.Mock>;
+  const notificationsService = {
+    createAndPush: jest.fn(),
+  };
 
   const mockContract = (overrides = {}) => ({
     id: 'contract-123',
@@ -39,7 +43,9 @@ describe('ContractsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
-    apartmentsService = {};
+    apartmentsService = {
+      updateStatus: jest.fn(),
+    };
 
 
     const module: TestingModule = await Test.createTestingModule({
@@ -47,6 +53,7 @@ describe('ContractsService', () => {
         ContractsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ApartmentsService, useValue: apartmentsService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 

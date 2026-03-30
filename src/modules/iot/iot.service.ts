@@ -1,23 +1,84 @@
 import {
+  BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ForbiddenException,
-  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateIoTDeviceDto,
-  UpdateIoTDeviceDto,
   CreateUtilityMeterDto,
-  UpdateUtilityMeterDto,
   CreateUtilityReadingDto,
+  UpdateIoTDeviceDto,
+  UpdateUtilityMeterDto,
 } from './dto';
+import { IoTMqttService } from './iot-mqtt.service';
+import {
+  type DeviceMqttControlConfig,
+  type MqttControlType,
+} from './iot-mqtt.types';
 import { IoTStatus, MeterStatus, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 
 @Injectable()
 export class IoTService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ioTMqttService: IoTMqttService,
+  ) {}
+
+  getGatewayStatus() {
+    return this.ioTMqttService.getGatewayStatus();
+  }
+
+  triggerLight(espId: string, id: number, action: string) {
+    const details = this.ioTMqttService.triggerLight(espId, action, id);
+    return {
+      success: true,
+      message: `The lights have been turned ${action}`,
+      details,
+    };
+  }
+
+  triggerAlarm(espId: string, id: number, action: string) {
+    const details = this.ioTMqttService.triggerAlarm(espId, action, id);
+    return {
+      success: true,
+      message: `Alarm has been turned ${action}`,
+      details,
+    };
+  }
+
+  triggerDoor(espId: string, id: number, action: string) {
+    const details = this.ioTMqttService.triggerDoor(espId, action, id);
+    return {
+      success: true,
+      message: `Door has been ${action === 'open' ? 'opened' : 'closed'}`,
+      details,
+    };
+  }
+
+  triggerCurtain(espId: string, id: number, action: string) {
+    const details = this.ioTMqttService.triggerCurtain(espId, action, id);
+    return {
+      success: true,
+      message: `Curtain has been ${action === 'open' ? 'opened' : 'closed'}`,
+      details,
+    };
+  }
+
+  configureDoorPassword(espId: string, id: number, password: string) {
+    const details = this.ioTMqttService.sendDoorPassword(espId, id, password);
+    return {
+      success: true,
+      message: 'Password sent successfully.',
+      details,
+    };
+  }
+
+  runDeviceTestSequence(espId: string, holdMs?: number) {
+    return this.ioTMqttService.runTestSequence(espId, holdMs);
+  }
 
   // ============================================================================
   // IoT Devices
@@ -29,7 +90,7 @@ export class IoTService {
     if (apartmentId) where.apartmentId = apartmentId;
     if (status) where.status = status;
 
-    return this.prisma.ioTDevice.findMany({
+    const devices = await this.prisma.ioTDevice.findMany({
       where,
       select: {
         id: true,
@@ -41,11 +102,12 @@ export class IoTService {
         status: true,
         isControllableByTenant: true,
         lastOnlineAt: true,
+        createdAt: true,
         apartment: {
           select: {
             id: true,
             apartmentNumber: true,
-            wardCode: true,
+            streetAddress: true,
           },
         },
         room: {
@@ -54,17 +116,44 @@ export class IoTService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return devices.map((device) => ({
+      ...device,
+      apartment: this.toApartmentSummary(device.apartment),
+      room: this.toRoomSummary(device.room),
+    }));
   }
 
   async findOneDevice(id: string) {
     const device = await this.prisma.ioTDevice.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        deviceName: true,
+        deviceType: true,
+        brand: true,
+        model: true,
+        serialNumber: true,
+        macAddress: true,
+        locationDescription: true,
+        firmwareVersion: true,
+        status: true,
+        isControllableByTenant: true,
+        lastOnlineAt: true,
+        lastMaintenanceDate: true,
+        nextMaintenanceDate: true,
+        installationDate: true,
+        warrantyExpiryDate: true,
+        configuration: true,
+        accessLogsEnabled: true,
+        notes: true,
+        createdAt: true,
+        updatedAt: true,
         apartment: {
           select: {
             id: true,
             apartmentNumber: true,
-            wardCode: true,
+            streetAddress: true,
           },
         },
         room: {
@@ -77,11 +166,10 @@ export class IoTService {
       throw new NotFoundException('IoT device not found');
     }
 
-    return device;
+    return this.toDeviceDetail(device);
   }
 
   async findDevicesByApartment(apartmentId: string, currentUser: JwtPayload) {
-    // Tenants can only see controllable devices in their contracted apartment
     if (currentUser.actorType === 'user') {
       const hasAccess = await this.prisma.rentalContract.findFirst({
         where: {
@@ -89,59 +177,70 @@ export class IoTService {
           status: 'active',
           members: { some: { userId: currentUser.sub } },
         },
+        select: { id: true },
       });
 
       if (!hasAccess) {
         throw new ForbiddenException('No active contract for this apartment');
       }
-
-      return this.prisma.ioTDevice.findMany({
-        where: {
-          apartmentId,
-          status: IoTStatus.active,
-          isControllableByTenant: true,
-        },
-        select: {
-          id: true,
-          deviceName: true,
-          deviceType: true,
-          status: true,
-          lastOnlineAt: true,
-          room: {
-            select: { roomNumber: true, roomType: true },
-          },
-        },
-      });
     }
 
-    return this.prisma.ioTDevice.findMany({
-      where: { apartmentId },
-      include: {
-        room: { select: { roomNumber: true, roomType: true } },
+    const devices = await this.prisma.ioTDevice.findMany({
+      where: {
+        apartmentId,
+        ...(currentUser.actorType === 'user'
+          ? {
+              status: IoTStatus.active,
+              isControllableByTenant: true,
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        deviceName: true,
+        deviceType: true,
+        brand: true,
+        model: true,
+        serialNumber: true,
+        status: true,
+        isControllableByTenant: true,
+        lastOnlineAt: true,
+        createdAt: true,
+        apartment: {
+          select: {
+            id: true,
+            apartmentNumber: true,
+            streetAddress: true,
+          },
+        },
+        room: {
+          select: { id: true, roomNumber: true, roomType: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return devices.map((device) => ({
+      ...device,
+      apartment: this.toApartmentSummary(device.apartment),
+      room: this.toRoomSummary(device.room),
+    }));
   }
 
   async createDevice(createDto: CreateIoTDeviceDto) {
-    const apartment = await this.prisma.apartment.findUnique({
-      where: { id: createDto.apartmentId },
-    });
+    await this.ensureApartmentExists(createDto.apartmentId);
+    await this.ensureRoomBelongsToApartment(
+      createDto.roomId,
+      createDto.apartmentId,
+    );
 
-    if (!apartment) {
-      throw new NotFoundException('Apartment not found');
-    }
+    const configuration = this.buildMergedConfiguration(
+      undefined,
+      createDto.configuration,
+      this.buildMqttControlConfig(createDto),
+    );
 
-    if (createDto.roomId) {
-      const room = await this.prisma.room.findUnique({
-        where: { id: createDto.roomId },
-      });
-      if (!room || room.apartmentId !== createDto.apartmentId) {
-        throw new BadRequestException('Room does not belong to this apartment');
-      }
-    }
-
-    return this.prisma.ioTDevice.create({
+    const created = await this.prisma.ioTDevice.create({
       data: {
         deviceName: createDto.deviceName,
         deviceType: createDto.deviceType,
@@ -149,10 +248,8 @@ export class IoTService {
         model: createDto.model,
         serialNumber: createDto.serialNumber,
         macAddress: createDto.macAddress,
-        apartment: { connect: { id: createDto.apartmentId } },
-        ...(createDto.roomId && {
-          room: { connect: { id: createDto.roomId } },
-        }),
+        apartmentId: createDto.apartmentId,
+        roomId: createDto.roomId,
         locationDescription: createDto.locationDescription,
         firmwareVersion: createDto.firmwareVersion,
         isControllableByTenant: createDto.isControllableByTenant ?? true,
@@ -162,39 +259,83 @@ export class IoTService {
         warrantyExpiryDate: createDto.warrantyExpiryDate
           ? new Date(createDto.warrantyExpiryDate)
           : undefined,
-        configuration: createDto.configuration as any,
+        ...(configuration && {
+          configuration: configuration as Prisma.InputJsonValue,
+        }),
         notes: createDto.notes,
         status: IoTStatus.active,
       },
-      select: {
-        id: true,
-        deviceName: true,
-        deviceType: true,
-        serialNumber: true,
-        status: true,
-        createdAt: true,
-      },
+      select: { id: true },
     });
+
+    return this.findOneDevice(created.id);
   }
 
   async updateDevice(id: string, updateDto: UpdateIoTDeviceDto) {
-    const device = await this.prisma.ioTDevice.findUnique({ where: { id } });
+    const device = await this.prisma.ioTDevice.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        apartmentId: true,
+        configuration: true,
+      },
+    });
 
     if (!device) {
       throw new NotFoundException('IoT device not found');
     }
 
-    return this.prisma.ioTDevice.update({
+    const targetApartmentId = updateDto.apartmentId ?? device.apartmentId;
+    if (updateDto.apartmentId) {
+      await this.ensureApartmentExists(updateDto.apartmentId);
+    }
+
+    await this.ensureRoomBelongsToApartment(updateDto.roomId, targetApartmentId);
+
+    const {
+      mqttEspId,
+      mqttControlType,
+      mqttChannelId,
+      mqttDoorPasswordChannelId,
+      configuration,
+      installationDate,
+      warrantyExpiryDate,
+      ...rest
+    } = updateDto;
+
+    const mergedConfiguration = this.buildMergedConfiguration(
+      device.configuration,
+      configuration,
+      this.buildMqttControlConfig({
+        mqttEspId,
+        mqttControlType,
+        mqttChannelId,
+        mqttDoorPasswordChannelId,
+      }),
+    );
+
+    const data: Prisma.IoTDeviceUncheckedUpdateInput = {
+      ...rest,
+      ...(installationDate !== undefined && {
+        installationDate: installationDate ? new Date(installationDate) : null,
+      }),
+      ...(warrantyExpiryDate !== undefined && {
+        warrantyExpiryDate: warrantyExpiryDate
+          ? new Date(warrantyExpiryDate)
+          : null,
+      }),
+      ...(mergedConfiguration && {
+        configuration: mergedConfiguration as Prisma.InputJsonValue,
+      }),
+    };
+
+    await this.prisma.ioTDevice.update({
       where: { id },
-      data: updateDto as any,
-      select: {
-        id: true,
-        deviceName: true,
-        deviceType: true,
-        status: true,
-        updatedAt: true,
-      },
+      data,
+      select: { id: true },
     });
+
+    return this.findOneDevice(id);
   }
 
   async removeDevice(id: string) {
@@ -214,12 +355,22 @@ export class IoTService {
   async controlDevice(id: string, command: string, currentUser: JwtPayload) {
     const device = await this.prisma.ioTDevice.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        deviceType: true,
+        status: true,
+        isControllableByTenant: true,
+        configuration: true,
         apartment: {
-          include: {
+          select: {
             rentalContracts: {
               where: { status: 'active' },
-              include: { members: true },
+              select: {
+                id: true,
+                members: {
+                  select: { userId: true },
+                },
+              },
             },
           },
         },
@@ -241,8 +392,8 @@ export class IoTService {
         );
       }
 
-      const hasAccess = device.apartment.rentalContracts.some((c) =>
-        c.members.some((m) => m.userId === currentUser.sub),
+      const hasAccess = device.apartment.rentalContracts.some((contract) =>
+        contract.members.some((member) => member.userId === currentUser.sub),
       );
 
       if (!hasAccess) {
@@ -250,12 +401,24 @@ export class IoTService {
       }
     }
 
-    // TODO: Integrate with Tuya API to send actual command
+    const mqttConfig = this.requireMqttControlConfig(device);
+    const normalizedCommand = this.normalizeDeviceCommand(
+      mqttConfig.controlType,
+      command,
+    );
+
+    const details = this.dispatchMqttCommand(mqttConfig, normalizedCommand);
+
     return {
+      status: 'sent',
       deviceId: id,
       command,
-      status: 'sent',
-      message: 'Command sent to device (Tuya integration pending)',
+      executedAt: details.publishedAt,
+      mqttEspId: details.espId,
+      mqttControlType: details.controlType,
+      mqttChannelId: details.channelId,
+      mqttTopic: details.topic,
+      mqttPayload: details.payload,
     };
   }
 
@@ -269,27 +432,35 @@ export class IoTService {
     if (apartmentId) where.apartmentId = apartmentId;
     if (status) where.status = status;
 
-    return this.prisma.utilityMeter.findMany({
+    const meters = await this.prisma.utilityMeter.findMany({
       where,
       select: {
         id: true,
         meterNumber: true,
         meterType: true,
+        brand: true,
+        model: true,
         currentReading: true,
         previousReading: true,
         readingDate: true,
         ratePerUnit: true,
         status: true,
+        createdAt: true,
         apartment: {
           select: {
             id: true,
             apartmentNumber: true,
-            wardCode: true,
+            streetAddress: true,
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return meters.map((meter) => ({
+      ...meter,
+      apartment: this.toApartmentSummary(meter.apartment),
+    }));
   }
 
   async findOneMeter(id: string) {
@@ -300,7 +471,7 @@ export class IoTService {
           select: {
             id: true,
             apartmentNumber: true,
-            wardCode: true,
+            streetAddress: true,
           },
         },
         readings: {
@@ -322,25 +493,22 @@ export class IoTService {
       throw new NotFoundException('Utility meter not found');
     }
 
-    return meter;
+    return {
+      ...meter,
+      apartment: this.toApartmentSummary(meter.apartment),
+    };
   }
 
   async createMeter(createDto: CreateUtilityMeterDto) {
-    const apartment = await this.prisma.apartment.findUnique({
-      where: { id: createDto.apartmentId },
-    });
+    await this.ensureApartmentExists(createDto.apartmentId);
 
-    if (!apartment) {
-      throw new NotFoundException('Apartment not found');
-    }
-
-    return this.prisma.utilityMeter.create({
+    const created = await this.prisma.utilityMeter.create({
       data: {
         meterNumber: createDto.meterNumber,
         meterType: createDto.meterType,
         brand: createDto.brand,
         model: createDto.model,
-        apartment: { connect: { id: createDto.apartmentId } },
+        apartmentId: createDto.apartmentId,
         installationDate: new Date(createDto.installationDate),
         unitOfMeasurement: createDto.unitOfMeasurement,
         ratePerUnit: createDto.ratePerUnit,
@@ -348,34 +516,40 @@ export class IoTService {
         notes: createDto.notes,
         status: MeterStatus.active,
       },
-      select: {
-        id: true,
-        meterNumber: true,
-        meterType: true,
-        status: true,
-        createdAt: true,
-      },
+      select: { id: true },
     });
+
+    return this.findOneMeter(created.id);
   }
 
   async updateMeter(id: string, updateDto: UpdateUtilityMeterDto) {
-    const meter = await this.prisma.utilityMeter.findUnique({ where: { id } });
+    const meter = await this.prisma.utilityMeter.findUnique({
+      where: { id },
+      select: { id: true, apartmentId: true },
+    });
 
     if (!meter) {
       throw new NotFoundException('Utility meter not found');
     }
 
-    return this.prisma.utilityMeter.update({
+    if (updateDto.apartmentId) {
+      await this.ensureApartmentExists(updateDto.apartmentId);
+    }
+
+    const data: Prisma.UtilityMeterUncheckedUpdateInput = {
+      ...updateDto,
+      ...(updateDto.installationDate !== undefined && {
+        installationDate: new Date(updateDto.installationDate),
+      }),
+    };
+
+    await this.prisma.utilityMeter.update({
       where: { id },
-      data: updateDto as any,
-      select: {
-        id: true,
-        meterNumber: true,
-        meterType: true,
-        status: true,
-        updatedAt: true,
-      },
+      data,
+      select: { id: true },
     });
+
+    return this.findOneMeter(id);
   }
 
   // ============================================================================
@@ -427,7 +601,6 @@ export class IoTService {
       },
     });
 
-    // Update meter's current reading
     await this.prisma.utilityMeter.update({
       where: { id: createDto.utilityMeterId },
       data: {
@@ -474,5 +647,325 @@ export class IoTService {
         verifiedAt: true,
       },
     });
+  }
+
+  private async ensureApartmentExists(apartmentId: string) {
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id: apartmentId },
+      select: { id: true },
+    });
+
+    if (!apartment) {
+      throw new NotFoundException('Apartment not found');
+    }
+  }
+
+  private async ensureRoomBelongsToApartment(
+    roomId: string | undefined,
+    apartmentId: string,
+  ) {
+    if (!roomId) {
+      return;
+    }
+
+    const room = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      select: { id: true, apartmentId: true },
+    });
+
+    if (!room || room.apartmentId !== apartmentId) {
+      throw new BadRequestException('Room does not belong to this apartment');
+    }
+  }
+
+  private buildMqttControlConfig(dto: {
+    mqttEspId?: string;
+    mqttControlType?: MqttControlType;
+    mqttChannelId?: number;
+    mqttDoorPasswordChannelId?: number;
+  }): DeviceMqttControlConfig | undefined {
+    const hasAnyMqttField =
+      dto.mqttEspId !== undefined ||
+      dto.mqttControlType !== undefined ||
+      dto.mqttChannelId !== undefined ||
+      dto.mqttDoorPasswordChannelId !== undefined;
+
+    if (!hasAnyMqttField) {
+      return undefined;
+    }
+
+    if (!dto.mqttEspId?.trim() || !dto.mqttControlType || !dto.mqttChannelId) {
+      throw new BadRequestException(
+        'mqttEspId, mqttControlType, and mqttChannelId are required when configuring MQTT control',
+      );
+    }
+
+    if (dto.mqttChannelId <= 0) {
+      throw new BadRequestException('mqttChannelId must be a positive integer');
+    }
+
+    if (
+      dto.mqttDoorPasswordChannelId !== undefined &&
+      dto.mqttDoorPasswordChannelId <= 0
+    ) {
+      throw new BadRequestException(
+        'mqttDoorPasswordChannelId must be a positive integer',
+      );
+    }
+
+    return {
+      espId: dto.mqttEspId.trim(),
+      controlType: dto.mqttControlType,
+      channelId: dto.mqttChannelId,
+      ...(dto.mqttDoorPasswordChannelId !== undefined && {
+        doorPasswordChannelId: dto.mqttDoorPasswordChannelId,
+      }),
+    };
+  }
+
+  private buildMergedConfiguration(
+    existingConfiguration: unknown,
+    incomingConfiguration?: Record<string, any>,
+    mqttConfig?: DeviceMqttControlConfig,
+  ) {
+    const merged = {
+      ...this.toPlainObject(existingConfiguration),
+      ...this.toPlainObject(incomingConfiguration),
+    };
+
+    if (mqttConfig) {
+      merged.mqtt = {
+        ...this.toPlainObject(merged.mqtt),
+        ...mqttConfig,
+      };
+    }
+
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  }
+
+  private requireMqttControlConfig(device: {
+    deviceType: string;
+    configuration: unknown;
+  }): DeviceMqttControlConfig {
+    const rootConfig = this.toPlainObject(device.configuration);
+    const mqttConfig = this.toPlainObject(rootConfig.mqtt);
+
+    const espId =
+      this.readString(mqttConfig.espId) ?? this.readString(rootConfig.espId);
+    const controlType =
+      this.readControlType(mqttConfig.controlType) ??
+      this.readControlType(rootConfig.controlType) ??
+      this.mapDeviceTypeToControlType(device.deviceType);
+    const channelId =
+      this.readPositiveInteger(mqttConfig.channelId) ??
+      this.readPositiveInteger(rootConfig.channelId) ??
+      1;
+    const doorPasswordChannelId =
+      this.readPositiveInteger(mqttConfig.doorPasswordChannelId) ??
+      this.readPositiveInteger(rootConfig.doorPasswordChannelId);
+
+    if (!espId || !controlType) {
+      throw new BadRequestException(
+        'Device is not configured for MQTT control. Set mqttEspId, mqttControlType, and mqttChannelId first.',
+      );
+    }
+
+    return {
+      espId,
+      controlType,
+      channelId,
+      ...(doorPasswordChannelId !== undefined && { doorPasswordChannelId }),
+    };
+  }
+
+  private normalizeDeviceCommand(
+    controlType: MqttControlType,
+    command: string,
+  ): string {
+    const normalized = command.trim().toLowerCase();
+
+    if (controlType === 'door') {
+      if (normalized === 'unlock') {
+        return 'open';
+      }
+
+      if (normalized === 'lock') {
+        return 'close';
+      }
+    }
+
+    if (controlType === 'light' || controlType === 'alarm') {
+      if (normalized === 'on' || normalized === 'off') {
+        return normalized;
+      }
+
+      throw new BadRequestException(
+        `${controlType} devices support only 'on' or 'off' commands`,
+      );
+    }
+
+    if (controlType === 'door' || controlType === 'curtain') {
+      if (normalized === 'open' || normalized === 'close') {
+        return normalized;
+      }
+
+      throw new BadRequestException(
+        `${controlType} devices support only 'open' or 'close' commands`,
+      );
+    }
+
+    throw new BadRequestException('Unsupported device command');
+  }
+
+  private dispatchMqttCommand(
+    config: DeviceMqttControlConfig,
+    command: string,
+  ) {
+    switch (config.controlType) {
+      case 'light':
+        return this.ioTMqttService.triggerLight(
+          config.espId,
+          command,
+          config.channelId,
+        );
+      case 'alarm':
+        return this.ioTMqttService.triggerAlarm(
+          config.espId,
+          command,
+          config.channelId,
+        );
+      case 'door':
+        return this.ioTMqttService.triggerDoor(
+          config.espId,
+          command,
+          config.channelId,
+        );
+      case 'curtain':
+        return this.ioTMqttService.triggerCurtain(
+          config.espId,
+          command,
+          config.channelId,
+        );
+      default:
+        throw new BadRequestException('Unsupported MQTT control type');
+    }
+  }
+
+  private toApartmentSummary(apartment: {
+    id: string;
+    apartmentNumber: string;
+    streetAddress: string | null;
+  }) {
+    return {
+      id: apartment.id,
+      apartmentNumber: apartment.apartmentNumber,
+      address: apartment.streetAddress ?? '',
+    };
+  }
+
+  private toRoomSummary(
+    room:
+      | {
+          id: string;
+          roomNumber: string;
+          roomType: string;
+        }
+      | null,
+  ) {
+    if (!room) {
+      return null;
+    }
+
+    return {
+      id: room.id,
+      roomNumber: room.roomNumber,
+      roomType: room.roomType,
+    };
+  }
+
+  private toDeviceDetail(device: {
+    configuration: unknown;
+    deviceType: string;
+    apartment: { id: string; apartmentNumber: string; streetAddress: string | null };
+    room: { id: string; roomNumber: string; roomType: string } | null;
+    [key: string]: any;
+  }) {
+    let mqttConfig: DeviceMqttControlConfig | null = null;
+
+    try {
+      mqttConfig = this.requireMqttControlConfig(device);
+    } catch {
+      mqttConfig = null;
+    }
+
+    return {
+      ...device,
+      apartment: this.toApartmentSummary(device.apartment),
+      room: this.toRoomSummary(device.room),
+      mqttEspId: mqttConfig?.espId ?? null,
+      mqttControlType: mqttConfig?.controlType ?? null,
+      mqttChannelId: mqttConfig?.channelId ?? null,
+      mqttDoorPasswordChannelId: mqttConfig?.doorPasswordChannelId ?? null,
+    };
+  }
+
+  private toPlainObject(value: unknown): Record<string, any> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return { ...(value as Record<string, any>) };
+  }
+
+  private readString(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private readPositiveInteger(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private readControlType(value: unknown): MqttControlType | undefined {
+    if (
+      value === 'light' ||
+      value === 'alarm' ||
+      value === 'door' ||
+      value === 'curtain'
+    ) {
+      return value;
+    }
+
+    return undefined;
+  }
+
+  private mapDeviceTypeToControlType(
+    deviceType: string,
+  ): MqttControlType | undefined {
+    switch (deviceType) {
+      case 'light':
+        return 'light';
+      case 'alarm':
+        return 'alarm';
+      case 'smart_lock':
+        return 'door';
+      default:
+        return undefined;
+    }
   }
 }

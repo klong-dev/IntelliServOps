@@ -1,38 +1,45 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  Query,
+  Get,
+  Param,
+  ParseIntPipe,
   ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
 } from '@nestjs/common';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
+  ApiOperation,
   ApiQuery,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
 import { IoTService } from './iot.service';
 import {
-  CreateIoTDeviceDto,
-  UpdateIoTDeviceDto,
-  CreateUtilityMeterDto,
-  UpdateUtilityMeterDto,
-  CreateUtilityReadingDto,
   ControlDeviceDto,
-  IoTDeviceListItemDto,
-  IoTDeviceDetailDto,
   ControlDeviceResponseDto,
-  UtilityMeterListItemDto,
+  CreateIoTDeviceDto,
+  CreateUtilityMeterDto,
+  CreateUtilityReadingDto,
+  DeviceActionDto,
+  IoTDeviceDetailDto,
+  IoTDeviceListItemDto,
+  IoTGatewayStatusDto,
+  IoTMqttCommandResultDto,
+  IoTTestSequenceResponseDto,
+  SetDoorPasswordDto,
+  TestSequenceDto,
+  UpdateIoTDeviceDto,
+  UpdateUtilityMeterDto,
   UtilityMeterDetailDto,
+  UtilityMeterListItemDto,
   UtilityReadingDto,
 } from './dto';
-import { Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
+import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { IoTStatus, MeterStatus } from '@prisma/client';
@@ -42,6 +49,103 @@ import { IoTStatus, MeterStatus } from '@prisma/client';
 @Controller('iot')
 export class IoTController {
   constructor(private readonly iotService: IoTService) {}
+
+  @Get('online')
+  @Public()
+  @ApiOperation({ summary: 'Check MQTT gateway availability' })
+  @ApiJsonResponse(IoTGatewayStatusDto, {
+    description: 'IoT MQTT gateway status',
+  })
+  getGatewayStatus() {
+    return this.iotService.getGatewayStatus();
+  }
+
+  // ============================================================================
+  // Direct MQTT Routes Compatible With control-iot-server
+  // ============================================================================
+
+  @Post('devices/:espId/light/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Publish light command to MQTT device' })
+  @ApiJsonResponse(IoTMqttCommandResultDto, {
+    description: 'Light command published to MQTT broker',
+  })
+  triggerLight(
+    @Param('espId') espId: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: DeviceActionDto,
+  ) {
+    return this.iotService.triggerLight(espId, id, body.action);
+  }
+
+  @Post('devices/:espId/alarm/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Publish alarm command to MQTT device' })
+  @ApiJsonResponse(IoTMqttCommandResultDto, {
+    description: 'Alarm command published to MQTT broker',
+  })
+  triggerAlarm(
+    @Param('espId') espId: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: DeviceActionDto,
+  ) {
+    return this.iotService.triggerAlarm(espId, id, body.action);
+  }
+
+  @Post('devices/:espId/door/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Publish door command to MQTT device' })
+  @ApiJsonResponse(IoTMqttCommandResultDto, {
+    description: 'Door command published to MQTT broker',
+  })
+  triggerDoor(
+    @Param('espId') espId: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: DeviceActionDto,
+  ) {
+    return this.iotService.triggerDoor(espId, id, body.action);
+  }
+
+  @Post('devices/:espId/curtain/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Publish curtain command to MQTT device' })
+  @ApiJsonResponse(IoTMqttCommandResultDto, {
+    description: 'Curtain command published to MQTT broker',
+  })
+  triggerCurtain(
+    @Param('espId') espId: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: DeviceActionDto,
+  ) {
+    return this.iotService.triggerCurtain(espId, id, body.action);
+  }
+
+  @Post('devices/:espId/config-door-password/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Send door password directly to MQTT device' })
+  @ApiJsonResponse(IoTMqttCommandResultDto, {
+    description: 'Door password published to MQTT broker',
+  })
+  configureDoorPassword(
+    @Param('espId') espId: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: SetDoorPasswordDto,
+  ) {
+    return this.iotService.configureDoorPassword(espId, id, body.password);
+  }
+
+  @Post('devices/:espId/test-sequence')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Run MQTT device test sequence' })
+  @ApiJsonResponse(IoTTestSequenceResponseDto, {
+    description: 'MQTT test sequence completed',
+  })
+  runTestSequence(
+    @Param('espId') espId: string,
+    @Body() body: TestSequenceDto,
+  ) {
+    return this.iotService.runDeviceTestSequence(espId, body.holdMs);
+  }
 
   // ============================================================================
   // IoT Devices
@@ -124,7 +228,7 @@ export class IoTController {
   @ApiOperation({
     summary: 'Send command to IoT device',
     description:
-      'Control device (lock/unlock, on/off). Tenants must have active contract.',
+      'Control device over MQTT using stored device metadata. Tenants must have an active contract.',
   })
   @ApiJsonResponse(ControlDeviceResponseDto, { description: 'Command sent' })
   @ApiResponse({ status: 403, description: 'Access denied' })
