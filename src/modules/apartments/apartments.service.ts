@@ -434,7 +434,9 @@ export class ApartmentsService {
       depositAmount: true,
       status: true,
       images: true,
+      videoTourUrl: true,
       createdAt: true,
+      updatedAt: true,
       wardCode: true,
       provinceCode: true,
       streetAddress: true,
@@ -676,7 +678,11 @@ export class ApartmentsService {
    * Create new apartment
    * Operator, Admin, or Partner can create
    */
-  async create(createDto: CreateApartmentDto, currentUser: JwtPayload) {
+  async create(
+    createDto: CreateApartmentDto,
+    currentUser: JwtPayload,
+    media?: { imageUrls?: string[]; videoUrl?: string },
+  ) {
     // Auto-resolve province code from ward code
     let provinceCode: number | undefined;
     if (createDto.wardCode) {
@@ -684,6 +690,12 @@ export class ApartmentsService {
         createDto.wardCode,
       );
     }
+
+    const images = [
+      ...(Array.isArray(createDto.images) ? createDto.images : []),
+      ...(media?.imageUrls ?? []),
+    ];
+    const videoTourUrl = media?.videoUrl ?? createDto.videoTourUrl;
 
     const data: Prisma.ApartmentCreateInput = {
       buildingName: createDto.buildingName,
@@ -703,8 +715,8 @@ export class ApartmentsService {
       baseRentPrice: createDto.baseRentPrice,
       depositAmount: createDto.depositAmount,
       description: createDto.description,
-      images: createDto.images as any,
-      videoTourUrl: createDto.videoTourUrl,
+      images,
+      videoTourUrl,
       yearBuilt: createDto.yearBuilt,
       status: ApartmentStatus.available,
     };
@@ -725,8 +737,11 @@ export class ApartmentsService {
         provinceCode: true,
         streetAddress: true,
         baseRentPrice: true,
+        images: true,
+        videoTourUrl: true,
         status: true,
         createdAt: true,
+        updatedAt: true,
       },
     });
   }
@@ -1013,10 +1028,11 @@ export class ApartmentsService {
     id: string,
     updateDto: UpdateApartmentDto,
     currentUser: JwtPayload,
+    media?: { imageUrls?: string[]; videoUrl?: string },
   ) {
     const apartment = await this.prisma.apartment.findUnique({
       where: { id },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, images: true },
     });
 
     if (!apartment) {
@@ -1043,6 +1059,20 @@ export class ApartmentsService {
       }
     }
 
+    if (media?.imageUrls?.length) {
+      const baseImages = Array.isArray(updateDto.images)
+        ? updateDto.images
+        : Array.isArray(apartment.images)
+          ? apartment.images.filter((image): image is string => typeof image === 'string')
+          : [];
+
+      data.images = [...baseImages, ...media.imageUrls];
+    }
+
+    if (media?.videoUrl) {
+      data.videoTourUrl = media.videoUrl;
+    }
+
     return this.prisma.apartment.update({
       where: { id },
       data,
@@ -1051,8 +1081,12 @@ export class ApartmentsService {
         apartmentNumber: true,
         wardCode: true,
         provinceCode: true,
+        streetAddress: true,
         baseRentPrice: true,
+        images: true,
+        videoTourUrl: true,
         status: true,
+        createdAt: true,
         updatedAt: true,
       },
     });

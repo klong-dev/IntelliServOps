@@ -9,10 +9,41 @@ import {
   Max,
   IsArray,
   MaxLength,
+  Allow,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+} from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import { FurnishingStatus } from '@prisma/client';
+
+const toStringArray = ({ value }: { value: unknown }) => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return Array.isArray(parsed) ? parsed : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+
+    return [trimmed];
+  }
+
+  return undefined;
+};
 
 export class CreateApartmentDto {
   @ApiPropertyOptional({ example: 'Vinhomes Central Park' })
@@ -91,6 +122,7 @@ export class CreateApartmentDto {
     example: ['air_conditioning', 'wifi', 'parking', 'gym'],
     description: 'List of amenities',
   })
+  @Transform(toStringArray)
   @IsArray()
   @IsOptional()
   amenities?: string[];
@@ -115,6 +147,7 @@ export class CreateApartmentDto {
     example: ['https://example.com/img1.jpg'],
     description: 'Array of image URLs',
   })
+  @Transform(toStringArray)
   @IsArray()
   @IsOptional()
   images?: string[];
@@ -137,4 +170,25 @@ export class CreateApartmentDto {
   @IsString()
   @IsOptional()
   ownerId?: string;
+}
+
+export class CreateApartmentRequestDto extends OmitType(CreateApartmentDto, [
+  'images',
+  'videoTourUrl',
+] as const) {
+  @ApiPropertyOptional({
+    type: 'array',
+    items: { type: 'string', format: 'binary' },
+    description: 'Apartment images (JPEG, PNG, WebP), max 10 files',
+  })
+  @Allow()
+  images?: any[];
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    description: 'Apartment video (MP4, MOV, WEBM), max 1 file',
+  })
+  @Allow()
+  video?: any;
 }

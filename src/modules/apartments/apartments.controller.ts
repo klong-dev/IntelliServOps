@@ -28,7 +28,9 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApartmentsService } from './apartments.service';
 import {
   CreateApartmentDto,
+  CreateApartmentRequestDto,
   UpdateApartmentDto,
+  UpdateApartmentRequestDto,
   SearchApartmentDto,
   ApartmentListItemDto,
   ApartmentDetailDto,
@@ -64,10 +66,108 @@ type UploadedMediaFile = {
 @ApiTags('Apartments')
 @Controller('apartments')
 export class ApartmentsController {
+  private readonly apartmentMediaBucket = 'apartment-cooperation';
+  private readonly validApartmentImageMimeTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ];
+  private readonly validApartmentVideoMimeTypes = [
+    'video/mp4',
+    'video/quicktime',
+    'video/webm',
+  ];
+
   constructor(
     private readonly apartmentsService: ApartmentsService,
     private readonly storageService: SupabaseStorageService,
   ) {}
+
+  private isUploadedMediaFile(value: unknown): value is UploadedMediaFile {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+      typeof candidate.originalname === 'string' &&
+      typeof candidate.mimetype === 'string' &&
+      Buffer.isBuffer(candidate.buffer) &&
+      typeof candidate.size === 'number'
+    );
+  }
+
+  private normalizeApartmentMediaFiles(files: {
+    images?: unknown[];
+    video?: unknown[];
+  }) {
+    const imageFiles = (Array.isArray(files?.images) ? files.images : []).filter(
+      (value): value is UploadedMediaFile => this.isUploadedMediaFile(value),
+    );
+    const videoFile = (Array.isArray(files?.video) ? files.video : []).find(
+      (value): value is UploadedMediaFile => this.isUploadedMediaFile(value),
+    );
+
+    return { imageFiles, videoFile };
+  }
+
+  private validateApartmentMediaFiles(
+    imageFiles: UploadedMediaFile[],
+    videoFile?: UploadedMediaFile,
+  ) {
+    for (const imageFile of imageFiles) {
+      if (!this.validApartmentImageMimeTypes.includes(imageFile.mimetype)) {
+        throw new BadRequestException(
+          `Invalid image format: ${imageFile.originalname}. Allowed: JPEG, PNG, WebP`,
+        );
+      }
+    }
+
+    if (videoFile && !this.validApartmentVideoMimeTypes.includes(videoFile.mimetype)) {
+      throw new BadRequestException(
+        `Invalid video format: ${videoFile.originalname}. Allowed: MP4, MOV, WEBM`,
+      );
+    }
+  }
+
+  private async uploadApartmentMediaFiles(
+    basePath: string,
+    imageFiles: UploadedMediaFile[],
+    videoFile?: UploadedMediaFile,
+  ) {
+    const timestamp = Date.now();
+    const imageUrls: string[] = [];
+    let videoUrl: string | undefined;
+
+    for (let i = 0; i < imageFiles.length; i++) {
+      const ext =
+        imageFiles[i].mimetype.split('/')[1] === 'jpeg'
+          ? 'jpg'
+          : imageFiles[i].mimetype.split('/')[1];
+      const filePath = `${basePath}/images/${timestamp}-${i}.${ext}`;
+      const url = await this.storageService.uploadFile(
+        this.apartmentMediaBucket,
+        filePath,
+        imageFiles[i],
+      );
+      imageUrls.push(url);
+    }
+
+    if (videoFile) {
+      const ext =
+        videoFile.mimetype === 'video/quicktime'
+          ? 'mov'
+          : videoFile.mimetype.split('/')[1];
+      const videoPath = `${basePath}/video/${timestamp}.${ext}`;
+      videoUrl = await this.storageService.uploadFile(
+        this.apartmentMediaBucket,
+        videoPath,
+        videoFile,
+      );
+    }
+
+    return { imageUrls, videoUrl };
+  }
 
   @Get('search')
   @Public()
@@ -168,15 +268,34 @@ export class ApartmentsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
   @ApiOperation({ summary: 'Create apartment' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    type: CreateApartmentRequestDto,
+  })
   @ApiJsonResponse(ApartmentMutationResultDto, {
     status: 201,
     description: 'Apartment created',
   })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'images', maxCount: 10 },
+      { name: 'video', maxCount: 1 },
+    ]),
+  )
   async create(
+    @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
     @Body() createDto: CreateApartmentDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
-    return this.apartmentsService.create(createDto, currentUser);
+    const { imageFiles, videoFile } = this.normalizeApartmentMediaFiles(files);
+    this.validateApartmentMediaFiles(imageFiles, videoFile);
+    const media = await this.uploadApartmentMediaFiles(
+      `apartments/owner-${currentUser.sub}`,
+      imageFiles,
+      videoFile,
+    );
+
+    return this.apartmentsService.create(createDto, currentUser, media);
   }
 
   @Post('partner/cooperation')
@@ -434,16 +553,35 @@ export class ApartmentsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
   @ApiOperation({ summary: 'Update apartment' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    type: UpdateApartmentRequestDto,
+  })
   @ApiJsonResponse(ApartmentMutationResultDto, {
     description: 'Apartment updated',
   })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'images', maxCount: 10 },
+      { name: 'video', maxCount: 1 },
+    ]),
+  )
   async update(
     @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
     @Body() updateDto: UpdateApartmentDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
-    return this.apartmentsService.update(id, updateDto, currentUser);
+    const { imageFiles, videoFile } = this.normalizeApartmentMediaFiles(files);
+    this.validateApartmentMediaFiles(imageFiles, videoFile);
+    const media = await this.uploadApartmentMediaFiles(
+      `apartments/${id}`,
+      imageFiles,
+      videoFile,
+    );
+
+    return this.apartmentsService.update(id, updateDto, currentUser, media);
   }
 
   @Delete(':id')
