@@ -50,12 +50,27 @@ describe('InvoicesService', () => {
   describe('findAll', () => {
     it('should return all invoices for admin', async () => {
       const admin = mockAdminJwtPayload();
-      const invoices = [mockInvoice()];
+      const invoices = [
+        {
+          ...mockInvoice(),
+          rentalContract: {
+            id: 'contract-123',
+            contractNumber: 'CTR-202601-00001',
+            apartment: {
+              apartmentNumber: 'A101',
+              wardCode: 26728,
+            },
+          },
+        },
+      ];
       prisma.invoice.findMany.mockResolvedValue(invoices as any);
 
       const result = await service.findAll(admin);
 
-      expect(result).toEqual(invoices);
+      expect(result[0]).toMatchObject({
+        rentalContract: invoices[0].rentalContract,
+        contract: invoices[0].rentalContract,
+      });
     });
 
     it('should filter user own invoices', async () => {
@@ -92,13 +107,24 @@ describe('InvoicesService', () => {
       const admin = mockAdminJwtPayload();
       const invoice = {
         ...mockInvoice(),
-        rentalContract: { members: [{ user: { id: 'user-123' } }] },
+        rentalContract: {
+          id: 'contract-123',
+          contractNumber: 'CTR-202601-00001',
+          apartment: {
+            apartmentNumber: 'A101',
+            wardCode: 26728,
+          },
+          members: [{ user: { id: 'user-123' } }],
+        },
       };
       prisma.invoice.findUnique.mockResolvedValue(invoice as any);
 
       const result = await service.findOne('invoice-123', admin);
 
-      expect(result).toEqual(invoice);
+      expect(result).toMatchObject({
+        rentalContract: invoice.rentalContract,
+        contract: invoice.rentalContract,
+      });
     });
 
     it('should throw NotFoundException if not found', async () => {

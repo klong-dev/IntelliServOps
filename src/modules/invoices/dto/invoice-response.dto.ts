@@ -3,11 +3,44 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 // ─── Nested DTOs ────────────────────────────────────────────────────
 
 class InvoiceContractApartmentDto {
+  @ApiProperty({ example: 'apt-123' })
+  id: string;
+
   @ApiProperty({ example: 'A101' })
   apartmentNumber: string;
 
-  @ApiProperty({ example: '123 Nguyen Hue, Q1' })
-  address: string;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
+  wardCode: number | null;
+}
+
+class InvoiceContractMemberUserDto {
+  @ApiProperty({ example: 'user-123' })
+  id: string;
+
+  @ApiProperty({ example: 'Nguyen Van A' })
+  fullName: string;
+
+  @ApiProperty({ example: 'a@example.com' })
+  email: string;
+}
+
+class InvoiceContractMemberDto {
+  @ApiProperty({ example: 'primary' })
+  memberType: string;
+
+  @ApiProperty({ example: true })
+  isPrimaryContact: boolean;
+
+  @ApiProperty({ type: InvoiceContractMemberUserDto })
+  user: InvoiceContractMemberUserDto;
+}
+
+class InvoiceCreatedByStaffDto {
+  @ApiProperty({ example: 'staff-123' })
+  id: string;
+
+  @ApiProperty({ example: 'Tran Van B' })
+  fullName: string;
 }
 
 class InvoiceContractSummaryDto {
@@ -17,8 +50,62 @@ class InvoiceContractSummaryDto {
   @ApiProperty({ example: 'CTR-202601-00001' })
   contractNumber: string;
 
+  @ApiProperty()
+  startDate: Date;
+
+  @ApiProperty()
+  endDate: Date;
+
+  @ApiProperty({ example: '12000000.00' })
+  monthlyRent: string;
+
+  @ApiProperty({ example: '24000000.00' })
+  depositAmount: string;
+
+  @ApiProperty({ example: 5 })
+  paymentDueDay: number;
+
+  @ApiProperty({ example: 'bank_transfer' })
+  paymentMethod: string;
+
+  @ApiProperty({ example: 'signed' })
+  status: string;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  signedDate: Date | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  contractDocumentUrl: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  contractTerms: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  specialConditions: string | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  terminationDate: Date | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  terminationReason: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  earlyTerminationFee: string | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+
   @ApiProperty({ type: InvoiceContractApartmentDto })
   apartment: InvoiceContractApartmentDto;
+
+  @ApiProperty({ type: [InvoiceContractMemberDto] })
+  members: InvoiceContractMemberDto[];
+
+  @ApiPropertyOptional({ type: InvoiceCreatedByStaffDto, nullable: true })
+  createdByStaff: InvoiceCreatedByStaffDto | null;
 }
 
 class InvoicePaymentSummaryDto {
@@ -95,6 +182,12 @@ export class InvoiceListItemDto {
 
   @ApiProperty({ type: InvoiceContractSummaryDto })
   rentalContract: InvoiceContractSummaryDto;
+
+  @ApiProperty({
+    type: InvoiceContractSummaryDto,
+    description: 'Contract information for this invoice',
+  })
+  contract: InvoiceContractSummaryDto;
 }
 
 // ─── Invoice Detail DTO (findOne) ───────────────────────────────────
@@ -122,13 +215,13 @@ export class InvoiceDetailDto {
   baseRent: string;
 
   @ApiPropertyOptional({ type: Object, nullable: true })
-  utilityCharges: any;
+  utilityCharges: Record<string, unknown> | null;
 
   @ApiPropertyOptional({ type: Object, nullable: true })
-  additionalCharges: any;
+  additionalCharges: Record<string, unknown> | null;
 
   @ApiPropertyOptional({ type: Object, nullable: true })
-  discounts: any;
+  discounts: Record<string, unknown> | null;
 
   @ApiProperty({ example: '0.00' })
   taxAmount: string;
@@ -170,7 +263,12 @@ export class InvoiceDetailDto {
   updatedAt: Date;
 
   @ApiProperty()
-  rentalContract: any; // Full include with nested apartment and members
+  rentalContract: InvoiceContractSummaryDto;
+
+  @ApiProperty({
+    description: 'Contract information for this invoice',
+  })
+  contract: InvoiceContractSummaryDto;
 
   @ApiProperty({ type: [InvoicePaymentSummaryDto] })
   payments: InvoicePaymentSummaryDto[];

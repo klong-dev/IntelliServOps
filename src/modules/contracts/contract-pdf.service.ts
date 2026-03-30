@@ -20,6 +20,7 @@ export interface ContractPdfData {
   tenantAddress?: string;
   tenantPhone?: string;
   tenantEmail?: string;
+  tenantMembers?: ContractPdfMemberData[];
   // Apartment
   apartmentAddress?: string;
   apartmentNumber?: string;
@@ -41,6 +42,16 @@ export interface ContractPdfData {
   // Signatures (null = blank)
   landlordSignature?: Buffer | null;
   tenantSignature?: Buffer | null;
+}
+
+export interface ContractPdfMemberData {
+  fullName?: string;
+  idNumber?: string;
+  idIssueDate?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  memberType?: string;
 }
 
 export interface PartnerCooperationPdfData {
@@ -403,6 +414,31 @@ export class ContractPdfService {
     doc.text(
       `Email: ${data.tenantEmail || '........................................'}`,
     );
+
+    if (data.tenantMembers && data.tenantMembers.length > 0) {
+      doc.moveDown(0.3);
+      doc
+        .font('Bold')
+        .fontSize(11)
+        .text('Danh sach thanh vien ben B (kem CCCD):');
+      doc.moveDown(0.2);
+
+      data.tenantMembers.forEach((member, index) => {
+        const roleLabel = member.memberType || 'co_tenant';
+        doc
+          .font('Regular')
+          .fontSize(10)
+          .text(
+            `${index + 1}. ${member.fullName || 'N/A'} - CCCD: ${member.idNumber || 'N/A'} - Vai tro: ${roleLabel}`,
+          )
+          .text(
+            `   Ngay cap: ${member.idIssueDate || 'N/A'} - Dia chi: ${member.address || 'N/A'}`,
+          )
+          .text(
+            `   Lien he: ${member.phone || 'N/A'} - ${member.email || 'N/A'}`,
+          );
+      });
+    }
 
     doc.moveDown(0.5);
 

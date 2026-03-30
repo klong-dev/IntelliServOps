@@ -7,6 +7,8 @@ import {
   IsString,
   IsInt,
   Min,
+  IsArray,
+  ArrayUnique,
 } from 'class-validator';
 
 export class CreateReservationDto {
@@ -50,4 +52,16 @@ export class CreateReservationDto {
   @IsString()
   @IsOptional()
   specialRequests?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Additional member CCCD numbers to include in draft contract. Each CCCD must belong to a verified identity.',
+    example: ['079203001234', '079203005678'],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  additionalMemberNationalIds?: string[];
 }

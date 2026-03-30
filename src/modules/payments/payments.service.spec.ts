@@ -1,13 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PaymentsService } from './payments.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
   mockAdminJwtPayload,
 } from '../../test-utils';
 import { CreatePaymentDto } from './dto';
-import { PaymentStatus, InvoiceStatus, ContractStatus } from '@prisma/client';
+import {
+  PaymentStatus,
+  InvoiceStatus,
+  ContractStatus,
+  InvoiceType,
+} from '@prisma/client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -15,6 +21,9 @@ describe('PaymentsService', () => {
   let service: PaymentsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let configService: { get: jest.Mock };
+  const notificationsService = {
+    createAndPush: jest.fn(),
+  };
 
   const mockPayment = (overrides = {}) => ({
     id: 'payment-123',
@@ -41,6 +50,7 @@ describe('PaymentsService', () => {
   const mockInvoice = (overrides = {}) => ({
     id: 'invoice-123',
     invoiceNumber: 'INV-2026-00001',
+    invoiceType: InvoiceType.contractDeposit,
     totalAmount: 10000000,
     status: InvoiceStatus.issued,
     rentalContract: {
@@ -63,6 +73,7 @@ describe('PaymentsService', () => {
         PaymentsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: configService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -318,6 +329,46 @@ describe('PaymentsService', () => {
         where: { id: 'apt-123' },
         data: { status: 'occupied' },
       });
+      expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
+          }),
+          update: expect.objectContaining({
+            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
+          }),
+        }),
+      );
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientType: 'user',
+          recipientId: 'user-123',
+          message: expect.stringMatching(/Mat khau cua nha: \d{6}/),
+        }),
+      );
+    });
+
+    it('should not activate contract for non-deposit invoice type', async () => {
+      const payment = mockPayment({ status: PaymentStatus.pending });
+
+      prisma.payment.findUnique.mockResolvedValue({
+        ...payment,
+        invoice: mockInvoice({
+          invoiceType: InvoiceType.monthlyRent,
+          rentalContract: {
+            id: 'contract-123',
+            status: ContractStatus.signed,
+            apartmentId: 'apt-123',
+            members: [{ userId: 'user-123' }],
+          },
+        }),
+      } as any);
+      prisma.$transaction.mockResolvedValue([] as any);
+
+      await service.confirm('payment-123', 'tx-123');
+
+      expect(prisma.rentalContract.update).not.toHaveBeenCalled();
+      expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
     });
   });
 
@@ -329,6 +380,67 @@ describe('PaymentsService', () => {
       const result = await service.fail('payment-123', 'Insufficient funds');
 
       expect(result.status).toBe(PaymentStatus.failed);
+    });
+  });
+
+  describe('simulateSuccessByInvoice', () => {
+    it('should create mock pending payment and mark it successful', async () => {
+      const user = mockUserJwtPayload();
+      const invoice = mockInvoice({
+        status: InvoiceStatus.issued,
+        currency: 'VND',
+        paymentMethod: 'bank_transfer',
+      });
+
+      prisma.invoice.findUnique.mockResolvedValue(invoice as any);
+      prisma.payment.findFirst
+        .mockResolvedValueOnce(null as any)
+        .mockResolvedValueOnce(null as any);
+      prisma.payment.create.mockResolvedValue({ id: 'payment-123' } as any);
+
+      const confirmSpy = jest
+        .spyOn(service, 'confirm')
+        .mockResolvedValue([] as any);
+      const findOneSpy = jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 'payment-123',
+        status: PaymentStatus.completed,
+      } as any);
+
+      const result = await service.simulateSuccessByInvoice(
+        'invoice-123',
+        user,
+      );
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        'payment-123',
+        expect.stringContaining('MOCK-TX-'),
+      );
+      expect(findOneSpy).toHaveBeenCalledWith('payment-123', user);
+      expect(result).toMatchObject({
+        id: 'payment-123',
+        status: PaymentStatus.completed,
+      });
+    });
+
+    it('should return existing completed payment when invoice already paid', async () => {
+      const user = mockUserJwtPayload();
+      const paidInvoice = mockInvoice({ status: InvoiceStatus.paid });
+
+      prisma.invoice.findUnique.mockResolvedValue(paidInvoice as any);
+      prisma.payment.findFirst.mockResolvedValue({ id: 'payment-999' } as any);
+
+      const findOneSpy = jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 'payment-999',
+        status: PaymentStatus.completed,
+      } as any);
+
+      const result = await service.simulateSuccessByInvoice(
+        'invoice-123',
+        user,
+      );
+
+      expect(findOneSpy).toHaveBeenCalledWith('payment-999', user);
+      expect(result).toMatchObject({ id: 'payment-999' });
     });
   });
 

@@ -3,6 +3,7 @@ import { ContractsService } from './contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ApartmentsService } from '../apartments/apartments.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ContractPdfService } from './contract-pdf.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
@@ -11,7 +12,12 @@ import {
   mockOperatorJwtPayload,
 } from '../../test-utils';
 import { CreateContractDto, UpdateContractDto } from './dto';
-import { ContractStatus, ApartmentStatus, MemberStatus } from '@prisma/client';
+import {
+  ContractStatus,
+  ApartmentStatus,
+  MemberStatus,
+  ReservationStatus,
+} from '@prisma/client';
 import {
   NotFoundException,
   ConflictException,
@@ -22,6 +28,9 @@ describe('ContractsService', () => {
   let service: ContractsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let apartmentsService: Record<string, jest.Mock>;
+  const contractPdfService = {
+    generateContractPdf: jest.fn().mockResolvedValue(Buffer.from('pdf')),
+  };
   const notificationsService = {
     createAndPush: jest.fn(),
   };
@@ -47,12 +56,12 @@ describe('ContractsService', () => {
       updateStatus: jest.fn(),
     };
 
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ApartmentsService, useValue: apartmentsService },
+        { provide: ContractPdfService, useValue: contractPdfService },
         { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
@@ -244,6 +253,14 @@ describe('ContractsService', () => {
         user,
       );
 
+      expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+        where: { createdContractId: 'contract-123' },
+        data: {
+          status: ReservationStatus.confirmed,
+          cancelReason: null,
+        },
+      });
+
       expect(prisma.invoice.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -396,6 +413,10 @@ describe('ContractsService', () => {
           }),
         }),
       );
+      expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+        where: { createdContractId: 'contract-123' },
+        data: { status: ReservationStatus.cancelled },
+      });
     });
 
     it('should throw NotFoundException if user is not member', async () => {
@@ -414,6 +435,76 @@ describe('ContractsService', () => {
           user,
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('addMemberByNationalId', () => {
+    it('should add verified CCCD user and regenerate pdf for draft contract', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce({
+          id: 'contract-123',
+          status: ContractStatus.draft,
+          members: [{ userId: user.sub, memberType: 'primary' }],
+        } as any)
+        .mockResolvedValueOnce({
+          ...mockContract({ status: ContractStatus.draft }),
+          members: [{ user: { id: user.sub } }],
+          apartment: null,
+          createdByStaff: null,
+          invoices: [],
+          contractPdfData: null,
+          landlordSignature: null,
+          tenantSignature: null,
+        } as any);
+
+      prisma.userIdentity.findFirst.mockResolvedValue({
+        userId: 'user-456',
+        user: {
+          id: 'user-456',
+          isActive: true,
+          isVerified: true,
+        },
+      } as any);
+
+      prisma.userContractMember.create.mockResolvedValue({} as any);
+      jest.spyOn(service, 'regenerateContractPdf').mockResolvedValue();
+
+      await service.addMemberByNationalId(
+        'contract-123',
+        { nationalId: '079203001234' },
+        user,
+      );
+
+      expect(prisma.userContractMember.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: 'user-456',
+          rentalContractId: 'contract-123',
+          memberType: 'co_tenant',
+        }),
+      });
+      expect(service.regenerateContractPdf).toHaveBeenCalledWith(
+        'contract-123',
+      );
+    });
+
+    it('should reject adding member when contract is signed', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        status: ContractStatus.signed,
+        members: [{ userId: user.sub, memberType: 'primary' }],
+      } as any);
+
+      await expect(
+        service.addMemberByNationalId(
+          'contract-123',
+          { nationalId: '079203001234' },
+          user,
+        ),
+      ).rejects.toThrow(ConflictException);
     });
   });
 });
