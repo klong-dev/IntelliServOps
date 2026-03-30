@@ -244,6 +244,9 @@ export class ApartmentListItemDto {
   @ApiPropertyOptional({ type: [String], nullable: true })
   images: string[] | null;
 
+  @ApiPropertyOptional({ type: String, nullable: true })
+  videoTourUrl: string | null;
+
   @ApiPropertyOptional({
     type: [ApartmentCooperationContractDto],
     nullable: true,
@@ -440,11 +443,20 @@ export class ApartmentMutationResultDto {
   @ApiProperty({ example: '12000000' })
   baseRentPrice: string;
 
+  @ApiPropertyOptional({ type: [String], nullable: true })
+  images: string[] | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  videoTourUrl: string | null;
+
   @ApiProperty({ example: 'available' })
   status: string;
 
-  @ApiProperty()
-  createdAt: Date;
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  createdAt?: Date;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  updatedAt?: Date;
 }
 
 // ─── Apartment Status Result ────────────────────────────────────────
