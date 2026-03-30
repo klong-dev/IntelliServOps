@@ -38,7 +38,6 @@ import {
   ApartmentStatusResultDto,
   RateApartmentDto,
   ApartmentRatingResultDto,
-  CreatePartnerCooperationApartmentDto,
   SubmitPartnerCooperationRequestDto,
   PartnerCooperationSubmitResultDto,
   ApartmentMediaUploadResultDto,
@@ -322,7 +321,7 @@ export class ApartmentsController {
   )
   async submitPartnerCooperation(
     @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
-    @Body() createDto: CreatePartnerCooperationApartmentDto,
+    @Body() createDto: SubmitPartnerCooperationRequestDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     const isUploadedMediaFile = (
@@ -447,7 +446,8 @@ export class ApartmentsController {
   })
   @ApiResponse({
     status: 400,
-    description: 'No media uploaded or media format is invalid',
+    description:
+      'No media or apartment info provided, or media format is invalid',
   })
   @UseInterceptors(
     FileFieldsInterceptor([
@@ -484,9 +484,21 @@ export class ApartmentsController {
       isUploadedMediaFile,
     );
 
-    if (imageFiles.length === 0 && !videoFile) {
+    const hasUpdateFields = Object.values(updateDto ?? {}).some((value) => {
+      if (value === undefined) {
+        return false;
+      }
+
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+
+      return true;
+    });
+
+    if (imageFiles.length === 0 && !videoFile && !hasUpdateFields) {
       throw new BadRequestException(
-        'At least one image or one video is required',
+        'At least one image, one video, or apartment info field is required',
       );
     }
 

@@ -11,15 +11,14 @@ import {
   MaxLength,
   Allow,
 } from 'class-validator';
-import {
-  ApiProperty,
-  ApiPropertyOptional,
-  OmitType,
-} from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { FurnishingStatus } from '@prisma/client';
 
-const toStringArray = ({ value }: { value: unknown }) => {
+const toStringArray = (
+  { value }: { value: unknown },
+  options?: { splitCommaSeparated?: boolean },
+) => {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
@@ -30,6 +29,10 @@ const toStringArray = ({ value }: { value: unknown }) => {
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
     if (trimmed.startsWith('[')) {
       try {
         const parsed = JSON.parse(trimmed);
@@ -37,6 +40,13 @@ const toStringArray = ({ value }: { value: unknown }) => {
       } catch {
         return undefined;
       }
+    }
+
+    if (options?.splitCommaSeparated) {
+      return trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
     }
 
     return [trimmed];
@@ -122,7 +132,7 @@ export class CreateApartmentDto {
     example: ['air_conditioning', 'wifi', 'parking', 'gym'],
     description: 'List of amenities',
   })
-  @Transform(toStringArray)
+  @Transform((params) => toStringArray(params, { splitCommaSeparated: true }))
   @IsArray()
   @IsOptional()
   amenities?: string[];

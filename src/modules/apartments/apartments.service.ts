@@ -309,8 +309,6 @@ export class ApartmentsService {
     return response.data as unknown;
   }
 
-
-
   /**
    * Resolve province code from a v2 ward code via external API
    */
@@ -496,6 +494,7 @@ export class ApartmentsService {
     const [apartment, ratingAggregate] = await Promise.all([
       this.prisma.apartment.findUnique({
         where: { id },
+
         include: {
           rooms: {
             select: {
@@ -592,6 +591,7 @@ export class ApartmentsService {
 
     return {
       ...apartment,
+      streetAddress: apartment.streetAddress,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
     };
   }
@@ -686,9 +686,7 @@ export class ApartmentsService {
     // Auto-resolve province code from ward code
     let provinceCode: number | undefined;
     if (createDto.wardCode) {
-      provinceCode = await this.resolveProvinceCodeFromWard(
-        createDto.wardCode,
-      );
+      provinceCode = await this.resolveProvinceCodeFromWard(createDto.wardCode);
     }
 
     const images = [
@@ -782,6 +780,7 @@ export class ApartmentsService {
       apartmentNumber: createDto.apartmentNumber,
       floorNumber: createDto.floorNumber,
       wardCode: createDto.wardCode,
+      streetAddress: createDto.streetAddress,
       latitude: createDto.latitude,
       longitude: createDto.longitude,
       totalArea: createDto.totalArea,
@@ -891,10 +890,9 @@ export class ApartmentsService {
       (apartment.status === ApartmentStatus.inactive ||
         apartment.status === this.cooperationVerifiedStatus);
 
-    const staffCanUpdateInfo =
-      currentUser.actorType === 'staff' &&
+    const canUpdateInfo =
       updateDto &&
-      Object.keys(updateDto).length > 0;
+      Object.values(updateDto).some((value) => value !== undefined);
 
     const apartmentUpdateData: Prisma.ApartmentUpdateInput = {
       ...(incomingImages.length > 0 ? { images: mergedImages } : {}),
@@ -902,13 +900,13 @@ export class ApartmentsService {
       ...(shouldSetVerified ? { status: this.cooperationVerifiedStatus } : {}),
     };
 
-    if (staffCanUpdateInfo) {
-      const {
-        ownerId: _ignoredOwnerId,
-        images: _ignoredImages,
-        videoTourUrl: _ignoredVideo,
-        ...restUpdateDto
-      } = updateDto;
+    if (canUpdateInfo) {
+      const blockedUpdateKeys = new Set(['ownerId', 'images', 'videoTourUrl']);
+      const restUpdateDto = Object.fromEntries(
+        Object.entries(updateDto).filter(
+          ([key, value]) => !blockedUpdateKeys.has(key) && value !== undefined,
+        ),
+      );
 
       Object.assign(apartmentUpdateData, restUpdateDto);
 
