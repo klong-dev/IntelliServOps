@@ -1,14 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService, AuthResponse } from './auth.service';
-import { mockUserJwtPayload, mockUser } from '../../test-utils';
 import { ActorType } from '@prisma/client';
 import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  GoogleAuthDto,
   LoginDto,
   RefreshTokenDto,
-  SubmitGuestInfoDto,
-  RequestOtpDto,
-  VerifyOtpDto,
+  RegisterDto,
+  ResetPasswordDto,
 } from './dto';
 
 describe('AuthController', () => {
@@ -16,264 +17,168 @@ describe('AuthController', () => {
   let authService: AuthService;
 
   const mockAuthService = {
+    register: jest.fn(),
     login: jest.fn(),
+    googleAuth: jest.fn(),
+    getSupabaseUrl: jest.fn(),
     refresh: jest.fn(),
     logout: jest.fn(),
-    submitGuestInfo: jest.fn(),
-    requestOtp: jest.fn(),
-    verifyOtpAndRegister: jest.fn(),
-    resendOtp: jest.fn(),
-    sendDirectOtp: jest.fn(),
+    forgotPassword: jest.fn(),
+    resetPassword: jest.fn(),
+    changePassword: jest.fn(),
   };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [
-        {
-          provide: AuthService,
-          useValue: mockAuthService,
-        },
-      ],
+      providers: [{ provide: AuthService, useValue: mockAuthService }],
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
     authService = module.get<AuthService>(AuthService);
-  });
-
-  afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('login', () => {
-    it('should successfully login and return user with tokens', async () => {
-      const loginDto: LoginDto = {
-        email: 'user@example.com',
-        password: 'password123',
-      };
+  it('should register a user', async () => {
+    const registerDto: RegisterDto = {
+      email: 'user@example.com',
+      phone: '+84901234567',
+      fullName: 'Test User',
+      password: 'password123',
+    };
+    const response = {
+      user: {
+        id: 'user-123',
+        email: registerDto.email,
+      },
+      tokens: {
+        accessToken: 'access',
+        refreshToken: 'refresh',
+      },
+    };
+    mockAuthService.register.mockResolvedValue(response);
 
-      const expectedResponse: AuthResponse = {
-        user: {
-          id: 'user-123',
-          email: loginDto.email,
-          fullName: 'Test User',
-          role: 'user',
-          actorType: ActorType.user,
-        },
-        tokens: {
-          accessToken: 'mock-access-token',
-          refreshToken: 'mock-refresh-token',
-        },
-      };
+    await expect(controller.register(registerDto)).resolves.toEqual(response);
+    expect(authService.register).toHaveBeenCalledWith(registerDto);
+  });
 
-      mockAuthService.login.mockResolvedValue(expectedResponse);
+  it('should login and return tokens', async () => {
+    const loginDto: LoginDto = {
+      email: 'user@example.com',
+      password: 'password123',
+    };
+    const response: AuthResponse = {
+      user: {
+        id: 'user-123',
+        email: loginDto.email,
+        fullName: 'Test User',
+        role: 'user',
+        actorType: ActorType.user,
+      },
+      tokens: {
+        accessToken: 'access',
+        refreshToken: 'refresh',
+      },
+      availableRoles: ['user'],
+    };
+    mockAuthService.login.mockResolvedValue(response);
 
-      const result = await controller.login(loginDto);
+    await expect(controller.login(loginDto)).resolves.toEqual(response);
+    expect(authService.login).toHaveBeenCalledWith(loginDto);
+  });
 
-      expect(result).toEqual(expectedResponse);
-      expect(authService.login).toHaveBeenCalledWith(loginDto);
-      expect(authService.login).toHaveBeenCalledTimes(1);
+  it('should authenticate with Google', async () => {
+    const googleDto: GoogleAuthDto = {
+      accessToken: 'google-token',
+    };
+    mockAuthService.googleAuth.mockResolvedValue({ user: { id: 'user-123' } });
+
+    await expect(controller.googleAuth(googleDto)).resolves.toEqual({
+      user: { id: 'user-123' },
+    });
+    expect(authService.googleAuth).toHaveBeenCalledWith(googleDto);
+  });
+
+  it('should return the Supabase OAuth URL', () => {
+    mockAuthService.getSupabaseUrl.mockReturnValue({
+      url: 'https://example.supabase.co/auth',
     });
 
-    it('should handle login with actor type specification', async () => {
-      const loginDto: LoginDto = {
-        email: 'staff@example.com',
-        password: 'password123',
-        actorType: 'staff' as any,
-      };
-
-      const expectedResponse: AuthResponse = {
-        user: {
-          id: 'staff-123',
-          email: loginDto.email,
-          fullName: 'Test Staff',
-          role: 'staff',
-          actorType: ActorType.staff,
-        },
-        tokens: {
-          accessToken: 'mock-access-token',
-          refreshToken: 'mock-refresh-token',
-        },
-      };
-
-      mockAuthService.login.mockResolvedValue(expectedResponse);
-
-      const result = await controller.login(loginDto);
-
-      expect(result).toEqual(expectedResponse);
-      expect(authService.login).toHaveBeenCalledWith(loginDto);
+    expect(controller.getSupabaseUrl()).toEqual({
+      url: 'https://example.supabase.co/auth',
     });
   });
 
-  describe('refresh', () => {
-    it('should successfully refresh tokens', async () => {
-      const refreshTokenDto: RefreshTokenDto = {
-        refreshToken: 'valid-refresh-token',
-      };
-
-      const expectedTokens = {
-        accessToken: 'new-access-token',
-        refreshToken: 'new-refresh-token',
-      };
-
-      mockAuthService.refresh.mockResolvedValue(expectedTokens);
-
-      const result = await controller.refresh(refreshTokenDto);
-
-      expect(result).toEqual(expectedTokens);
-      expect(authService.refresh).toHaveBeenCalledWith(
-        refreshTokenDto.refreshToken,
-      );
-      expect(authService.refresh).toHaveBeenCalledTimes(1);
+  it('should refresh tokens', async () => {
+    const refreshDto: RefreshTokenDto = { refreshToken: 'refresh-token' };
+    mockAuthService.refresh.mockResolvedValue({
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
     });
+
+    await expect(controller.refresh(refreshDto)).resolves.toEqual({
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+    });
+    expect(authService.refresh).toHaveBeenCalledWith(refreshDto.refreshToken);
   });
 
-  describe('logout', () => {
-    it('should successfully logout', async () => {
-      const refreshTokenDto: RefreshTokenDto = {
-        refreshToken: 'token-to-revoke',
-      };
+  it('should logout and return a confirmation message', async () => {
+    const refreshDto: RefreshTokenDto = { refreshToken: 'refresh-token' };
+    mockAuthService.logout.mockResolvedValue(undefined);
 
-      mockAuthService.logout.mockResolvedValue(undefined);
-
-      await controller.logout(refreshTokenDto);
-
-      expect(authService.logout).toHaveBeenCalledWith(
-        refreshTokenDto.refreshToken,
-      );
-      expect(authService.logout).toHaveBeenCalledTimes(1);
+    await expect(controller.logout(refreshDto)).resolves.toEqual({
+      message: 'Logged out successfully',
     });
+    expect(authService.logout).toHaveBeenCalledWith(refreshDto.refreshToken);
   });
 
-  describe('submitGuestInfo', () => {
-    it('should submit guest information successfully', async () => {
-      const submitDto: SubmitGuestInfoDto = {
-        phone: '+84901234567',
-        email: 'guest@example.com',
-        fullName: 'Test Guest',
-        dateOfBirth: '1995-01-01',
-        nationalId: '123456789',
-      };
-
-      const currentUser = mockUserJwtPayload({
-        sub: 'staff-123',
-        actorType: ActorType.staff,
-      });
-
-      const expectedResponse = {
-        message: 'Guest information submitted',
-        pendingRegistrationId: 'pending-123',
-      };
-
-      mockAuthService.submitGuestInfo.mockResolvedValue(expectedResponse);
-
-      const result = await controller.submitGuestInfo(submitDto, currentUser);
-
-      expect(result).toEqual(expectedResponse);
-      expect(authService.submitGuestInfo).toHaveBeenCalledWith(
-        submitDto,
-        currentUser.sub,
-      );
-      expect(authService.submitGuestInfo).toHaveBeenCalledTimes(1);
+  it('should request forgot-password flow', async () => {
+    const dto: ForgotPasswordDto = { email: 'user@example.com' };
+    mockAuthService.forgotPassword.mockResolvedValue({
+      message: 'Reset link sent',
     });
+
+    await expect(controller.forgotPassword(dto)).resolves.toEqual({
+      message: 'Reset link sent',
+    });
+    expect(authService.forgotPassword).toHaveBeenCalledWith(dto);
   });
 
-  describe('requestOtp', () => {
-    it('should request OTP successfully', async () => {
-      const requestOtpDto: RequestOtpDto = {
-        phone: '+84901234567',
-      };
-
-      const expectedResponse = {
-        message: 'OTP has been sent',
-        expiresIn: 300,
-        devOtpCode: '123456',
-      };
-
-      mockAuthService.requestOtp.mockResolvedValue(expectedResponse);
-
-      const result = await controller.requestOtp(requestOtpDto);
-
-      expect(result).toEqual(expectedResponse);
-      expect(authService.requestOtp).toHaveBeenCalledWith(requestOtpDto);
-      expect(authService.requestOtp).toHaveBeenCalledTimes(1);
+  it('should reset password', async () => {
+    const dto: ResetPasswordDto = {
+      token: 'reset-token',
+      newPassword: 'new-password-123',
+    };
+    mockAuthService.resetPassword.mockResolvedValue({
+      message: 'Password reset successful',
     });
+
+    await expect(controller.resetPassword(dto)).resolves.toEqual({
+      message: 'Password reset successful',
+    });
+    expect(authService.resetPassword).toHaveBeenCalledWith(dto);
   });
 
-  describe('verifyOtp', () => {
-    it('should verify OTP and complete registration', async () => {
-      const verifyDto: VerifyOtpDto = {
-        phone: '+84901234567',
-        otpCode: '123456',
-        password: 'newpassword123',
-      };
-
-      const expectedResponse: AuthResponse = {
-        user: {
-          id: 'user-123',
-          email: 'guest@example.com',
-          fullName: 'Test Guest',
-          role: 'user',
-          actorType: ActorType.user,
-        },
-        tokens: {
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-        },
-      };
-
-      mockAuthService.verifyOtpAndRegister.mockResolvedValue(expectedResponse);
-
-      const result = await controller.verifyOtp(verifyDto);
-
-      expect(result).toEqual(expectedResponse);
-      expect(authService.verifyOtpAndRegister).toHaveBeenCalledWith(verifyDto);
-      expect(authService.verifyOtpAndRegister).toHaveBeenCalledTimes(1);
+  it('should change password for the current actor', async () => {
+    const dto: ChangePasswordDto = {
+      currentPassword: 'old-password',
+      newPassword: 'new-password-123',
+    };
+    const currentUser = { id: 'user-123', actorType: ActorType.user };
+    mockAuthService.changePassword.mockResolvedValue({
+      message: 'Password changed',
     });
-  });
 
-  describe('resendOtp', () => {
-    it('should resend OTP successfully', async () => {
-      const requestOtpDto: RequestOtpDto = {
-        phone: '+84901234567',
-      };
-
-      const expectedResponse = {
-        message: 'New OTP has been sent',
-        expiresIn: 300,
-      };
-
-      mockAuthService.resendOtp.mockResolvedValue(expectedResponse);
-
-      const result = await controller.resendOtp(requestOtpDto);
-
-      expect(result).toEqual(expectedResponse);
-      expect(authService.resendOtp).toHaveBeenCalledWith(requestOtpDto.phone);
-      expect(authService.resendOtp).toHaveBeenCalledTimes(1);
+    await expect(
+      controller.changePassword(dto, currentUser as any),
+    ).resolves.toEqual({
+      message: 'Password changed',
     });
-  });
-
-  describe('sendDirectOtp', () => {
-    it('should send direct OTP successfully', async () => {
-      const requestOtpDto: RequestOtpDto = {
-        phone: '+84901234567',
-      };
-
-      const expectedResponse = {
-        message: 'OTP has been sent',
-        expiresIn: 300,
-        devOtpCode: '654321',
-      };
-
-      mockAuthService.sendDirectOtp.mockResolvedValue(expectedResponse);
-
-      const result = await controller.sendDirectOtp(requestOtpDto);
-
-      expect(result).toEqual(expectedResponse);
-      expect(authService.sendDirectOtp).toHaveBeenCalledWith(
-        requestOtpDto.phone,
-      );
-      expect(authService.sendDirectOtp).toHaveBeenCalledTimes(1);
-    });
+    expect(authService.changePassword).toHaveBeenCalledWith(
+      'user-123',
+      ActorType.user,
+      dto,
+    );
   });
 });

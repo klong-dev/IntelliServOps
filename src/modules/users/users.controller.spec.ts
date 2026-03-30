@@ -5,10 +5,8 @@ import {
   mockUser,
   mockUserJwtPayload,
   mockStaffJwtPayload,
-  mockAdminJwtPayload,
 } from '../../test-utils';
 import { CreateUserDto, UpdateUserDto, SearchUserDto } from './dto';
-import { ActorType } from '@prisma/client';
 
 describe('UsersController', () => {
   let controller: UsersController;
@@ -149,7 +147,7 @@ describe('UsersController', () => {
       const result = await controller.getProfile(currentUser);
 
       expect(result).toEqual(user);
-      expect(usersService.getProfile).toHaveBeenCalledWith(currentUser.sub);
+      expect(usersService.getProfile).toHaveBeenCalledWith(currentUser);
     });
   });
 });

@@ -24,6 +24,43 @@ class DeviceRoomSummaryDto {
   roomType: string;
 }
 
+export class IoTMqttPublishDetailsDto {
+  @ApiPropertyOptional({ type: String, nullable: true })
+  brokerUrl: string | null;
+
+  @ApiProperty({ example: 'ESP_A101/light' })
+  topic: string;
+
+  @ApiProperty({ example: 'on_1' })
+  payload: string;
+
+  @ApiProperty({ example: 'ESP_A101' })
+  espId: string;
+
+  @ApiProperty({ example: 'light' })
+  controlType: string;
+
+  @ApiProperty({ example: 1 })
+  channelId: number;
+
+  @ApiProperty()
+  publishedAt: Date;
+}
+
+export class IoTGatewayStatusDto {
+  @ApiProperty({ example: true })
+  success: boolean;
+
+  @ApiProperty({ example: true })
+  mqttConnected: boolean;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  brokerUrl: string | null;
+
+  @ApiProperty({ example: 'HOMEIQ/+/status' })
+  statusTopic: string;
+}
+
 export class IoTDeviceListItemDto {
   @ApiProperty()
   id: string;
@@ -116,6 +153,18 @@ export class IoTDeviceDetailDto {
   @ApiPropertyOptional({ type: Object, nullable: true })
   configuration: any;
 
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'ESP_A101' })
+  mqttEspId: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'door' })
+  mqttControlType: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  mqttChannelId: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  mqttDoorPasswordChannelId: number | null;
+
   @ApiProperty()
   accessLogsEnabled: boolean;
 
@@ -149,6 +198,60 @@ export class ControlDeviceResponseDto {
 
   @ApiProperty()
   executedAt: Date;
+
+  @ApiProperty({ example: 'ESP_A101' })
+  mqttEspId: string;
+
+  @ApiProperty({ example: 'door' })
+  mqttControlType: string;
+
+  @ApiProperty({ example: 1 })
+  mqttChannelId: number;
+
+  @ApiProperty({ example: 'ESP_A101/door' })
+  mqttTopic: string;
+
+  @ApiProperty({ example: 'open_1' })
+  mqttPayload: string;
+}
+
+export class IoTMqttCommandResultDto {
+  @ApiProperty({ example: true })
+  success: boolean;
+
+  @ApiProperty({ example: 'The lights have been turned on' })
+  message: string;
+
+  @ApiProperty({ type: IoTMqttPublishDetailsDto })
+  details: IoTMqttPublishDetailsDto;
+}
+
+export class IoTTestSequenceStepDto {
+  @ApiProperty({ example: 1 })
+  order: number;
+
+  @ApiProperty({ example: 'LIGHT_1_ON' })
+  action: string;
+
+  @ApiProperty({ type: IoTMqttPublishDetailsDto })
+  details: IoTMqttPublishDetailsDto;
+}
+
+export class IoTTestSequenceResponseDto {
+  @ApiProperty({ example: true })
+  success: boolean;
+
+  @ApiProperty({ example: 'Test sequence completed' })
+  message: string;
+
+  @ApiProperty({ example: 2000 })
+  holdMs: number;
+
+  @ApiProperty({ example: 10 })
+  totalSteps: number;
+
+  @ApiProperty({ type: [IoTTestSequenceStepDto] })
+  steps: IoTTestSequenceStepDto[];
 }
 
 // ─── Utility Meter List Item DTO ────────────────────────────────────
