@@ -32,37 +32,57 @@ export class IoTService {
   }
 
   triggerLight(espId: string, id: number, action: string) {
-    const details = this.ioTMqttService.triggerLight(espId, action, id);
+    const normalizedAction = this.normalizeDeviceCommand('light', action);
+    const details = this.ioTMqttService.triggerLight(
+      espId,
+      normalizedAction,
+      id,
+    );
     return {
       success: true,
-      message: `The lights have been turned ${action}`,
+      message: `The lights have been turned ${normalizedAction}`,
       details,
     };
   }
 
   triggerAlarm(espId: string, id: number, action: string) {
-    const details = this.ioTMqttService.triggerAlarm(espId, action, id);
+    const normalizedAction = this.normalizeDeviceCommand('alarm', action);
+    const details = this.ioTMqttService.triggerAlarm(
+      espId,
+      normalizedAction,
+      id,
+    );
     return {
       success: true,
-      message: `Alarm has been turned ${action}`,
+      message: `Alarm has been turned ${normalizedAction}`,
       details,
     };
   }
 
   triggerDoor(espId: string, id: number, action: string) {
-    const details = this.ioTMqttService.triggerDoor(espId, action, id);
+    const normalizedAction = this.normalizeDeviceCommand('door', action);
+    const details = this.ioTMqttService.triggerDoor(
+      espId,
+      normalizedAction,
+      id,
+    );
     return {
       success: true,
-      message: `Door has been ${action === 'open' ? 'opened' : 'closed'}`,
+      message: `Door has been ${normalizedAction === 'open' ? 'opened' : 'closed'}`,
       details,
     };
   }
 
   triggerCurtain(espId: string, id: number, action: string) {
-    const details = this.ioTMqttService.triggerCurtain(espId, action, id);
+    const normalizedAction = this.normalizeDeviceCommand('curtain', action);
+    const details = this.ioTMqttService.triggerCurtain(
+      espId,
+      normalizedAction,
+      id,
+    );
     return {
       success: true,
-      message: `Curtain has been ${action === 'open' ? 'opened' : 'closed'}`,
+      message: `Curtain has been ${normalizedAction === 'open' ? 'opened' : 'closed'}`,
       details,
     };
   }
@@ -169,8 +189,8 @@ export class IoTService {
     return this.toDeviceDetail(device);
   }
 
-  async findDevicesByApartment(apartmentId: string, currentUser: JwtPayload) {
-    if (currentUser.actorType === 'user') {
+  async findDevicesByApartment(apartmentId: string, currentUser?: JwtPayload) {
+    if (currentUser?.actorType === 'user') {
       const hasAccess = await this.prisma.rentalContract.findFirst({
         where: {
           apartmentId,
@@ -188,7 +208,7 @@ export class IoTService {
     const devices = await this.prisma.ioTDevice.findMany({
       where: {
         apartmentId,
-        ...(currentUser.actorType === 'user'
+        ...(currentUser?.actorType === 'user'
           ? {
               status: IoTStatus.active,
               isControllableByTenant: true,
@@ -290,7 +310,10 @@ export class IoTService {
       await this.ensureApartmentExists(updateDto.apartmentId);
     }
 
-    await this.ensureRoomBelongsToApartment(updateDto.roomId, targetApartmentId);
+    await this.ensureRoomBelongsToApartment(
+      updateDto.roomId,
+      targetApartmentId,
+    );
 
     const {
       mqttEspId,
@@ -352,7 +375,7 @@ export class IoTService {
     });
   }
 
-  async controlDevice(id: string, command: string, currentUser: JwtPayload) {
+  async controlDevice(id: string, command: string, currentUser?: JwtPayload) {
     const device = await this.prisma.ioTDevice.findUnique({
       where: { id },
       select: {
@@ -385,7 +408,7 @@ export class IoTService {
       throw new BadRequestException('Device is not active');
     }
 
-    if (currentUser.actorType === 'user') {
+    if (currentUser?.actorType === 'user') {
       if (!device.isControllableByTenant) {
         throw new ForbiddenException(
           'This device is not controllable by tenants',
@@ -558,7 +581,7 @@ export class IoTService {
 
   async createReading(
     createDto: CreateUtilityReadingDto,
-    currentUser: JwtPayload,
+    currentUser?: JwtPayload,
   ) {
     const meter = await this.prisma.utilityMeter.findUnique({
       where: { id: createDto.utilityMeterId },
@@ -585,7 +608,7 @@ export class IoTService {
         consumption,
         readingType: createDto.readingType ?? 'manual',
         readByStaff:
-          currentUser.actorType === 'staff'
+          currentUser?.actorType === 'staff'
             ? { connect: { id: currentUser.sub } }
             : undefined,
         images: createDto.images as any,
@@ -633,12 +656,16 @@ export class IoTService {
     });
   }
 
-  async verifyReading(id: string, staffId: string) {
+  async verifyReading(id: string, staffId?: string) {
     return this.prisma.utilityReading.update({
       where: { id },
       data: {
         isVerified: true,
-        verifiedByStaff: { connect: { id: staffId } },
+        ...(staffId
+          ? {
+              verifiedByStaff: { connect: { id: staffId } },
+            }
+          : {}),
         verifiedAt: new Date(),
       },
       select: {
@@ -864,13 +891,11 @@ export class IoTService {
   }
 
   private toRoomSummary(
-    room:
-      | {
-          id: string;
-          roomNumber: string;
-          roomType: string;
-        }
-      | null,
+    room: {
+      id: string;
+      roomNumber: string;
+      roomType: string;
+    } | null,
   ) {
     if (!room) {
       return null;
@@ -886,7 +911,11 @@ export class IoTService {
   private toDeviceDetail(device: {
     configuration: unknown;
     deviceType: string;
-    apartment: { id: string; apartmentNumber: string; streetAddress: string | null };
+    apartment: {
+      id: string;
+      apartmentNumber: string;
+      streetAddress: string | null;
+    };
     room: { id: string; roomNumber: string; roomType: string } | null;
     [key: string]: any;
   }) {
