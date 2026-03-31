@@ -597,8 +597,14 @@ export class UsersService {
         this.fptAiService.verifyIdCardFromBase64(backBase64),
       ]);
 
-      frontVerified = this.fptAiService.isVerificationSuccessful(frontResult);
-      backVerified = this.fptAiService.isVerificationSuccessful(backResult);
+      frontVerified = this.fptAiService.isVerificationSuccessfulForSide(
+        frontResult,
+        'front',
+      );
+      backVerified = this.fptAiService.isVerificationSuccessfulForSide(
+        backResult,
+        'back',
+      );
       autoVerified = frontVerified && backVerified;
 
       if (!frontVerified) {
@@ -765,13 +771,19 @@ export class UsersService {
       aiVerification: {
         front: frontResult
           ? {
-              success: this.fptAiService.isVerificationSuccessful(frontResult),
+              success: this.fptAiService.isVerificationSuccessfulForSide(
+                frontResult,
+                'front',
+              ),
               extractedInfo: this.fptAiService.extractUserInfo(frontResult),
             }
           : null,
         back: backResult
           ? {
-              success: this.fptAiService.isVerificationSuccessful(backResult),
+              success: this.fptAiService.isVerificationSuccessfulForSide(
+                backResult,
+                'back',
+              ),
               extractedInfo: this.fptAiService.extractUserInfo(backResult),
             }
           : null,

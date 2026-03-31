@@ -49,6 +49,8 @@ export interface FptAiIdCardData {
   issue_loc_prob?: string;
 }
 
+export type IdCardSide = 'front' | 'back';
+
 @Injectable()
 export class FptAiService {
   private readonly logger = new Logger(FptAiService.name);
@@ -73,11 +75,73 @@ export class FptAiService {
     });
   }
 
+  private isMeaningfulValue(value: unknown): boolean {
+    if (value == null) {
+      return false;
+    }
+
+    if (typeof value !== 'string') {
+      return true;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return normalized !== '' && normalized !== 'n/a' && normalized !== 'na';
+  }
+
+  private hasAnyFieldValue(
+    data: FptAiIdCardData,
+    fields: Array<keyof FptAiIdCardData>,
+  ): boolean {
+    return fields.some((field) => this.isMeaningfulValue(data[field]));
+  }
+
+  private detectSideByType(data: FptAiIdCardData): IdCardSide | null {
+    const typeHints = [data.type, data.type_new]
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ')
+      .toLowerCase();
+
+    if (!typeHints) {
+      return null;
+    }
+
+    if (
+      typeHints.includes('back') ||
+      typeHints.includes('mat_sau') ||
+      typeHints.includes('mat sau') ||
+      typeHints.includes('reverse')
+    ) {
+      return 'back';
+    }
+
+    if (
+      typeHints.includes('front') ||
+      typeHints.includes('mat_truoc') ||
+      typeHints.includes('mat truoc') ||
+      typeHints.includes('obverse')
+    ) {
+      return 'front';
+    }
+
+    return null;
+  }
+
   private buildHeaders(formData: FormData) {
     return {
       ...formData.getHeaders(),
       'api-key': this.apiKey,
     };
+  }
+
+  private hasErrorFreeData(
+    response: FptAiResponse | null | undefined,
+  ): boolean {
+    return (
+      !!response &&
+      response.errorCode === 0 &&
+      Array.isArray(response.data) &&
+      response.data.length > 0
+    );
   }
 
   private sanitizeBase64(base64Data: string): string {
@@ -156,7 +220,7 @@ export class FptAiService {
         },
       );
 
-      if (!this.isVerificationSuccessful(response.data)) {
+      if (!this.hasErrorFreeData(response.data)) {
         const fallbackFormData = new FormData();
         fallbackFormData.append(
           'image',
@@ -242,6 +306,49 @@ export class FptAiService {
     return isErrorFree && hasId;
   }
 
+  isVerificationSuccessfulForSide(
+    response: FptAiResponse | null | undefined,
+    expectedSide: IdCardSide,
+  ): boolean {
+    if (!this.hasErrorFreeData(response)) {
+      return false;
+    }
+
+    const data = response!.data[0];
+
+    const sideByType = this.detectSideByType(data);
+    if (sideByType) {
+      return sideByType === expectedSide;
+    }
+
+    const frontOnlyFields: Array<keyof FptAiIdCardData> = [
+      'name',
+      'dob',
+      'sex',
+      'nationality',
+      'home',
+      'address',
+    ];
+    const backOnlyFields: Array<keyof FptAiIdCardData> = [
+      'ethnicity',
+      'religion',
+      'features',
+      'issue_date',
+      'issue_loc',
+      'doe',
+    ];
+
+    const hasFrontSignals = this.hasAnyFieldValue(data, frontOnlyFields);
+    const hasBackSignals = this.hasAnyFieldValue(data, backOnlyFields);
+
+    if (expectedSide === 'front') {
+      const hasId = this.isMeaningfulValue(data.id);
+      return hasId && hasFrontSignals;
+    }
+
+    return hasBackSignals;
+  }
+
   /**
    * Extract ID number from verification response
    * @param response FPT AI API response
@@ -282,7 +389,7 @@ export class FptAiService {
     doe?: string;
     type?: string;
   } | null {
-    if (!this.isVerificationSuccessful(response)) {
+    if (!this.hasErrorFreeData(response)) {
       return null;
     }
 
