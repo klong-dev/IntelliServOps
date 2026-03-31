@@ -8,6 +8,8 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserViewingRequestDto, MyViewingRequestsQueryDto } from './dto';
+import { CancelViewingRequestDto } from './dto/cancel-viewing-request.dto';
+import { DoneViewingRequestDto } from './dto/done-viewing-request.dto';
 import { StaffAcceptViewingRequestDto } from './dto/staff-accept-viewing-request.dto';
 import { StaffDenyViewingRequestDto } from './dto/staff-deny-viewing-request.dto';
 import {
@@ -99,6 +101,8 @@ export class ViewingRequestsService {
     const appointmentDate = new Date(appointmentTime);
     appointmentDate.setHours(0, 0, 0, 0);
 
+    const normalizedNote = createDto.note?.trim() || null;
+
     const result = await this.prisma.$transaction(async (tx) => {
       let guest = await tx.guest.findUnique({
         where: { email: user.email },
@@ -115,6 +119,26 @@ export class ViewingRequestsService {
         });
       }
 
+      const existingActiveAppointment = await tx.appointment.findFirst({
+        where: {
+          guestId: guest.id,
+          apartmentId: apartment.id,
+          status: {
+            notIn: [AppointmentStatus.cancelled, AppointmentStatus.completed],
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+        },
+      });
+
+      if (existingActiveAppointment) {
+        throw new ConflictException(
+          `You already have an active appointment for this apartment (status: ${existingActiveAppointment.status}).`,
+        );
+      }
+
       const appointment = await tx.appointment.create({
         data: {
           guest: { connect: { id: guest.id } },
@@ -123,7 +147,7 @@ export class ViewingRequestsService {
           appointmentDate,
           appointmentTime,
           durationMinutes: 30,
-          guestNotes: createDto.note,
+          guestNotes: normalizedNote,
           status: AppointmentStatus.scheduled,
         },
         select: {
@@ -141,7 +165,7 @@ export class ViewingRequestsService {
         appointmentAt: appointment.appointmentTime,
         durationMinutes: appointment.durationMinutes,
         status: appointment.status,
-        note: createDto.note,
+        note: normalizedNote,
         assignedStaff: {
           id: assignedStaff.id,
           fullName: assignedStaff.fullName,
@@ -205,6 +229,8 @@ export class ViewingRequestsService {
               apartmentNumber: true,
               buildingName: true,
               wardCode: true,
+              provinceCode: true,
+              streetAddress: true,
             },
           },
           assignedStaff: {
@@ -543,7 +569,13 @@ export class ViewingRequestsService {
   /**
    * Staff confirms a viewing job is done.
    */
-  async confirmDoneJob(appointmentId: string, currentUser: JwtPayload) {
+  async confirmDoneJob(
+    appointmentId: string,
+    currentUser: JwtPayload,
+    dto: DoneViewingRequestDto,
+  ) {
+    const normalizedNote = dto.note?.trim();
+
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: appointmentId },
       select: {
@@ -564,7 +596,35 @@ export class ViewingRequestsService {
     if (appointment.status !== AppointmentStatus.completed) {
       return this.prisma.appointment.update({
         where: { id: appointmentId },
-        data: { status: AppointmentStatus.completed },
+        data: {
+          status: AppointmentStatus.completed,
+          ...(normalizedNote ? { staffNotes: normalizedNote } : {}),
+        },
+        select: {
+          id: true,
+          guestId: true,
+          apartmentId: true,
+          assignedStaffId: true,
+          appointmentDate: true,
+          appointmentTime: true,
+          durationMinutes: true,
+          meetingLocation: true,
+          type: true,
+          status: true,
+          guestNotes: true,
+          staffNotes: true,
+          outcome: true,
+          followupRequired: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    if (normalizedNote) {
+      return this.prisma.appointment.update({
+        where: { id: appointmentId },
+        data: { staffNotes: normalizedNote },
         select: {
           id: true,
           guestId: true,
@@ -612,7 +672,13 @@ export class ViewingRequestsService {
   /**
    * Assigned staff or appointment owner user cancels an appointment.
    */
-  async cancelAppointment(appointmentId: string, currentUser: JwtPayload) {
+  async cancelAppointment(
+    appointmentId: string,
+    currentUser: JwtPayload,
+    dto: CancelViewingRequestDto,
+  ) {
+    const normalizedNote = dto.note?.trim();
+
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: appointmentId },
       select: {
@@ -662,8 +728,9 @@ export class ViewingRequestsService {
         data: {
           status: AppointmentStatus.cancelled,
           cancelledAt: new Date(),
-          cancellationReason:
-            currentUser.actorType === 'staff'
+          cancellationReason: normalizedNote
+            ? normalizedNote
+            : currentUser.actorType === 'staff'
               ? 'Cancelled by assigned staff'
               : 'Cancelled by user',
         },
@@ -695,6 +762,31 @@ export class ViewingRequestsService {
       }
 
       return cancelledAppointment;
+    }
+
+    if (normalizedNote) {
+      return this.prisma.appointment.update({
+        where: { id: appointmentId },
+        data: { cancellationReason: normalizedNote },
+        select: {
+          id: true,
+          guestId: true,
+          apartmentId: true,
+          assignedStaffId: true,
+          appointmentDate: true,
+          appointmentTime: true,
+          durationMinutes: true,
+          meetingLocation: true,
+          type: true,
+          status: true,
+          guestNotes: true,
+          staffNotes: true,
+          outcome: true,
+          followupRequired: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
     }
 
     return this.prisma.appointment.findUniqueOrThrow({

@@ -537,6 +537,8 @@ export class UsersService {
     let autoVerified = false;
     let frontResult = null;
     let backResult = null;
+    let frontVerified = false;
+    let backVerified = false;
 
     // Call FPT AI for both sides in parallel
     const frontBase64 = identityCardFrontFile.buffer.toString('base64');
@@ -549,14 +551,31 @@ export class UsersService {
         this.fptAiService.verifyIdCardFromBase64(backBase64),
       ]);
 
-      if (this.fptAiService.isVerificationSuccessful(frontResult)) {
-        autoVerified = true;
-        this.logger.log(`Front ID card verified via AI for user: ${userId}`);
-      } else {
+      frontVerified = this.fptAiService.isVerificationSuccessful(frontResult);
+      backVerified = this.fptAiService.isVerificationSuccessful(backResult);
+      autoVerified = frontVerified && backVerified;
+
+      if (!frontVerified) {
         this.logger.warn(
           `Front ID card verification failed for user: ${userId}, Error: ${frontResult.errorMessage}`,
         );
       }
+
+      if (!backVerified) {
+        this.logger.warn(
+          `Back ID card verification failed for user: ${userId}, Error: ${backResult.errorMessage}`,
+        );
+      }
+
+      if (!autoVerified) {
+        throw new BadRequestException(
+          'Khong the doc day du ca 2 mat CCCD. Vui long chup ro mat truoc va mat sau.',
+        );
+      }
+
+      this.logger.log(
+        `ID card verified (front + back) via AI for user: ${userId}`,
+      );
     } catch (error) {
       this.logger.error(
         `FPT AI verification error for user ${userId}: ${error.message}`,

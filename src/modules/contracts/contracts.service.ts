@@ -181,7 +181,8 @@ export class ContractsService {
         : null,
     };
 
-    const pdfBuffer = await this.contractPdfService.generateContractPdf(pdfData);
+    const pdfBuffer =
+      await this.contractPdfService.generateContractPdf(pdfData);
 
     await this.prisma.rentalContract.update({
       where: { id: contractId },
@@ -801,6 +802,50 @@ export class ContractsService {
    * Create new rental contract
    */
   async create(createDto: CreateContractDto, currentUser: JwtPayload) {
+    if (!createDto.members?.length) {
+      throw new BadRequestException('At least one contract member is required');
+    }
+
+    const normalizedMembers = createDto.members.map((member) => ({
+      ...member,
+      isPrimaryContact:
+        member.isPrimaryContact ?? member.memberType === 'primary',
+    }));
+
+    const memberUserIds = normalizedMembers.map((member) => member.userId);
+    const uniqueMemberUserIds = new Set(memberUserIds);
+    if (uniqueMemberUserIds.size !== memberUserIds.length) {
+      throw new BadRequestException(
+        'Duplicate userId is not allowed in contract members',
+      );
+    }
+
+    const primaryMembers = normalizedMembers.filter(
+      (member) => member.memberType === MemberType.primary,
+    );
+    if (primaryMembers.length !== 1) {
+      throw new BadRequestException(
+        'Contract must have exactly one primary member',
+      );
+    }
+
+    const primaryContacts = normalizedMembers.filter(
+      (member) => member.isPrimaryContact,
+    );
+    if (primaryContacts.length > 1) {
+      throw new BadRequestException(
+        'Only one primary contact is allowed in contract members',
+      );
+    }
+
+    const primaryUserId = primaryMembers[0].userId;
+    const primaryContactUserId = primaryContacts[0]?.userId;
+    if (primaryContactUserId && primaryContactUserId !== primaryUserId) {
+      throw new BadRequestException(
+        'Primary contact must be the same user as primary member',
+      );
+    }
+
     // Check if apartment is available
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: createDto.apartmentId },
@@ -833,19 +878,11 @@ export class ContractsService {
       throw new ConflictException('Apartment has an overlapping contract');
     }
 
-    // Validate at least one primary member
-    const hasPrimary = createDto.members.some(
-      (m) => m.memberType === 'primary',
-    );
-    if (!hasPrimary) {
-      throw new BadRequestException('At least one primary tenant is required');
-    }
-
     // Generate contract number
     const contractNumber = await this.generateContractNumber();
 
     // Create contract with members in transaction
-    return this.prisma.$transaction(async (tx) => {
+    const createdContract = await this.prisma.$transaction(async (tx) => {
       const contract = await tx.rentalContract.create({
         data: {
           contractNumber,
@@ -874,11 +911,11 @@ export class ContractsService {
 
       // Create contract members
       await tx.userContractMember.createMany({
-        data: createDto.members.map((m) => ({
+        data: normalizedMembers.map((m) => ({
           userId: m.userId,
           rentalContractId: contract.id,
           memberType: m.memberType,
-          isPrimaryContact: m.isPrimaryContact ?? m.memberType === 'primary',
+          isPrimaryContact: m.isPrimaryContact,
           sharePercentage: m.sharePercentage,
           status: MemberStatus.active,
         })),
@@ -886,6 +923,8 @@ export class ContractsService {
 
       return contract;
     });
+
+    return this.findOne(createdContract.id, currentUser);
   }
 
   /**
@@ -1122,7 +1161,9 @@ export class ContractsService {
       contract.status === ContractStatus.terminated ||
       contract.status === ContractStatus.expired
     ) {
-      throw new ConflictException('Cannot add members after contract is signed');
+      throw new ConflictException(
+        'Cannot add members after contract is signed',
+      );
     }
 
     if (currentUser.actorType === 'user') {
@@ -1169,12 +1210,32 @@ export class ContractsService {
       throw new ConflictException('This user is already a contract member');
     }
 
+    const targetMemberType = body.memberType ?? MemberType.co_tenant;
+    const targetIsPrimaryContact = body.isPrimaryContact ?? false;
+
+    if (targetMemberType === MemberType.primary) {
+      throw new BadRequestException(
+        'Cannot add another primary member to this contract',
+      );
+    }
+
+    if (targetIsPrimaryContact) {
+      const hasPrimaryContact = contract.members.some(
+        (member) => member.isPrimaryContact,
+      );
+      if (hasPrimaryContact) {
+        throw new BadRequestException(
+          'Contract already has a primary contact member',
+        );
+      }
+    }
+
     await this.prisma.userContractMember.create({
       data: {
         userId: identity.userId,
         rentalContractId: contractId,
-        memberType: body.memberType ?? MemberType.co_tenant,
-        isPrimaryContact: body.isPrimaryContact ?? false,
+        memberType: targetMemberType,
+        isPrimaryContact: targetIsPrimaryContact,
         sharePercentage: body.sharePercentage,
         status: MemberStatus.active,
       },

@@ -25,6 +25,8 @@ import {
   UserViewingBookingResponseDto,
   UserMyViewingRequestDto,
 } from './dto';
+import { CancelViewingRequestDto } from './dto/cancel-viewing-request.dto';
+import { DoneViewingRequestDto } from './dto/done-viewing-request.dto';
 import { StaffAcceptViewingRequestDto } from './dto/staff-accept-viewing-request.dto';
 import { StaffDenyViewingRequestDto } from './dto/staff-deny-viewing-request.dto';
 import { Roles, CurrentUser } from '../../common/decorators';
@@ -45,7 +47,7 @@ export class ViewingRequestsController {
   @ApiOperation({
     summary: 'User books apartment viewing',
     description:
-      'Authenticated user books a viewing by sending apartmentId, appointmentAt, and note.',
+      'Authenticated user books a viewing by sending apartmentId and appointmentAt. Note is optional.',
   })
   @ApiBody({
     type: CreateUserViewingRequestDto,
@@ -58,6 +60,13 @@ export class ViewingRequestsController {
           note: 'Toi muon xem can ho vao buoi sang, vui long lien he truoc 30 phut.',
         },
       },
+      withoutNote: {
+        summary: 'Booking request without note',
+        value: {
+          apartmentId: '11111111-2222-3333-4444-555555555555',
+          appointmentAt: '2026-03-24T09:30:00.000Z',
+        },
+      },
     },
   })
   @ApiJsonResponse(UserViewingBookingResponseDto, {
@@ -66,7 +75,11 @@ export class ViewingRequestsController {
   })
   @ApiResponse({ status: 400, description: 'Invalid request data' })
   @ApiResponse({ status: 404, description: 'User or apartment not found' })
-  @ApiResponse({ status: 409, description: 'Requested slot is full' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Requested slot is full or user already has an active appointment for this apartment',
+  })
   async createUserViewingBooking(
     @Body() createDto: CreateUserViewingRequestDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -209,6 +222,21 @@ export class ViewingRequestsController {
     description: 'Appointment ID that the staff completed',
     example: 'b6a52ecf-6f88-4ed4-9aa4-7b8db6bc65d4',
   })
+  @ApiBody({
+    type: DoneViewingRequestDto,
+    examples: {
+      doneWithNote: {
+        summary: 'Done viewing with note',
+        value: {
+          note: 'Khach da xem nha, se phan hoi trong 2 ngay toi.',
+        },
+      },
+      doneWithoutNote: {
+        summary: 'Done viewing without note',
+        value: {},
+      },
+    },
+  })
   @ApiJsonResponse(AppointmentResponseDto, {
     description:
       'Appointment completed successfully with full appointment data',
@@ -220,11 +248,13 @@ export class ViewingRequestsController {
   @ApiResponse({ status: 404, description: 'Appointment not found' })
   async confirmDoneJob(
     @Param('appointmentId', ParseUUIDPipe) appointmentId: string,
+    @Body() dto: DoneViewingRequestDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.viewingRequestsService.confirmDoneJob(
       appointmentId,
       currentUser,
+      dto,
     );
   }
 
@@ -241,6 +271,21 @@ export class ViewingRequestsController {
     description: 'Appointment ID to cancel',
     example: 'b6a52ecf-6f88-4ed4-9aa4-7b8db6bc65d4',
   })
+  @ApiBody({
+    type: CancelViewingRequestDto,
+    examples: {
+      cancelWithNote: {
+        summary: 'Cancel appointment with note',
+        value: {
+          note: 'Nguoi dung ban viec dot xuat, xin doi lich tuan sau.',
+        },
+      },
+      cancelWithoutNote: {
+        summary: 'Cancel appointment without note',
+        value: {},
+      },
+    },
+  })
   @ApiJsonResponse(AppointmentResponseDto, {
     description:
       'Appointment cancelled successfully with full appointment data',
@@ -252,11 +297,13 @@ export class ViewingRequestsController {
   @ApiResponse({ status: 404, description: 'Appointment not found' })
   async cancelAppointment(
     @Param('appointmentId', ParseUUIDPipe) appointmentId: string,
+    @Body() dto: CancelViewingRequestDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.viewingRequestsService.cancelAppointment(
       appointmentId,
       currentUser,
+      dto,
     );
   }
 }
