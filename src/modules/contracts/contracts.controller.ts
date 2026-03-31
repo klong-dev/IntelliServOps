@@ -34,6 +34,7 @@ import {
   ContractDetailDto,
   UploadContractPdfDto,
   CancelContractDto,
+  AddContractMemberDto,
   SignCooperationContractDto,
   SignCooperationContractResultDto,
   CancelCooperationContractDto,
@@ -251,6 +252,46 @@ export class ContractsController {
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Create contract' })
+  @ApiBody({
+    type: CreateContractDto,
+    examples: {
+      createWithMultipleMembers: {
+        summary: 'Create contract with 2 members',
+        value: {
+          apartmentId: '11111111-2222-3333-4444-555555555555',
+          startDate: '2026-04-01',
+          endDate: '2027-03-31',
+          monthlyRent: 15000000,
+          depositAmount: 30000000,
+          paymentDueDay: 5,
+          paymentMethod: 'bank_transfer',
+          utilitiesIncluded: {
+            internet: true,
+            cleaning: false,
+          },
+          utilitiesCharges: {
+            electricity: 3500,
+            water: 15000,
+          },
+          specialConditions: 'Khong nuoi thu cung trong can ho.',
+          members: [
+            {
+              userId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+              memberType: 'primary',
+              isPrimaryContact: true,
+              sharePercentage: 60,
+            },
+            {
+              userId: 'ffffffff-1111-2222-3333-444444444444',
+              memberType: 'co_tenant',
+              isPrimaryContact: false,
+              sharePercentage: 40,
+            },
+          ],
+        },
+      },
+    },
+  })
   @ApiJsonResponse(ContractDetailDto, {
     status: 201,
     description: 'Contract created',
@@ -313,5 +354,40 @@ export class ContractsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.contractsService.cancelByUser(id, body, currentUser);
+  }
+
+  @Post(':id/members')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({
+    summary: 'Add contract member by CCCD',
+    description:
+      'Add a verified user into a draft/pending contract by CCCD number and regenerate contract PDF. Signed contracts cannot add members.',
+  })
+  @ApiBody({
+    type: AddContractMemberDto,
+    examples: {
+      addCoTenantByNationalId: {
+        summary: 'Add co-tenant member into contract',
+        value: {
+          nationalId: '079203001234',
+          memberType: 'co_tenant',
+          isPrimaryContact: false,
+          sharePercentage: 40,
+        },
+      },
+    },
+  })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Contract member added successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid or unverified CCCD' })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({ status: 409, description: 'Contract cannot add members' })
+  async addMemberByNationalId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: AddContractMemberDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.addMemberByNationalId(id, body, currentUser);
   }
 }

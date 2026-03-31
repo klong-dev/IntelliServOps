@@ -20,6 +20,7 @@ import {
   CreateUserDto,
   UpdateUserDto,
   SearchUserDto,
+  SearchUserByNationalIdDto,
   CreatePartnerRequestDto,
   UpdatePartnerRequestDto,
   ReviewPartnerRequestDto,
@@ -91,6 +92,51 @@ export class UsersService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async searchByNationalId(query: SearchUserByNationalIdDto) {
+    const nationalId = query.nationalId.trim();
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        identity: {
+          nationalId,
+        },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        isActive: true,
+        isVerified: true,
+        identity: {
+          select: {
+            nationalId: true,
+            isVerified: true,
+            verifiedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!user || !user.identity) {
+      throw new NotFoundException('User not found for this national ID');
+    }
+
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+      identity: {
+        nationalId: user.identity.nationalId,
+        isVerified: user.identity.isVerified,
+        verifiedAt: user.identity.verifiedAt,
+      },
     };
   }
 
@@ -537,6 +583,8 @@ export class UsersService {
     let autoVerified = false;
     let frontResult = null;
     let backResult = null;
+    let frontVerified = false;
+    let backVerified = false;
 
     // Call FPT AI for both sides in parallel
     const frontBase64 = identityCardFrontFile.buffer.toString('base64');
@@ -549,14 +597,31 @@ export class UsersService {
         this.fptAiService.verifyIdCardFromBase64(backBase64),
       ]);
 
-      if (this.fptAiService.isVerificationSuccessful(frontResult)) {
-        autoVerified = true;
-        this.logger.log(`Front ID card verified via AI for user: ${userId}`);
-      } else {
+      frontVerified = this.fptAiService.isVerificationSuccessful(frontResult);
+      backVerified = this.fptAiService.isVerificationSuccessful(backResult);
+      autoVerified = frontVerified && backVerified;
+
+      if (!frontVerified) {
         this.logger.warn(
           `Front ID card verification failed for user: ${userId}, Error: ${frontResult.errorMessage}`,
         );
       }
+
+      if (!backVerified) {
+        this.logger.warn(
+          `Back ID card verification failed for user: ${userId}, Error: ${backResult.errorMessage}`,
+        );
+      }
+
+      if (!autoVerified) {
+        throw new BadRequestException(
+          'Khong the doc day du ca 2 mat CCCD. Vui long chup ro mat truoc va mat sau.',
+        );
+      }
+
+      this.logger.log(
+        `ID card verified (front + back) via AI for user: ${userId}`,
+      );
     } catch (error) {
       this.logger.error(
         `FPT AI verification error for user ${userId}: ${error.message}`,

@@ -19,17 +19,18 @@ import {
 } from '@nestjs/swagger';
 import { ViewingRequestsService } from './viewing-requests.service';
 import {
-  CreateViewingRequestDto,
   CreateUserViewingRequestDto,
-  CreateAppointmentDto,
   MyViewingRequestsQueryDto,
-  ViewingRequestResponseDto,
   AppointmentResponseDto,
   UserViewingBookingResponseDto,
   UserMyViewingRequestDto,
 } from './dto';
-import { Public, Roles, CurrentUser } from '../../common/decorators';
-import { ApiJsonResponse, MessageResponseDto } from '../../common/dto';
+import { CancelViewingRequestDto } from './dto/cancel-viewing-request.dto';
+import { DoneViewingRequestDto } from './dto/done-viewing-request.dto';
+import { StaffAcceptViewingRequestDto } from './dto/staff-accept-viewing-request.dto';
+import { StaffDenyViewingRequestDto } from './dto/staff-deny-viewing-request.dto';
+import { Roles, CurrentUser } from '../../common/decorators';
+import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 
@@ -40,27 +41,13 @@ export class ViewingRequestsController {
     private readonly viewingRequestsService: ViewingRequestsService,
   ) {}
 
-  @Post()
-  @Public()
-  @ApiOperation({
-    summary: 'Submit viewing request',
-    description: 'Guest submits a request to view an apartment',
-  })
-  @ApiJsonResponse(ViewingRequestResponseDto, {
-    status: 201,
-    description: 'Request submitted',
-  })
-  async create(@Body() createDto: CreateViewingRequestDto) {
-    return this.viewingRequestsService.create(createDto);
-  }
-
   @Post('user/book')
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.USER)
   @ApiOperation({
     summary: 'User books apartment viewing',
     description:
-      'Authenticated user books a viewing by sending apartmentId, appointmentAt, and note.',
+      'Authenticated user books a viewing by sending apartmentId and appointmentAt. Note is optional.',
   })
   @ApiBody({
     type: CreateUserViewingRequestDto,
@@ -73,6 +60,13 @@ export class ViewingRequestsController {
           note: 'Toi muon xem can ho vao buoi sang, vui long lien he truoc 30 phut.',
         },
       },
+      withoutNote: {
+        summary: 'Booking request without note',
+        value: {
+          apartmentId: '11111111-2222-3333-4444-555555555555',
+          appointmentAt: '2026-03-24T09:30:00.000Z',
+        },
+      },
     },
   })
   @ApiJsonResponse(UserViewingBookingResponseDto, {
@@ -81,7 +75,11 @@ export class ViewingRequestsController {
   })
   @ApiResponse({ status: 400, description: 'Invalid request data' })
   @ApiResponse({ status: 404, description: 'User or apartment not found' })
-  @ApiResponse({ status: 409, description: 'Requested slot is full' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Requested slot is full or user already has an active appointment for this apartment',
+  })
   async createUserViewingBooking(
     @Body() createDto: CreateUserViewingRequestDto,
     @CurrentUser() currentUser: JwtPayload,
@@ -134,36 +132,13 @@ export class ViewingRequestsController {
   @Get('my-assigned')
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Get viewing requests assigned to me' })
-  @ApiJsonResponse(ViewingRequestResponseDto, {
+  @ApiOperation({ summary: 'Get appointments assigned to me' })
+  @ApiJsonResponse(AppointmentResponseDto, {
     isArray: true,
-    description: 'List of assigned viewing requests',
+    description: 'List of assigned appointments',
   })
   async getMyAssigned(@CurrentUser() currentUser: JwtPayload) {
     return this.viewingRequestsService.getMyAssigned(currentUser);
-  }
-
-  @Post(':contactRequestId/appointments')
-  @ApiBearerAuth('JWT-auth')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Create appointment from viewing request',
-    description: 'Staff creates an appointment for a viewing',
-  })
-  @ApiJsonResponse(AppointmentResponseDto, {
-    status: 201,
-    description: 'Appointment created',
-  })
-  async createAppointment(
-    @Param('contactRequestId', ParseUUIDPipe) contactRequestId: string,
-    @Body() createDto: CreateAppointmentDto,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    return this.viewingRequestsService.createAppointment(
-      contactRequestId,
-      createDto,
-      currentUser,
-    );
   }
 
   @Get('apartments/:apartmentId/appointments')
@@ -185,39 +160,53 @@ export class ViewingRequestsController {
     );
   }
 
-  @Patch('appointments/:appointmentId/confirm')
+  @Patch('staff/accept')
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.STAFF)
   @ApiOperation({
-    summary: 'Confirm viewing appointment',
+    summary: 'Assigned staff accepts viewing request',
     description:
-      'Assigned staff confirms the viewing appointment. System marks appointment as confirmed.',
+      'Assigned staff accepts a viewing request by appointmentId. System sets status to confirmed and notifies user.',
   })
-  @ApiParam({
-    name: 'appointmentId',
-    description: 'Appointment ID to confirm',
-    example: 'b6a52ecf-6f88-4ed4-9aa4-7b8db6bc65d4',
-  })
-  @ApiJsonResponse(MessageResponseDto, {
-    description: 'Appointment confirmed successfully',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Appointment cannot be confirmed from current status',
+  @ApiBody({ type: StaffAcceptViewingRequestDto })
+  @ApiJsonResponse(AppointmentResponseDto, {
+    description:
+      'Appointment confirmed successfully with full appointment data',
   })
   @ApiResponse({
     status: 403,
     description: 'Current staff is not assigned to this appointment',
   })
   @ApiResponse({ status: 404, description: 'Appointment not found' })
-  async confirmAppointment(
-    @Param('appointmentId', ParseUUIDPipe) appointmentId: string,
+  acceptViewingRequest(
+    @Body() dto: StaffAcceptViewingRequestDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
-    return this.viewingRequestsService.confirmAppointment(
-      appointmentId,
-      currentUser,
-    );
+    return this.viewingRequestsService.acceptViewingRequest(dto, currentUser);
+  }
+
+  @Patch('staff/deny')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.STAFF)
+  @ApiOperation({
+    summary: 'Assigned staff denies viewing request',
+    description:
+      'Assigned staff denies a viewing request by appointmentId. System sets status to cancelled and notifies user.',
+  })
+  @ApiBody({ type: StaffDenyViewingRequestDto })
+  @ApiJsonResponse(AppointmentResponseDto, {
+    description: 'Appointment denied successfully with full appointment data',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Current staff is not assigned to this appointment',
+  })
+  @ApiResponse({ status: 404, description: 'Appointment not found' })
+  denyViewingRequest(
+    @Body() dto: StaffDenyViewingRequestDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.viewingRequestsService.denyViewingRequest(dto, currentUser);
   }
 
   @Patch('appointments/:appointmentId/done')
@@ -233,8 +222,24 @@ export class ViewingRequestsController {
     description: 'Appointment ID that the staff completed',
     example: 'b6a52ecf-6f88-4ed4-9aa4-7b8db6bc65d4',
   })
-  @ApiJsonResponse(MessageResponseDto, {
-    description: 'Job confirmed and appointment is completed',
+  @ApiBody({
+    type: DoneViewingRequestDto,
+    examples: {
+      doneWithNote: {
+        summary: 'Done viewing with note',
+        value: {
+          note: 'Khach da xem nha, se phan hoi trong 2 ngay toi.',
+        },
+      },
+      doneWithoutNote: {
+        summary: 'Done viewing without note',
+        value: {},
+      },
+    },
+  })
+  @ApiJsonResponse(AppointmentResponseDto, {
+    description:
+      'Appointment completed successfully with full appointment data',
   })
   @ApiResponse({
     status: 403,
@@ -243,11 +248,13 @@ export class ViewingRequestsController {
   @ApiResponse({ status: 404, description: 'Appointment not found' })
   async confirmDoneJob(
     @Param('appointmentId', ParseUUIDPipe) appointmentId: string,
+    @Body() dto: DoneViewingRequestDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.viewingRequestsService.confirmDoneJob(
       appointmentId,
       currentUser,
+      dto,
     );
   }
 
@@ -257,28 +264,46 @@ export class ViewingRequestsController {
   @ApiOperation({
     summary: 'Cancel appointment',
     description:
-      'Staff (assigned) or user (owner) cancels an appointment. System marks appointment as cancelled.',
+      'Assigned staff or appointment owner user cancels an appointment. System marks appointment as cancelled.',
   })
   @ApiParam({
     name: 'appointmentId',
     description: 'Appointment ID to cancel',
     example: 'b6a52ecf-6f88-4ed4-9aa4-7b8db6bc65d4',
   })
-  @ApiJsonResponse(MessageResponseDto, {
-    description: 'Appointment cancelled successfully',
+  @ApiBody({
+    type: CancelViewingRequestDto,
+    examples: {
+      cancelWithNote: {
+        summary: 'Cancel appointment with note',
+        value: {
+          note: 'Nguoi dung ban viec dot xuat, xin doi lich tuan sau.',
+        },
+      },
+      cancelWithoutNote: {
+        summary: 'Cancel appointment without note',
+        value: {},
+      },
+    },
+  })
+  @ApiJsonResponse(AppointmentResponseDto, {
+    description:
+      'Appointment cancelled successfully with full appointment data',
   })
   @ApiResponse({
     status: 403,
-    description: 'No permission to cancel appointment',
+    description: 'Current actor has no permission to cancel this appointment',
   })
   @ApiResponse({ status: 404, description: 'Appointment not found' })
   async cancelAppointment(
     @Param('appointmentId', ParseUUIDPipe) appointmentId: string,
+    @Body() dto: CancelViewingRequestDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.viewingRequestsService.cancelAppointment(
       appointmentId,
       currentUser,
+      dto,
     );
   }
 }

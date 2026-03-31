@@ -52,9 +52,6 @@ export class AppointmentResponseDto {
   @ApiProperty()
   apartmentId: string;
 
-  @ApiPropertyOptional({ type: String, nullable: true })
-  contactRequestId: string | null;
-
   @ApiProperty()
   assignedStaffId: string;
 
@@ -107,9 +104,6 @@ export class UserViewingAssignedStaffDto {
 }
 
 export class UserViewingBookingResponseDto {
-  @ApiProperty({ example: 'd7a8e15e-e4b7-4df5-83d4-f7d7e4d4a31a' })
-  contactRequestId: string;
-
   @ApiProperty({ example: 'b6a52ecf-6f88-4ed4-9aa4-7b8db6bc65d4' })
   appointmentId: string;
 
@@ -128,11 +122,13 @@ export class UserViewingBookingResponseDto {
   @ApiProperty({ example: 'scheduled' })
   status: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
     example:
       'Toi muon xem can ho vao buoi sang, vui long lien he truoc 30 phut.',
   })
-  note: string;
+  note: string | null;
 
   @ApiProperty({ type: UserViewingAssignedStaffDto })
   assignedStaff: UserViewingAssignedStaffDto;
@@ -154,31 +150,16 @@ class UserMyViewingApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
   wardCode: number | null;
-}
 
-class UserMyViewingContactRequestDto {
-  @ApiProperty({ example: 'd7a8e15e-e4b7-4df5-83d4-f7d7e4d4a31a' })
-  id: string;
-
-  @ApiProperty({ example: 'scheduled' })
-  status: string;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 79 })
+  provinceCode: number | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: 'Toi muon xem can ho vao buoi sang.',
+    example: '12 Nguyen Hue, Phuong Ben Nghe',
   })
-  message: string | null;
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    example: 'Vui long lien he truoc 30 phut.',
-  })
-  notes: string | null;
-
-  @ApiProperty()
-  receivedAt: Date;
+  streetAddress: string | null;
 }
 
 export class UserMyViewingRequestDto {
@@ -209,12 +190,6 @@ export class UserMyViewingRequestDto {
 
   @ApiProperty({ type: UserViewingAssignedStaffDto })
   assignedStaff: UserViewingAssignedStaffDto;
-
-  @ApiPropertyOptional({
-    type: UserMyViewingContactRequestDto,
-    nullable: true,
-  })
-  contactRequest: UserMyViewingContactRequestDto | null;
 
   @ApiProperty()
   createdAt: Date;

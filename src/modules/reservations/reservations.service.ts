@@ -7,10 +7,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateReservationDto } from './dto';
-import {
-  ContractPdfService,
-  ContractPdfData,
-} from '../contracts/contract-pdf.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { ContractStatus, MemberStatus } from '@prisma/client';
 
@@ -20,7 +16,6 @@ export class ReservationsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly contractPdfService: ContractPdfService,
     private readonly contractsService: ContractsService,
   ) {}
 
@@ -103,15 +98,60 @@ export class ReservationsService {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 48);
 
-    // 6. Fetch full user + apartment info for contract PDF
-    const fullUser = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { identity: true },
-    });
-
+    // 6. Fetch apartment info for draft contract
     const fullApartment = await this.prisma.apartment.findUnique({
       where: { id: createReservationDto.apartmentId },
     });
+
+    const normalizedNationalIds = Array.from(
+      new Set(
+        (createReservationDto.additionalMemberNationalIds ?? [])
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    let additionalMemberUserIds: string[] = [];
+    if (normalizedNationalIds.length > 0) {
+      const verifiedIdentities = await this.prisma.userIdentity.findMany({
+        where: {
+          nationalId: { in: normalizedNationalIds },
+          isVerified: true,
+          user: {
+            isActive: true,
+            isVerified: true,
+          },
+        },
+        select: {
+          nationalId: true,
+          userId: true,
+        },
+      });
+
+      const verifiedNationalIds = new Set(
+        verifiedIdentities
+          .map((identity) => identity.nationalId)
+          .filter((identity): identity is string => !!identity),
+      );
+
+      const invalidNationalIds = normalizedNationalIds.filter(
+        (nationalId) => !verifiedNationalIds.has(nationalId),
+      );
+
+      if (invalidNationalIds.length > 0) {
+        throw new BadRequestException(
+          `These CCCD numbers are not linked to active verified users: ${invalidNationalIds.join(', ')}`,
+        );
+      }
+
+      additionalMemberUserIds = Array.from(
+        new Set(
+          verifiedIdentities
+            .map((identity) => identity.userId)
+            .filter((memberUserId) => memberUserId !== userId),
+        ),
+      );
+    }
 
     // 7. Generate contract number
     const contractNumber = await this.generateContractNumber();
@@ -192,70 +232,24 @@ export class ReservationsService {
         },
       });
 
+      if (additionalMemberUserIds.length > 0) {
+        await tx.userContractMember.createMany({
+          data: additionalMemberUserIds.map((memberUserId) => ({
+            userId: memberUserId,
+            rentalContractId: contract.id,
+            memberType: 'co_tenant',
+            isPrimaryContact: false,
+            status: MemberStatus.active,
+          })),
+        });
+      }
+
       return { ...newReservation, contractId: contract.id, contractNumber };
     });
 
     // 9. Generate contract PDF (async, after transaction)
     try {
-      const formatDate = (d: Date) =>
-        `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-
-      const formatCurrency = (amount: any) => {
-        const num =
-          typeof amount === 'object' && amount.toNumber
-            ? amount.toNumber()
-            : Number(amount);
-        return num.toLocaleString('vi-VN');
-      };
-
-      const pdfData: ContractPdfData = {
-        contractNumber: contractNumber,
-        // Tenant info from user + identity
-        tenantName: fullUser?.fullName || undefined,
-        tenantIdNumber: fullUser?.identity?.nationalId || undefined,
-        tenantIdIssueDate: fullUser?.identity?.issueDate || undefined,
-        tenantAddress: fullUser?.identity?.address || undefined,
-        tenantPhone: fullUser?.phone || undefined,
-        tenantEmail: fullUser?.email || undefined,
-        // Apartment info
-        apartmentAddress:
-          fullApartment?.buildingName || fullApartment?.apartmentNumber
-            ? [fullApartment?.buildingName, fullApartment?.apartmentNumber]
-                .filter(Boolean)
-                .join(' - ')
-            : undefined,
-        apartmentNumber: fullApartment?.apartmentNumber || undefined,
-        apartmentArea: fullApartment?.totalArea?.toString() || undefined,
-        apartmentUsableArea: fullApartment?.usableArea?.toString() || undefined,
-        apartmentBedrooms: fullApartment?.numberOfBedrooms,
-        apartmentBathrooms: fullApartment?.numberOfBathrooms,
-        apartmentCity: undefined,
-        apartmentDistrict: undefined,
-        // Contract terms
-        startDate: formatDate(desiredStart),
-        endDate: formatDate(desiredEnd),
-        monthlyRent: fullApartment?.baseRentPrice
-          ? formatCurrency(fullApartment.baseRentPrice)
-          : undefined,
-        depositAmount: fullApartment?.depositAmount
-          ? formatCurrency(fullApartment.depositAmount)
-          : undefined,
-        paymentDueDay: 5,
-        paymentMethod: 'bank_transfer',
-        specialConditions: createReservationDto.specialRequests,
-        // Signatures blank
-        landlordSignature: null,
-        tenantSignature: null,
-      };
-
-      const pdfBuffer =
-        await this.contractPdfService.generateContractPdf(pdfData);
-
-      // Update contract with PDF data
-      await this.prisma.rentalContract.updateMany({
-        where: { contractNumber },
-        data: { contractPdfData: new Uint8Array(pdfBuffer) },
-      });
+      await this.contractsService.regenerateContractPdf(reservation.contractId);
 
       this.logger.log(
         `Draft contract ${contractNumber} created with PDF for reservation ${reservation.id}`,

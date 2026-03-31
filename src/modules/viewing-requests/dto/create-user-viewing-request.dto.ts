@@ -1,7 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
-  IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
@@ -22,13 +22,13 @@ export class CreateUserViewingRequestDto {
   @IsDateString()
   appointmentAt: string;
 
-  @ApiProperty({
-    description: 'Ghi chu cua user cho lich hen',
+  @ApiPropertyOptional({
+    description: 'Ghi chu cua user cho lich hen (khong bat buoc)',
     example:
       'Toi muon xem can ho vao buoi sang, vui long lien he truoc 30 phut.',
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(1000)
-  note: string;
+  note?: string;
 }

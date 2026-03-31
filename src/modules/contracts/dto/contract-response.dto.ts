@@ -23,7 +23,6 @@ class ContractApartmentDto {
   streetAddress: string | null;
 }
 
-
 class WardAddressDto {
   @ApiProperty({ example: 26728 })
   wardCode: number;
@@ -71,6 +70,13 @@ class ContractMemberUserDto {
 
   @ApiProperty({ example: '0901234567' })
   phone: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '079203001234',
+  })
+  nationalId?: string | null;
 }
 
 class ContractMemberDto {

@@ -13,9 +13,11 @@ import {
   ContractStatus,
   ApartmentStatus,
   UserApartmentStatus,
+  ActorType,
   Prisma,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PayOS } from '@payos/node';
 import type {
   CreatePaymentLinkRequest,
@@ -37,6 +39,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly notificationsService: NotificationsService,
   ) {
     const clientId = this.configService.get<string>('payos.clientId');
     const apiKey = this.configService.get<string>('payos.apiKey');
@@ -328,58 +331,152 @@ export class PaymentsService {
       }),
     ];
 
-    if (payment.invoice.rentalContract.status === ContractStatus.signed) {
-      txOperations.push(
-        this.prisma.rentalContract.update({
-          where: { id: payment.invoice.rentalContract.id },
-          data: { status: ContractStatus.active },
-        }),
-      );
-      txOperations.push(
-        this.prisma.apartment.update({
-          where: { id: payment.invoice.rentalContract.apartmentId },
-          data: { status: ApartmentStatus.occupied },
-        }),
-      );
+    const activationContext = this.appendContractActivationOperations(
+      txOperations,
+      payment.invoice.invoiceType,
+      payment.invoice.invoiceNumber,
+      payment.invoice.rentalContract,
+    );
 
-      const members = payment.invoice.rentalContract.members ?? [];
-      txOperations.push(
-        ...members.map((member) =>
-          this.prisma.userApartment.upsert({
-            where: {
-              userId_apartmentId_rentalContractId: {
-                userId: member.userId,
-                apartmentId: payment.invoice.rentalContract.apartmentId,
-                rentalContractId: payment.invoice.rentalContract.id,
-              },
-            },
-            create: {
-              user: { connect: { id: member.userId } },
-              apartment: {
-                connect: { id: payment.invoice.rentalContract.apartmentId },
-              },
-              rentalContract: {
-                connect: { id: payment.invoice.rentalContract.id },
-              },
-              moveInDate: payment.invoice.rentalContract.startDate,
-              isPrimaryTenant:
-                member.memberType === 'primary' || member.isPrimaryContact,
-              status: UserApartmentStatus.active,
-            },
-            update: {
-              moveInDate: payment.invoice.rentalContract.startDate,
-              moveOutDate: null,
-              isPrimaryTenant:
-                member.memberType === 'primary' || member.isPrimaryContact,
-              status: UserApartmentStatus.active,
-            },
-          }),
-        ),
+    const txResult = await this.prisma.$transaction(txOperations);
+
+    if (
+      activationContext.activated &&
+      activationContext.apartmentDoorPassword &&
+      activationContext.memberUserIds.length > 0
+    ) {
+      await this.notifyMembersApartmentPassword(
+        activationContext.memberUserIds,
+        activationContext.apartmentDoorPassword,
+        payment.invoice.rentalContract.id,
+        payment.invoice.invoiceNumber,
       );
     }
 
-    // Update payment + invoice, and activate signed contract when first payment succeeds.
-    return this.prisma.$transaction(txOperations);
+    return txResult;
+  }
+
+  async simulateSuccessByInvoice(
+    invoiceId: string,
+    currentUser: JwtPayload,
+    transactionId?: string,
+  ) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        rentalContract: {
+          select: {
+            id: true,
+            status: true,
+            apartmentId: true,
+            startDate: true,
+            members: {
+              select: {
+                userId: true,
+                memberType: true,
+                isPrimaryContact: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    if (currentUser.actorType === 'user') {
+      const isMember = invoice.rentalContract.members.some(
+        (m) => m.userId === currentUser.sub,
+      );
+      if (!isMember) {
+        throw new NotFoundException('Invoice not found');
+      }
+    }
+
+    if (
+      invoice.rentalContract.status !== ContractStatus.signed &&
+      invoice.rentalContract.status !== ContractStatus.active
+    ) {
+      throw new BadRequestException(
+        'Only signed or active contracts can receive payments',
+      );
+    }
+
+    if (invoice.status === InvoiceStatus.paid) {
+      const existingCompleted = await this.prisma.payment.findFirst({
+        where: {
+          invoiceId,
+          status: PaymentStatus.completed,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+
+      if (existingCompleted) {
+        return this.findOne(existingCompleted.id, currentUser);
+      }
+
+      throw new BadRequestException('Invoice already paid');
+    }
+
+    let payment = await this.prisma.payment.findFirst({
+      where: {
+        invoiceId,
+        status: PaymentStatus.pending,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+
+    if (!payment) {
+      const processingPayment = await this.prisma.payment.findFirst({
+        where: {
+          invoiceId,
+          status: PaymentStatus.processing,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+
+      if (processingPayment) {
+        payment = await this.prisma.payment.update({
+          where: { id: processingPayment.id },
+          data: {
+            status: PaymentStatus.pending,
+          },
+          select: { id: true },
+        });
+      }
+    }
+
+    if (!payment) {
+      const payerUserId = this.resolvePayerUserId(invoice, currentUser);
+      const paymentReference = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+
+      payment = await this.prisma.payment.create({
+        data: {
+          invoice: { connect: { id: invoiceId } },
+          user: { connect: { id: payerUserId } },
+          amount: Number(invoice.totalAmount),
+          currency: invoice.currency || 'VND',
+          paymentMethod: invoice.paymentMethod || 'bank_transfer',
+          paymentGateway: 'mock',
+          paymentReference,
+          paymentDate: new Date(),
+          status: PaymentStatus.pending,
+          notes: 'Simulated success payment (bypass PayOS)',
+        },
+        select: { id: true },
+      });
+    }
+
+    const mockTransactionId = transactionId?.trim() || `MOCK-TX-${Date.now()}`;
+
+    await this.confirm(payment.id, mockTransactionId);
+
+    return this.findOne(payment.id, currentUser);
   }
 
   async fail(id: string, reason?: string) {
@@ -627,57 +724,27 @@ export class PaymentsService {
         }),
       ];
 
-      if (payment.invoice.rentalContract.status === ContractStatus.signed) {
-        txOperations.push(
-          this.prisma.rentalContract.update({
-            where: { id: payment.invoice.rentalContract.id },
-            data: { status: ContractStatus.active },
-          }),
-        );
-        txOperations.push(
-          this.prisma.apartment.update({
-            where: { id: payment.invoice.rentalContract.apartmentId },
-            data: { status: ApartmentStatus.occupied },
-          }),
-        );
-
-        const members = payment.invoice.rentalContract.members ?? [];
-        txOperations.push(
-          ...members.map((member) =>
-            this.prisma.userApartment.upsert({
-              where: {
-                userId_apartmentId_rentalContractId: {
-                  userId: member.userId,
-                  apartmentId: payment.invoice.rentalContract.apartmentId,
-                  rentalContractId: payment.invoice.rentalContract.id,
-                },
-              },
-              create: {
-                user: { connect: { id: member.userId } },
-                apartment: {
-                  connect: { id: payment.invoice.rentalContract.apartmentId },
-                },
-                rentalContract: {
-                  connect: { id: payment.invoice.rentalContract.id },
-                },
-                moveInDate: payment.invoice.rentalContract.startDate,
-                isPrimaryTenant:
-                  member.memberType === 'primary' || member.isPrimaryContact,
-                status: UserApartmentStatus.active,
-              },
-              update: {
-                moveInDate: payment.invoice.rentalContract.startDate,
-                moveOutDate: null,
-                isPrimaryTenant:
-                  member.memberType === 'primary' || member.isPrimaryContact,
-                status: UserApartmentStatus.active,
-              },
-            }),
-          ),
-        );
-      }
+      const activationContext = this.appendContractActivationOperations(
+        txOperations,
+        payment.invoice.invoiceType,
+        payment.invoice.invoiceNumber,
+        payment.invoice.rentalContract,
+      );
 
       await this.prisma.$transaction(txOperations);
+
+      if (
+        activationContext.activated &&
+        activationContext.apartmentDoorPassword &&
+        activationContext.memberUserIds.length > 0
+      ) {
+        await this.notifyMembersApartmentPassword(
+          activationContext.memberUserIds,
+          activationContext.apartmentDoorPassword,
+          payment.invoice.rentalContract.id,
+          payment.invoice.invoiceNumber,
+        );
+      }
 
       return {
         received: true,
@@ -721,6 +788,133 @@ export class PaymentsService {
       );
     }
     return this.payosClient;
+  }
+
+  private isDepositInvoiceType(invoiceType: InvoiceType): boolean {
+    return (
+      invoiceType === InvoiceType.deposit ||
+      invoiceType === InvoiceType.contractDeposit
+    );
+  }
+
+  private generateSixDigitPassword(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private appendContractActivationOperations(
+    txOperations: Prisma.PrismaPromise<any>[],
+    invoiceType: InvoiceType,
+    invoiceNumber: string,
+    rentalContract: {
+      id: string;
+      status: ContractStatus;
+      apartmentId: string;
+      startDate: Date;
+      members: Array<{
+        userId: string;
+        memberType: string;
+        isPrimaryContact: boolean;
+      }>;
+    },
+  ): {
+    activated: boolean;
+    apartmentDoorPassword: string | null;
+    memberUserIds: string[];
+  } {
+    if (
+      rentalContract.status !== ContractStatus.signed ||
+      !this.isDepositInvoiceType(invoiceType)
+    ) {
+      return {
+        activated: false,
+        apartmentDoorPassword: null,
+        memberUserIds: [],
+      };
+    }
+
+    const apartmentDoorPassword = this.generateSixDigitPassword();
+
+    txOperations.push(
+      this.prisma.rentalContract.update({
+        where: { id: rentalContract.id },
+        data: { status: ContractStatus.active },
+      }),
+    );
+
+    txOperations.push(
+      this.prisma.apartment.update({
+        where: { id: rentalContract.apartmentId },
+        data: { status: ApartmentStatus.occupied },
+      }),
+    );
+
+    const members = rentalContract.members ?? [];
+    txOperations.push(
+      ...members.map((member) =>
+        this.prisma.userApartment.upsert({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: member.userId,
+              apartmentId: rentalContract.apartmentId,
+              rentalContractId: rentalContract.id,
+            },
+          },
+          create: {
+            user: { connect: { id: member.userId } },
+            apartment: {
+              connect: { id: rentalContract.apartmentId },
+            },
+            rentalContract: {
+              connect: { id: rentalContract.id },
+            },
+            moveInDate: rentalContract.startDate,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status: UserApartmentStatus.active,
+          },
+          update: {
+            moveInDate: rentalContract.startDate,
+            moveOutDate: null,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status: UserApartmentStatus.active,
+          },
+        }),
+      ),
+    );
+
+    return {
+      activated: true,
+      apartmentDoorPassword,
+      memberUserIds: members.map((member) => member.userId),
+    };
+  }
+
+  private async notifyMembersApartmentPassword(
+    memberUserIds: string[],
+    apartmentDoorPassword: string,
+    rentalContractId: string,
+    invoiceNumber: string,
+  ): Promise<void> {
+    await Promise.allSettled(
+      memberUserIds.map((memberUserId) =>
+        this.notificationsService.createAndPush({
+          recipientType: ActorType.user,
+          recipientId: memberUserId,
+          notificationType: 'info',
+          channel: 'in_app',
+          title: 'Kich hoat hop dong thanh cong',
+          message: `Hoa don dat coc ${invoiceNumber} da thanh toan thanh cong. Mat khau cua nha: ${apartmentDoorPassword}`,
+          actionUrl: `/contracts/${rentalContractId}`,
+          actionLabel: 'Xem hop dong',
+          priority: 'high',
+          relatedEntityType: 'RentalContract',
+          relatedEntityId: rentalContractId,
+        }),
+      ),
+    );
   }
 
   private resolvePayerUserId(
