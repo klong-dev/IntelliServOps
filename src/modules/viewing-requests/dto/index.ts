@@ -5,3 +5,5 @@ export * from './my-viewing-requests-query.dto';
 export * from './viewing-request-response.dto';
 export * from './staff-accept-viewing-request.dto';
 export * from './staff-deny-viewing-request.dto';
+export * from './done-viewing-request.dto';
+export * from './cancel-viewing-request.dto';

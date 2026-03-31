@@ -122,11 +122,13 @@ export class UserViewingBookingResponseDto {
   @ApiProperty({ example: 'scheduled' })
   status: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
     example:
       'Toi muon xem can ho vao buoi sang, vui long lien he truoc 30 phut.',
   })
-  note: string;
+  note: string | null;
 
   @ApiProperty({ type: UserViewingAssignedStaffDto })
   assignedStaff: UserViewingAssignedStaffDto;
@@ -148,6 +150,16 @@ class UserMyViewingApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
   wardCode: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 79 })
+  provinceCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12 Nguyen Hue, Phuong Ben Nghe',
+  })
+  streetAddress: string | null;
 }
 
 export class UserMyViewingRequestDto {
