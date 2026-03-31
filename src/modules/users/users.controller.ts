@@ -22,6 +22,7 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { UsersService, type UpdateIdentityCardResult } from './users.service';
@@ -29,6 +30,8 @@ import {
   CreateUserDto,
   UpdateUserDto,
   SearchUserDto,
+  SearchUserByNationalIdDto,
+  SearchUserByNationalIdResponseDto,
   UserListItemDto,
   UserDetailDto,
   UserCreatedDto,
@@ -91,6 +94,29 @@ export class UsersController {
   async getProfileIdentity(@CurrentUser() currentUser: JwtPayload) {
     const user = await this.usersService.findOne(currentUser.sub, currentUser);
     return user?.identity || null;
+  }
+
+  @Get('search/by-national-id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Search user by national ID',
+    description: 'Search one user by CCCD/CMND number from identity data.',
+  })
+  @ApiQuery({
+    name: 'nationalId',
+    required: true,
+    description: 'CCCD/CMND number',
+    example: '079203001234',
+  })
+  @ApiJsonResponse(SearchUserByNationalIdResponseDto, {
+    description: 'Matched user by national ID',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User not found for this national ID',
+  })
+  searchByNationalId(@Query() query: SearchUserByNationalIdDto) {
+    return this.usersService.searchByNationalId(query);
   }
 
   @Post('profile/verify-identity')

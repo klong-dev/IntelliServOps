@@ -20,6 +20,7 @@ import {
   CreateUserDto,
   UpdateUserDto,
   SearchUserDto,
+  SearchUserByNationalIdDto,
   CreatePartnerRequestDto,
   UpdatePartnerRequestDto,
   ReviewPartnerRequestDto,
@@ -91,6 +92,51 @@ export class UsersService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async searchByNationalId(query: SearchUserByNationalIdDto) {
+    const nationalId = query.nationalId.trim();
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        identity: {
+          nationalId,
+        },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        isActive: true,
+        isVerified: true,
+        identity: {
+          select: {
+            nationalId: true,
+            isVerified: true,
+            verifiedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!user || !user.identity) {
+      throw new NotFoundException('User not found for this national ID');
+    }
+
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+      identity: {
+        nationalId: user.identity.nationalId,
+        isVerified: user.identity.isVerified,
+        verifiedAt: user.identity.verifiedAt,
+      },
     };
   }
 
