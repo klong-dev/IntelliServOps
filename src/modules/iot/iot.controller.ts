@@ -10,13 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IoTService } from './iot.service';
 import {
   ControlDeviceDto,
@@ -45,7 +39,6 @@ import type { JwtPayload } from '../auth/auth.service';
 import { IoTStatus, MeterStatus } from '@prisma/client';
 
 @ApiTags('IoT')
-@ApiBearerAuth('JWT-auth')
 @Controller('iot')
 export class IoTController {
   constructor(private readonly iotService: IoTService) {}
@@ -65,6 +58,7 @@ export class IoTController {
   // ============================================================================
 
   @Post('devices/:espId/light/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Publish light command to MQTT device' })
   @ApiJsonResponse(IoTMqttCommandResultDto, {
@@ -79,6 +73,7 @@ export class IoTController {
   }
 
   @Post('devices/:espId/alarm/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Publish alarm command to MQTT device' })
   @ApiJsonResponse(IoTMqttCommandResultDto, {
@@ -93,6 +88,7 @@ export class IoTController {
   }
 
   @Post('devices/:espId/door/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Publish door command to MQTT device' })
   @ApiJsonResponse(IoTMqttCommandResultDto, {
@@ -107,6 +103,7 @@ export class IoTController {
   }
 
   @Post('devices/:espId/curtain/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Publish curtain command to MQTT device' })
   @ApiJsonResponse(IoTMqttCommandResultDto, {
@@ -121,6 +118,7 @@ export class IoTController {
   }
 
   @Post('devices/:espId/config-door-password/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Send door password directly to MQTT device' })
   @ApiJsonResponse(IoTMqttCommandResultDto, {
@@ -135,6 +133,7 @@ export class IoTController {
   }
 
   @Post('devices/:espId/test-sequence')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Run MQTT device test sequence' })
   @ApiJsonResponse(IoTTestSequenceResponseDto, {
@@ -152,6 +151,7 @@ export class IoTController {
   // ============================================================================
 
   @Get('devices')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'List all IoT devices' })
   @ApiQuery({ name: 'apartmentId', required: false })
@@ -168,6 +168,7 @@ export class IoTController {
   }
 
   @Get('devices/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get IoT device details' })
   @ApiJsonResponse(IoTDeviceDetailDto, { description: 'Device details' })
@@ -177,6 +178,7 @@ export class IoTController {
   }
 
   @Get('apartments/:apartmentId/devices')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary: 'Get devices by apartment',
@@ -188,12 +190,13 @@ export class IoTController {
   })
   async findDevicesByApartment(
     @Param('apartmentId', ParseUUIDPipe) apartmentId: string,
-    @CurrentUser() currentUser: JwtPayload,
+    @CurrentUser() currentUser?: JwtPayload,
   ) {
     return this.iotService.findDevicesByApartment(apartmentId, currentUser);
   }
 
   @Post('devices')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Register new IoT device' })
   @ApiJsonResponse(IoTDeviceDetailDto, {
@@ -205,6 +208,7 @@ export class IoTController {
   }
 
   @Patch('devices/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update IoT device' })
   @ApiJsonResponse(IoTDeviceDetailDto, { description: 'Device updated' })
@@ -216,6 +220,7 @@ export class IoTController {
   }
 
   @Delete('devices/:id')
+  @Public()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Deactivate IoT device' })
   @ApiResponse({ status: 200, description: 'Device deactivated' })
@@ -224,6 +229,7 @@ export class IoTController {
   }
 
   @Post('devices/:id/control')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary: 'Send command to IoT device',
@@ -235,7 +241,7 @@ export class IoTController {
   async controlDevice(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() controlDto: ControlDeviceDto,
-    @CurrentUser() currentUser: JwtPayload,
+    @CurrentUser() currentUser?: JwtPayload,
   ) {
     return this.iotService.controlDevice(id, controlDto.command, currentUser);
   }
@@ -245,6 +251,7 @@ export class IoTController {
   // ============================================================================
 
   @Get('meters')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'List all utility meters' })
   @ApiQuery({ name: 'apartmentId', required: false })
@@ -261,6 +268,7 @@ export class IoTController {
   }
 
   @Get('meters/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Get utility meter details with readings history' })
   @ApiJsonResponse(UtilityMeterDetailDto, {
@@ -271,6 +279,7 @@ export class IoTController {
   }
 
   @Post('meters')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Register new utility meter' })
   @ApiJsonResponse(UtilityMeterDetailDto, {
@@ -282,6 +291,7 @@ export class IoTController {
   }
 
   @Patch('meters/:id')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update utility meter' })
   @ApiJsonResponse(UtilityMeterDetailDto, { description: 'Meter updated' })
@@ -297,6 +307,7 @@ export class IoTController {
   // ============================================================================
 
   @Post('readings')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Record utility reading' })
   @ApiJsonResponse(UtilityReadingDto, {
@@ -305,12 +316,13 @@ export class IoTController {
   })
   async createReading(
     @Body() createDto: CreateUtilityReadingDto,
-    @CurrentUser() currentUser: JwtPayload,
+    @CurrentUser() currentUser?: JwtPayload,
   ) {
     return this.iotService.createReading(createDto, currentUser);
   }
 
   @Get('meters/:meterId/readings')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get meter reading history' })
   @ApiQuery({ name: 'limit', required: false, example: 12 })
@@ -326,13 +338,14 @@ export class IoTController {
   }
 
   @Patch('readings/:id/verify')
+  @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Verify utility reading' })
   @ApiJsonResponse(UtilityReadingDto, { description: 'Reading verified' })
   async verifyReading(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() currentUser: JwtPayload,
+    @CurrentUser() currentUser?: JwtPayload,
   ) {
-    return this.iotService.verifyReading(id, currentUser.sub);
+    return this.iotService.verifyReading(id, currentUser?.sub);
   }
 }

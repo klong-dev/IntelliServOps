@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { IoTController } from './iot.controller';
 import { IoTService } from './iot.service';
-import { mockUserJwtPayload } from '../../test-utils';
 
 describe('IoTController', () => {
   let controller: IoTController;
@@ -55,10 +54,10 @@ describe('IoTController', () => {
   it('should delegate direct light control to service', () => {
     iotService.triggerLight.mockReturnValue({ success: true });
 
-    const result = controller.triggerLight('ESP_A101', 1, { action: 'on' });
+    const result = controller.triggerLight('ESP_A101', 1, { action: 'ON' });
 
     expect(result).toEqual({ success: true });
-    expect(iotService.triggerLight).toHaveBeenCalledWith('ESP_A101', 1, 'on');
+    expect(iotService.triggerLight).toHaveBeenCalledWith('ESP_A101', 1, 'ON');
   });
 
   it('should delegate door password configuration to service', () => {
@@ -89,16 +88,15 @@ describe('IoTController', () => {
   });
 
   it('should delegate DB-backed control route to service', async () => {
-    const currentUser = mockUserJwtPayload();
     iotService.controlDevice.mockResolvedValue({ status: 'sent' });
 
     await expect(
-      controller.controlDevice('device-123', { command: 'unlock' }, currentUser),
+      controller.controlDevice('device-123', { command: 'unlock' }),
     ).resolves.toEqual({ status: 'sent' });
     expect(iotService.controlDevice).toHaveBeenCalledWith(
       'device-123',
       'unlock',
-      currentUser,
+      undefined,
     );
   });
 });

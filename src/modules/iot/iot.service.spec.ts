@@ -164,7 +164,10 @@ describe('IoTService', () => {
       prisma.ioTDevice.findUnique.mockResolvedValueOnce({
         id: 'device-123',
         apartmentId: 'apt-123',
-        configuration: { vendor: 'ESP32', mqtt: { espId: 'OLD', channelId: 1 } },
+        configuration: {
+          vendor: 'ESP32',
+          mqtt: { espId: 'OLD', channelId: 1 },
+        },
       } as any);
       prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
       prisma.ioTDevice.findUnique.mockResolvedValueOnce(
@@ -238,9 +241,43 @@ describe('IoTService', () => {
 
       const result = await service.controlDevice('device-123', 'unlock', user);
 
-      expect(mqttService.triggerDoor).toHaveBeenCalledWith('ESP_A101', 'open', 2);
+      expect(mqttService.triggerDoor).toHaveBeenCalledWith(
+        'ESP_A101',
+        'open',
+        2,
+      );
       expect(result.mqttPayload).toBe('open_2');
       expect(result.mqttControlType).toBe('door');
+    });
+
+    it('should allow unauthenticated control for end-to-end device testing', async () => {
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'device-123',
+        deviceType: 'light',
+        status: IoTStatus.active,
+        isControllableByTenant: false,
+        configuration: {
+          mqtt: { espId: 'ESP_A101', controlType: 'light', channelId: 1 },
+        },
+        apartment: { rentalContracts: [] },
+      } as any);
+      mqttService.triggerLight.mockReturnValue({
+        espId: 'ESP_A101',
+        controlType: 'light',
+        channelId: 1,
+        topic: 'ESP_A101/light',
+        payload: 'on_1',
+        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+      });
+
+      const result = await service.controlDevice('device-123', 'ON');
+
+      expect(mqttService.triggerLight).toHaveBeenCalledWith(
+        'ESP_A101',
+        'on',
+        1,
+      );
+      expect(result.mqttPayload).toBe('on_1');
     });
 
     it('should throw ForbiddenException when tenant cannot control the device', async () => {
@@ -249,7 +286,9 @@ describe('IoTService', () => {
         deviceType: 'light',
         status: IoTStatus.active,
         isControllableByTenant: false,
-        configuration: { mqtt: { espId: 'ESP_A101', controlType: 'light', channelId: 1 } },
+        configuration: {
+          mqtt: { espId: 'ESP_A101', controlType: 'light', channelId: 1 },
+        },
         apartment: { rentalContracts: [] },
       } as any);
 
@@ -281,16 +320,25 @@ describe('IoTService', () => {
         payload: 'on_1',
       });
 
-      const result = service.triggerLight('ESP_A101', 1, 'on');
+      const result = service.triggerLight('ESP_A101', 1, 'ON');
 
-      expect(mqttService.triggerLight).toHaveBeenCalledWith('ESP_A101', 'on', 1);
+      expect(mqttService.triggerLight).toHaveBeenCalledWith(
+        'ESP_A101',
+        'on',
+        1,
+      );
       expect(result.success).toBe(true);
     });
 
     it('should proxy test sequence execution', async () => {
-      mqttService.runTestSequence.mockResolvedValue({ success: true, steps: [] });
+      mqttService.runTestSequence.mockResolvedValue({
+        success: true,
+        steps: [],
+      });
 
-      await expect(service.runDeviceTestSequence('ESP_A101', 500)).resolves.toEqual({
+      await expect(
+        service.runDeviceTestSequence('ESP_A101', 500),
+      ).resolves.toEqual({
         success: true,
         steps: [],
       });
@@ -351,6 +399,54 @@ describe('IoTService', () => {
           mockStaffJwtPayload(),
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should allow unauthenticated reading creation without readByStaff', async () => {
+      prisma.utilityMeter.findUnique.mockResolvedValue(mockMeter() as any);
+      prisma.utilityReading.create.mockResolvedValue({
+        id: 'reading-2',
+        readingValue: 1200,
+        consumption: 200,
+      } as any);
+      prisma.utilityMeter.update.mockResolvedValue({} as any);
+
+      await service.createReading({
+        utilityMeterId: 'meter-123',
+        readingValue: 1200,
+        readingDate: '2026-02-09',
+      } as any);
+
+      expect(prisma.utilityReading.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            readByStaff: undefined,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('verifyReading', () => {
+    it('should allow unauthenticated verification without verifiedByStaff', async () => {
+      prisma.utilityReading.update.mockResolvedValue({
+        id: 'reading-1',
+        isVerified: true,
+        verifiedAt: new Date('2026-03-31T00:00:00.000Z'),
+      } as any);
+
+      await service.verifyReading('reading-1');
+
+      expect(prisma.utilityReading.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'reading-1' },
+          data: expect.objectContaining({
+            isVerified: true,
+          }),
+        }),
+      );
+      expect(
+        prisma.utilityReading.update.mock.calls[0][0].data.verifiedByStaff,
+      ).toBeUndefined();
     });
   });
 });
