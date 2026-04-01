@@ -120,6 +120,19 @@ export class ContractPdfService {
     }
   }
 
+  private getVietnameseWeekday(date: Date): string {
+    const weekdays = [
+      'Chủ nhật',
+      'Thứ hai',
+      'Thứ ba',
+      'Thứ tư',
+      'Thứ năm',
+      'Thứ sáu',
+      'Thứ bảy',
+    ];
+    return weekdays[date.getDay()] || 'Thứ hai';
+  }
+
   async generateContractPdf(data: ContractPdfData): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
@@ -330,12 +343,17 @@ export class ContractPdfService {
     const month = today.getMonth() + 1;
     const year = today.getFullYear();
 
+    const weekday = this.getVietnameseWeekday(today);
+
     doc
       .font('Italic')
       .fontSize(11)
-      .text(`........., ngày ${day} tháng ${month} năm ${year}`, {
-        align: 'right',
-      });
+      .text(
+        `TP. Hồ Chí Minh, ${weekday}, ngày ${day} tháng ${month} năm ${year}`,
+        {
+          align: 'right',
+        },
+      );
 
     doc.moveDown(0.5);
 
@@ -360,7 +378,9 @@ export class ContractPdfService {
     doc
       .font('Regular')
       .fontSize(11)
-      .text(`Hôm nay, ngày ${day} tháng ${month} năm ${year}, các Bên gồm:`);
+      .text(
+        `Hôm nay, ${weekday}, ngày ${day} tháng ${month} năm ${year}, các Bên gồm:`,
+      );
 
     doc.moveDown(0.5);
   }
@@ -424,18 +444,11 @@ export class ContractPdfService {
       doc.moveDown(0.2);
 
       data.tenantMembers.forEach((member, index) => {
-        const roleLabel = member.memberType || 'co_tenant';
         doc
           .font('Regular')
           .fontSize(10)
           .text(
-            `${index + 1}. ${member.fullName || 'N/A'} - CCCD: ${member.idNumber || 'N/A'} - Vai tro: ${roleLabel}`,
-          )
-          .text(
-            `   Ngay cap: ${member.idIssueDate || 'N/A'} - Dia chi: ${member.address || 'N/A'}`,
-          )
-          .text(
-            `   Lien he: ${member.phone || 'N/A'} - ${member.email || 'N/A'}`,
+            `${index + 1}. ${member.fullName || 'N/A'} - CCCD: ${member.idNumber || 'N/A'}`,
           );
       });
     }
@@ -533,7 +546,7 @@ export class ContractPdfService {
     doc.font('Regular').fontSize(11);
 
     doc.text(
-      `3.1. Giá thuê nhà hàng tháng: ${data.monthlyRent || '...........'} VNĐ/tháng (bằng chữ: ........................................).`,
+      `3.1. Giá thuê nhà hàng tháng: ${data.monthlyRent || '...........'} VNĐ/tháng.`,
     );
 
     doc.moveDown(0.2);
@@ -713,6 +726,18 @@ export class ContractPdfService {
         width: 100,
         height: 60,
       });
+    } else {
+      doc
+        .font('Italic')
+        .fontSize(10)
+        .text('Đã ký điện tử', leftX, signatureY + 18, {
+          width: colWidth,
+          align: 'center',
+        })
+        .text('IntelliServOps', leftX, signatureY + 32, {
+          width: colWidth,
+          align: 'center',
+        });
     }
 
     if (data.tenantSignature) {

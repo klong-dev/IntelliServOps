@@ -204,6 +204,48 @@ export class ContractDetailDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   specialConditions: string | null;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Cong ty TNHH IntelliServOps',
+  })
+  landlordName: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '0312345678',
+  })
+  landlordIdNumber: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '01/01/2020',
+  })
+  landlordIdIssueDate: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'So KH&DT TP. Ho Chi Minh',
+  })
+  landlordIdIssuePlace: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'TP. Ho Chi Minh, Viet Nam',
+  })
+  landlordAddress: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '1900 0000',
+  })
+  landlordPhone: string | null;
+
   @ApiProperty({ example: 'active' })
   status: string;
 

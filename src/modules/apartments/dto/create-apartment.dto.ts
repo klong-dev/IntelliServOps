@@ -8,6 +8,7 @@ import {
   Min,
   Max,
   IsArray,
+  IsUUID,
   MaxLength,
   Allow,
 } from 'class-validator';
@@ -129,13 +130,17 @@ export class CreateApartmentDto {
   furnishingStatus?: FurnishingStatus;
 
   @ApiPropertyOptional({
-    example: ['air_conditioning', 'wifi', 'parking', 'gym'],
-    description: 'List of amenities',
+    example: [
+      '11111111-2222-3333-4444-555555555555',
+      '66666666-7777-8888-9999-000000000000',
+    ],
+    description: 'List of amenity IDs',
   })
   @Transform((params) => toStringArray(params, { splitCommaSeparated: true }))
   @IsArray()
+  @IsUUID('4', { each: true })
   @IsOptional()
-  amenities?: string[];
+  amenityIds?: string[];
 
   @ApiProperty({ example: 15000000, description: 'Monthly rent in VND' })
   @IsNumber()

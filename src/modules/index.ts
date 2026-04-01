@@ -18,3 +18,4 @@ export * from './user-apartments';
 export * from './apartment-policies';
 export * from './reservations';
 export * from './chat';
+export * from './amenities';

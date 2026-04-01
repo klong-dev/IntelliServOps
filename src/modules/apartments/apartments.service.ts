@@ -287,6 +287,49 @@ export class ApartmentsService {
     return Number(value.toFixed(2));
   }
 
+  private mapApartmentAmenities(
+    apartmentAmenities:
+      | Array<{
+          amenity: {
+            id: string;
+            code: string;
+            name: string;
+            icon: string | null;
+          };
+        }>
+      | undefined,
+  ) {
+    if (!apartmentAmenities || apartmentAmenities.length === 0) {
+      return [];
+    }
+
+    return apartmentAmenities.map((item) => ({
+      id: item.amenity.id,
+      code: item.amenity.code,
+      name: item.amenity.name,
+      icon: item.amenity.icon,
+    }));
+  }
+
+  private async validateAmenityIds(amenityIds: string[]) {
+    if (!amenityIds.length) {
+      return;
+    }
+
+    const uniqueAmenityIds = Array.from(new Set(amenityIds));
+    const existingAmenities = await this.prisma.amenity.findMany({
+      where: {
+        id: { in: uniqueAmenityIds },
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    if (existingAmenities.length !== uniqueAmenityIds.length) {
+      throw new BadRequestException('One or more amenity IDs are invalid');
+    }
+  }
+
   async getAddressDivisions(
     version: 'v1' | 'v2' = 'v2',
     depth = 2,
@@ -438,6 +481,18 @@ export class ApartmentsService {
       wardCode: true,
       provinceCode: true,
       streetAddress: true,
+      apartmentAmenities: {
+        select: {
+          amenity: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              icon: true,
+            },
+          },
+        },
+      },
     };
 
     const [apartments, total] = await Promise.all([
@@ -475,6 +530,7 @@ export class ApartmentsService {
 
     const items = apartments.map((apartment: any) => ({
       ...apartment,
+      amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       rating: ratingMap.get(apartment.id) ?? null,
     }));
 
@@ -577,6 +633,18 @@ export class ApartmentsService {
               createdAt: 'asc',
             },
           },
+          apartmentAmenities: {
+            select: {
+              amenity: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  icon: true,
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.apartmentRating.aggregate({
@@ -591,6 +659,7 @@ export class ApartmentsService {
 
     return {
       ...apartment,
+      amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       streetAddress: apartment.streetAddress,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
     };
@@ -683,6 +752,10 @@ export class ApartmentsService {
     currentUser: JwtPayload,
     media?: { imageUrls?: string[]; videoUrl?: string },
   ) {
+    if (createDto.amenityIds?.length) {
+      await this.validateAmenityIds(createDto.amenityIds);
+    }
+
     // Auto-resolve province code from ward code
     let provinceCode: number | undefined;
     if (createDto.wardCode) {
@@ -709,7 +782,6 @@ export class ApartmentsService {
       numberOfBedrooms: createDto.numberOfBedrooms,
       numberOfBathrooms: createDto.numberOfBathrooms,
       furnishingStatus: createDto.furnishingStatus,
-      amenities: createDto.amenities,
       baseRentPrice: createDto.baseRentPrice,
       depositAmount: createDto.depositAmount,
       description: createDto.description,
@@ -717,6 +789,15 @@ export class ApartmentsService {
       videoTourUrl,
       yearBuilt: createDto.yearBuilt,
       status: ApartmentStatus.available,
+      ...(createDto.amenityIds?.length
+        ? {
+            apartmentAmenities: {
+              create: createDto.amenityIds.map((amenityId) => ({
+                amenity: { connect: { id: amenityId } },
+              })),
+            },
+          }
+        : {}),
     };
 
     // If user creates, link to their account
@@ -753,6 +834,10 @@ export class ApartmentsService {
     currentUser: JwtPayload,
     media?: { imageUrls?: string[]; videoUrl?: string },
   ) {
+    if (createDto.amenityIds?.length) {
+      await this.validateAmenityIds(createDto.amenityIds);
+    }
+
     const partnerIdentity = await this.prisma.user.findUnique({
       where: { id: currentUser.sub },
       select: {
@@ -788,7 +873,6 @@ export class ApartmentsService {
       numberOfBedrooms: createDto.numberOfBedrooms,
       numberOfBathrooms: createDto.numberOfBathrooms,
       furnishingStatus: createDto.furnishingStatus,
-      amenities: createDto.amenities,
       baseRentPrice: createDto.baseRentPrice,
       depositAmount: createDto.depositAmount,
       description: createDto.description,
@@ -799,6 +883,15 @@ export class ApartmentsService {
         ? this.cooperationVerifiedStatus
         : ApartmentStatus.inactive,
       owner: { connect: { id: currentUser.sub } },
+      ...(createDto.amenityIds?.length
+        ? {
+            apartmentAmenities: {
+              create: createDto.amenityIds.map((amenityId) => ({
+                amenity: { connect: { id: amenityId } },
+              })),
+            },
+          }
+        : {}),
     };
 
     const apartment = await this.prisma.apartment.create({
@@ -901,7 +994,12 @@ export class ApartmentsService {
     };
 
     if (canUpdateInfo) {
-      const blockedUpdateKeys = new Set(['ownerId', 'images', 'videoTourUrl']);
+      const blockedUpdateKeys = new Set([
+        'ownerId',
+        'images',
+        'videoTourUrl',
+        'amenityIds',
+      ]);
       const restUpdateDto = Object.fromEntries(
         Object.entries(updateDto).filter(
           ([key, value]) => !blockedUpdateKeys.has(key) && value !== undefined,
@@ -918,17 +1016,38 @@ export class ApartmentsService {
       }
     }
 
-    return this.prisma.apartment.update({
-      where: { id },
-      data: apartmentUpdateData,
-      select: {
-        id: true,
-        apartmentNumber: true,
-        status: true,
-        images: true,
-        videoTourUrl: true,
-        updatedAt: true,
-      },
+    if (updateDto?.amenityIds) {
+      await this.validateAmenityIds(updateDto.amenityIds);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (updateDto?.amenityIds) {
+        await tx.apartmentAmenity.deleteMany({ where: { apartmentId: id } });
+      }
+
+      return tx.apartment.update({
+        where: { id },
+        data: {
+          ...apartmentUpdateData,
+          ...(updateDto?.amenityIds
+            ? {
+                apartmentAmenities: {
+                  create: updateDto.amenityIds.map((amenityId) => ({
+                    amenity: { connect: { id: amenityId } },
+                  })),
+                },
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          apartmentNumber: true,
+          status: true,
+          images: true,
+          videoTourUrl: true,
+          updatedAt: true,
+        },
+      });
     });
   }
 
@@ -1047,6 +1166,7 @@ export class ApartmentsService {
 
     // Auto-resolve province code if wardCode is being updated
     const data: any = { ...updateDto };
+    delete data.amenityIds;
     if (updateDto.wardCode !== undefined) {
       if (updateDto.wardCode !== null) {
         data.provinceCode = await this.resolveProvinceCodeFromWard(
@@ -1073,22 +1193,43 @@ export class ApartmentsService {
       data.videoTourUrl = media.videoUrl;
     }
 
-    return this.prisma.apartment.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        apartmentNumber: true,
-        wardCode: true,
-        provinceCode: true,
-        streetAddress: true,
-        baseRentPrice: true,
-        images: true,
-        videoTourUrl: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    if (updateDto.amenityIds) {
+      await this.validateAmenityIds(updateDto.amenityIds);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (updateDto.amenityIds) {
+        await tx.apartmentAmenity.deleteMany({ where: { apartmentId: id } });
+      }
+
+      return tx.apartment.update({
+        where: { id },
+        data: {
+          ...data,
+          ...(updateDto.amenityIds
+            ? {
+                apartmentAmenities: {
+                  create: updateDto.amenityIds.map((amenityId) => ({
+                    amenity: { connect: { id: amenityId } },
+                  })),
+                },
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          apartmentNumber: true,
+          wardCode: true,
+          provinceCode: true,
+          streetAddress: true,
+          baseRentPrice: true,
+          images: true,
+          videoTourUrl: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
     });
   }
 
@@ -1155,6 +1296,18 @@ export class ApartmentsService {
             meterNumber: true,
             meterType: true,
             currentReading: true,
+          },
+        },
+        apartmentAmenities: {
+          select: {
+            amenity: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                icon: true,
+              },
+            },
           },
         },
         cooperationContracts: {
@@ -1225,6 +1378,7 @@ export class ApartmentsService {
 
       return {
         ...apartment,
+        amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
         cooperationContracts,
         cooperationContract: latestCooperationContract,
         rating: ratingMap.get(apartment.id) ?? null,

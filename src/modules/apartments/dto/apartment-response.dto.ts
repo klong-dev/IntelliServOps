@@ -158,6 +158,20 @@ class ApartmentUserApartmentDto {
   rentalContract: ApartmentUserApartmentContractDto;
 }
 
+class ApartmentAmenityDto {
+  @ApiProperty({ example: '11111111-2222-3333-4444-555555555555' })
+  id: string;
+
+  @ApiProperty({ example: 'wifi' })
+  code: string;
+
+  @ApiProperty({ example: 'Wi-Fi' })
+  name: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'wifi-icon' })
+  icon: string | null;
+}
+
 export class ApartmentCooperationContractDto {
   @ApiProperty({ example: '3f5369be-815f-42cb-8a8b-971fbe4a3557' })
   id: string;
@@ -269,6 +283,20 @@ export class ApartmentListItemDto {
   videoTourUrl: string | null;
 
   @ApiPropertyOptional({
+    type: [ApartmentAmenityDto],
+    nullable: true,
+    example: [
+      {
+        id: '11111111-2222-3333-4444-555555555555',
+        code: 'wifi',
+        name: 'Wi-Fi',
+        icon: 'wifi-icon',
+      },
+    ],
+  })
+  amenities?: ApartmentAmenityDto[] | null;
+
+  @ApiPropertyOptional({
     type: [ApartmentCooperationContractDto],
     nullable: true,
     description:
@@ -375,11 +403,24 @@ export class ApartmentDetailDto {
   furnishingStatus: string;
 
   @ApiPropertyOptional({
-    type: [String],
-    example: ['Hồ bơi', 'Gym'],
+    type: [ApartmentAmenityDto],
     nullable: true,
+    example: [
+      {
+        id: '11111111-2222-3333-4444-555555555555',
+        code: 'wifi',
+        name: 'Wi-Fi',
+        icon: 'wifi-icon',
+      },
+      {
+        id: '66666666-7777-8888-9999-000000000000',
+        code: 'parking',
+        name: 'Parking',
+        icon: null,
+      },
+    ],
   })
-  amenities: string[] | null;
+  amenities: ApartmentAmenityDto[] | null;
 
   @ApiProperty({ example: '12000000' })
   baseRentPrice: string;
