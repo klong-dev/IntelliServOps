@@ -208,9 +208,9 @@ export class ContractsController {
     }
 
     const timestamp = Date.now();
-    const storagePath = `${id}/${currentUser.sub}-${timestamp}-signed.pdf`;
+    const storagePath = `cooperation-contracts/${id}/${currentUser.sub}-${timestamp}-signed.pdf`;
     const uploadedUrl = await this.storageService.uploadFile(
-      'apartment-cooperation-contracts',
+      'apartment-cooperation',
       storagePath,
       contractPdf,
     );

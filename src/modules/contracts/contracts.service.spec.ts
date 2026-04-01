@@ -183,8 +183,15 @@ describe('ContractsService', () => {
       prisma.rentalContract.count.mockResolvedValue(0);
       prisma.rentalContract.findUnique.mockResolvedValue({
         ...created,
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A-101',
+          wardCode: null,
+          numberOfBedrooms: 2,
+          numberOfBathrooms: 1,
+          totalArea: 75,
+        },
         members: [],
-        apartment: null,
         createdByStaff: null,
         invoices: [],
         contractPdfData: null,
@@ -204,6 +211,9 @@ describe('ContractsService', () => {
       expect(result).toMatchObject({
         id: created.id,
         contractNumber: created.contractNumber,
+        status: created.status,
+        pdfUrl: `/contracts/${created.id}/pdf`,
+        hasPdf: false,
       });
     });
 

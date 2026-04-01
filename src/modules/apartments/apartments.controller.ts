@@ -27,6 +27,10 @@ import {
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApartmentsService } from './apartments.service';
 import {
+  createApartmentMediaMulterOptions,
+  getApartmentVideoExtension,
+} from './apartment-media-multer.util';
+import {
   CreateApartmentDto,
   CreateApartmentRequestDto,
   UpdateApartmentDto,
@@ -52,14 +56,17 @@ import { ApiJsonResponse } from '../../common/dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
+import { LocalMediaStorageService } from '../../shared/services/local-media-storage.service';
 import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
 import type { Response } from 'express';
 
 type UploadedMediaFile = {
   originalname: string;
   mimetype: string;
-  buffer: Buffer;
+  buffer?: Buffer;
+  path?: string;
   size: number;
+  localPublicUrl?: string;
 };
 
 @ApiTags('Apartments')
@@ -80,6 +87,7 @@ export class ApartmentsController {
   constructor(
     private readonly apartmentsService: ApartmentsService,
     private readonly storageService: SupabaseStorageService,
+    private readonly localMediaStorageService: LocalMediaStorageService,
   ) {}
 
   private isUploadedMediaFile(value: unknown): value is UploadedMediaFile {
@@ -91,17 +99,27 @@ export class ApartmentsController {
     return (
       typeof candidate.originalname === 'string' &&
       typeof candidate.mimetype === 'string' &&
-      Buffer.isBuffer(candidate.buffer) &&
+      (Buffer.isBuffer(candidate.buffer) ||
+        typeof candidate.path === 'string') &&
       typeof candidate.size === 'number'
     );
+  }
+
+  private hasFileBuffer(
+    value: UploadedMediaFile,
+  ): value is UploadedMediaFile & { buffer: Buffer } {
+    return Buffer.isBuffer(value.buffer);
   }
 
   private normalizeApartmentMediaFiles(files: {
     images?: unknown[];
     video?: unknown[];
   }) {
-    const imageFiles = (Array.isArray(files?.images) ? files.images : []).filter(
-      (value): value is UploadedMediaFile => this.isUploadedMediaFile(value),
+    const imageFiles = (
+      Array.isArray(files?.images) ? files.images : []
+    ).filter(
+      (value): value is UploadedMediaFile & { buffer: Buffer } =>
+        this.isUploadedMediaFile(value) && this.hasFileBuffer(value),
     );
     const videoFile = (Array.isArray(files?.video) ? files.video : []).find(
       (value): value is UploadedMediaFile => this.isUploadedMediaFile(value),
@@ -122,7 +140,10 @@ export class ApartmentsController {
       }
     }
 
-    if (videoFile && !this.validApartmentVideoMimeTypes.includes(videoFile.mimetype)) {
+    if (
+      videoFile &&
+      !this.validApartmentVideoMimeTypes.includes(videoFile.mimetype)
+    ) {
       throw new BadRequestException(
         `Invalid video format: ${videoFile.originalname}. Allowed: MP4, MOV, WEBM`,
       );
@@ -131,7 +152,7 @@ export class ApartmentsController {
 
   private async uploadApartmentMediaFiles(
     basePath: string,
-    imageFiles: UploadedMediaFile[],
+    imageFiles: Array<UploadedMediaFile & { buffer: Buffer }>,
     videoFile?: UploadedMediaFile,
   ) {
     const timestamp = Date.now();
@@ -153,19 +174,19 @@ export class ApartmentsController {
     }
 
     if (videoFile) {
-      const ext =
-        videoFile.mimetype === 'video/quicktime'
-          ? 'mov'
-          : videoFile.mimetype.split('/')[1];
-      const videoPath = `${basePath}/video/${timestamp}.${ext}`;
-      videoUrl = await this.storageService.uploadFile(
-        this.apartmentMediaBucket,
-        videoPath,
-        videoFile,
-      );
+      videoUrl =
+        videoFile.localPublicUrl ||
+        (await this.localMediaStorageService.saveApartmentVideo(
+          `${basePath}/video/${timestamp}.${this.getApartmentVideoExtension(videoFile.mimetype)}`,
+          videoFile as UploadedMediaFile & { buffer: Buffer },
+        ));
     }
 
     return { imageUrls, videoUrl };
+  }
+
+  private getApartmentVideoExtension(mimetype: string) {
+    return getApartmentVideoExtension(mimetype);
   }
 
   @Get('search')
@@ -276,10 +297,13 @@ export class ApartmentsController {
     description: 'Apartment created',
   })
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'images', maxCount: 10 },
-      { name: 'video', maxCount: 1 },
-    ]),
+    FileFieldsInterceptor(
+      [
+        { name: 'images', maxCount: 10 },
+        { name: 'video', maxCount: 1 },
+      ],
+      createApartmentMediaMulterOptions(),
+    ),
   )
   async create(
     @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
@@ -314,10 +338,13 @@ export class ApartmentsController {
     description: 'Partner cooperation apartment submitted successfully',
   })
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'images', maxCount: 10 },
-      { name: 'video', maxCount: 1 },
-    ]),
+    FileFieldsInterceptor(
+      [
+        { name: 'images', maxCount: 10 },
+        { name: 'video', maxCount: 1 },
+      ],
+      createApartmentMediaMulterOptions(),
+    ),
   )
   async submitPartnerCooperation(
     @UploadedFiles() files: { images?: unknown[]; video?: unknown[] },
@@ -331,13 +358,7 @@ export class ApartmentsController {
         return false;
       }
 
-      const candidate = value as Record<string, unknown>;
-      return (
-        typeof candidate.originalname === 'string' &&
-        typeof candidate.mimetype === 'string' &&
-        Buffer.isBuffer(candidate.buffer) &&
-        typeof candidate.size === 'number'
-      );
+      return this.isUploadedMediaFile(value);
     };
 
     const imageFiles = (
@@ -383,16 +404,12 @@ export class ApartmentsController {
     }
 
     if (videoFile) {
-      const ext =
-        videoFile.mimetype === 'video/quicktime'
-          ? 'mov'
-          : videoFile.mimetype.split('/')[1];
-      const videoPath = `partner-${currentUser.sub}/video/${timestamp}.${ext}`;
-      videoUrl = await this.storageService.uploadFile(
-        'apartment-cooperation',
-        videoPath,
-        videoFile,
-      );
+      videoUrl =
+        videoFile.localPublicUrl ||
+        (await this.localMediaStorageService.saveApartmentVideo(
+          `partner-${currentUser.sub}/video/${timestamp}.${this.getApartmentVideoExtension(videoFile.mimetype)}`,
+          videoFile as UploadedMediaFile & { buffer: Buffer },
+        ));
     }
 
     return this.apartmentsService.submitPartnerCooperation(
@@ -450,10 +467,13 @@ export class ApartmentsController {
       'No media or apartment info provided, or media format is invalid',
   })
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'images', maxCount: 10 },
-      { name: 'video', maxCount: 1 },
-    ]),
+    FileFieldsInterceptor(
+      [
+        { name: 'images', maxCount: 10 },
+        { name: 'video', maxCount: 1 },
+      ],
+      createApartmentMediaMulterOptions(),
+    ),
   )
   async uploadCooperationMedia(
     @Param('id', ParseUUIDPipe) id: string,
@@ -468,13 +488,7 @@ export class ApartmentsController {
         return false;
       }
 
-      const candidate = value as Record<string, unknown>;
-      return (
-        typeof candidate.originalname === 'string' &&
-        typeof candidate.mimetype === 'string' &&
-        Buffer.isBuffer(candidate.buffer) &&
-        typeof candidate.size === 'number'
-      );
+      return this.isUploadedMediaFile(value);
     };
 
     const imageFiles = (
@@ -538,16 +552,12 @@ export class ApartmentsController {
     }
 
     if (videoFile) {
-      const ext =
-        videoFile.mimetype === 'video/quicktime'
-          ? 'mov'
-          : videoFile.mimetype.split('/')[1];
-      const videoPath = `${id}/video/${currentUser.sub}-${timestamp}.${ext}`;
-      videoUrl = await this.storageService.uploadFile(
-        'apartment-cooperation',
-        videoPath,
-        videoFile,
-      );
+      videoUrl =
+        videoFile.localPublicUrl ||
+        (await this.localMediaStorageService.saveApartmentVideo(
+          `${id}/video/${currentUser.sub}-${timestamp}.${this.getApartmentVideoExtension(videoFile.mimetype)}`,
+          videoFile as UploadedMediaFile & { buffer: Buffer },
+        ));
     }
 
     return this.apartmentsService.uploadCooperationMedia(
@@ -574,10 +584,13 @@ export class ApartmentsController {
   })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'images', maxCount: 10 },
-      { name: 'video', maxCount: 1 },
-    ]),
+    FileFieldsInterceptor(
+      [
+        { name: 'images', maxCount: 10 },
+        { name: 'video', maxCount: 1 },
+      ],
+      createApartmentMediaMulterOptions(),
+    ),
   )
   async update(
     @Param('id', ParseUUIDPipe) id: string,
