@@ -35,6 +35,8 @@ import {
   UploadContractPdfDto,
   CancelContractDto,
   AddContractMemberDto,
+  RenewContractDto,
+  RenewContractResponseDto,
   SignCooperationContractDto,
   SignCooperationContractResultDto,
   CancelCooperationContractDto,
@@ -301,6 +303,61 @@ export class ContractsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.contractsService.create(createDto, currentUser);
+  }
+
+  @Post(':id/renew')
+  @Roles(Role.USER)
+  @ApiOperation({
+    summary: 'Renew rental contract',
+    description:
+      'Create a new draft (unsigned) renewal contract from an existing contract. Request may update important fields, append new members by CCCD, or only provide extensionMonths for automatic new date calculation.',
+  })
+  @ApiBody({
+    type: RenewContractDto,
+    examples: {
+      renewByMonthsOnly: {
+        summary: 'Renew by months only',
+        value: {
+          extensionMonths: 12,
+        },
+      },
+      renewWithUpdatedTermsAndMembers: {
+        summary: 'Renew with updated terms and extra member',
+        value: {
+          extensionMonths: 18,
+          monthlyRent: 17000000,
+          depositAmount: 34000000,
+          paymentDueDay: 7,
+          paymentMethod: 'bank_transfer',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          additionalMembers: [
+            {
+              nationalId: '079203009999',
+              memberType: 'co_tenant',
+              isPrimaryContact: false,
+              sharePercentage: 25,
+            },
+          ],
+        },
+      },
+    },
+  })
+  @ApiJsonResponse(RenewContractResponseDto, {
+    status: 201,
+    description: 'Renewed draft contract created successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid renewal request data' })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Cannot renew contract due to status or date overlap',
+  })
+  async renewContract(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() renewDto: RenewContractDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.renewContract(id, renewDto, currentUser);
   }
 
   @Patch(':id')

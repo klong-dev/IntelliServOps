@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -34,6 +35,7 @@ describe('UsersService', () => {
     extractUserInfo: jest.fn(),
     extractIdNumber: jest.fn(),
     isVerificationSuccessful: jest.fn(),
+    isVerificationSuccessfulForSide: jest.fn(),
   };
 
   const mockConfigService = {
@@ -214,7 +216,6 @@ describe('UsersService', () => {
         ConflictException,
       );
     });
-
   });
 
   describe('update', () => {
@@ -360,6 +361,105 @@ describe('UsersService', () => {
         email: user.email,
         fullName: user.fullName,
       });
+    });
+  });
+
+  describe('updateIdentityCard', () => {
+    it('should verify successfully when front and back match expected sides', async () => {
+      const user = mockUser();
+      const frontFile = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('front-image'),
+      };
+      const backFile = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('back-image'),
+      };
+
+      const frontResult = {
+        errorCode: 0,
+        errorMessage: '',
+        data: [{ id: '079203001234', name: 'Nguyen Van A' }],
+      };
+      const backResult = {
+        errorCode: 0,
+        errorMessage: '',
+        data: [{ id: '079203001234', issue_date: '01/01/2020' }],
+      };
+
+      prisma.user.findUnique.mockResolvedValue({
+        ...user,
+        identity: null,
+      } as any);
+      prisma.userIdentity.findUnique.mockResolvedValue(null as any);
+      prisma.userIdentity.upsert.mockResolvedValue({} as any);
+      prisma.user.findUniqueOrThrow.mockResolvedValue({
+        ...user,
+        identity: { nationalId: '079203001234' },
+      } as any);
+
+      mockConfigService.get.mockReturnValue(false);
+      mockFptAiService.verifyIdCardFromBase64
+        .mockResolvedValueOnce(frontResult as any)
+        .mockResolvedValueOnce(backResult as any);
+      mockFptAiService.isVerificationSuccessfulForSide
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true);
+      mockFptAiService.extractUserInfo
+        .mockReturnValueOnce({ id: '079203001234', name: 'Nguyen Van A' })
+        .mockReturnValueOnce({ issueDate: '01/01/2020' })
+        .mockReturnValueOnce({ id: '079203001234' })
+        .mockReturnValueOnce({ issueDate: '01/01/2020' });
+
+      const result = await service.updateIdentityCard(
+        user.id,
+        frontFile,
+        backFile,
+      );
+
+      expect(result.aiVerification.front?.success).toBe(true);
+      expect(result.aiVerification.back?.success).toBe(true);
+      expect(
+        mockFptAiService.isVerificationSuccessfulForSide,
+      ).toHaveBeenCalledWith(frontResult, 'front');
+      expect(
+        mockFptAiService.isVerificationSuccessfulForSide,
+      ).toHaveBeenCalledWith(backResult, 'back');
+    });
+
+    it('should reject when back image is actually front side', async () => {
+      const user = mockUser();
+      const frontFile = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('front-image'),
+      };
+      const backFile = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('front-image-duplicate'),
+      };
+
+      const frontLikeResult = {
+        errorCode: 0,
+        errorMessage: '',
+        data: [{ id: '079203001234', name: 'Nguyen Van A' }],
+      };
+
+      prisma.user.findUnique.mockResolvedValue({
+        ...user,
+        identity: null,
+      } as any);
+      mockFptAiService.verifyIdCardFromBase64
+        .mockResolvedValueOnce(frontLikeResult as any)
+        .mockResolvedValueOnce(frontLikeResult as any);
+      mockFptAiService.isVerificationSuccessfulForSide
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false);
+
+      await expect(
+        service.updateIdentityCard(user.id, frontFile, backFile),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });
