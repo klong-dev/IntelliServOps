@@ -162,8 +162,29 @@ class ApartmentCooperationContractDto {
   @ApiProperty({ example: '3f5369be-815f-42cb-8a8b-971fbe4a3557' })
   id: string;
 
+  @ApiProperty({ example: 'COOP-2026-00001' })
+  contractNumber: string;
+
   @ApiProperty({ example: 'pending' })
   status: string;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  startDate?: Date | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  endDate?: Date | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  signedDate?: Date | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  contractDocumentUrl?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  cooperationContractPdfUrl?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  cooperationContractPublicPdfUrl?: string | null;
 }
 
 // ─── Apartment List Item DTO (search / findByOwner) ───────────────
@@ -260,6 +281,14 @@ export class ApartmentListItemDto {
     ],
   })
   cooperationContracts?: ApartmentCooperationContractDto[] | null;
+
+  @ApiPropertyOptional({
+    type: ApartmentCooperationContractDto,
+    nullable: true,
+    description:
+      'Hop dong hop tac tuong ung moi nhat cua apartment (owner dashboard)',
+  })
+  cooperationContract?: ApartmentCooperationContractDto | null;
 
   @ApiProperty()
   createdAt: Date;
