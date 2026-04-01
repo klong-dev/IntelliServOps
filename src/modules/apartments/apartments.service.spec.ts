@@ -1,8 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ApartmentsService } from './apartments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractPdfService } from '../contracts/contract-pdf.service';
@@ -99,7 +96,10 @@ describe('ApartmentsService', () => {
     expect(prisma.apartment.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          AND: expect.arrayContaining([{ provinceCode: 79 }, { wardCode: 26728 }]),
+          AND: expect.arrayContaining([
+            { provinceCode: 79 },
+            { wardCode: 26728 },
+          ]),
           baseRentPrice: { gte: 10000000, lte: 20000000 },
         }),
       }),
@@ -256,7 +256,19 @@ describe('ApartmentsService', () => {
         rooms: [],
         iotDevices: [],
         utilityMeters: [],
-        cooperationContracts: [],
+        cooperationContracts: [
+          {
+            id: 'coop-123',
+            contractNumber: 'COOP-2026-00001',
+            status: 'signed',
+            startDate: new Date('2026-01-01'),
+            endDate: new Date('2026-12-31'),
+            signedAt: new Date('2026-01-01'),
+            contractDocumentUrl:
+              'https://storage.example.com/cooperation/coop-123.pdf',
+            contractPdfData: Buffer.from('pdf'),
+          },
+        ],
       },
     ] as any);
     prisma.apartmentRating.groupBy.mockResolvedValue([
@@ -266,6 +278,17 @@ describe('ApartmentsService', () => {
     const result = await service.findByOwner('user-123');
 
     expect(result[0].rating).toBe(4.2);
+    expect(result[0].cooperationContract).toMatchObject({
+      id: 'coop-123',
+      contractNumber: 'COOP-2026-00001',
+      status: 'signed',
+    });
+    expect(result[0].cooperationContract.cooperationContractPdfUrl).toBe(
+      '/apartments/cooperation-contracts/coop-123/pdf',
+    );
+    expect(
+      result[0].cooperationContract.cooperationContractPublicPdfUrl,
+    ).toContain('/apartments/cooperation-contracts/pdf/view?token=');
     expect(prisma.apartment.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { ownerId: 'user-123' },

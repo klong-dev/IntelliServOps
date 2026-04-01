@@ -1061,7 +1061,9 @@ export class ApartmentsService {
       const baseImages = Array.isArray(updateDto.images)
         ? updateDto.images
         : Array.isArray(apartment.images)
-          ? apartment.images.filter((image): image is string => typeof image === 'string')
+          ? apartment.images.filter(
+              (image): image is string => typeof image === 'string',
+            )
           : [];
 
       data.images = [...baseImages, ...media.imageUrls];
@@ -1156,9 +1158,17 @@ export class ApartmentsService {
           },
         },
         cooperationContracts: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
           select: {
             id: true,
+            contractNumber: true,
             status: true,
+            startDate: true,
+            endDate: true,
+            signedAt: true,
+            contractDocumentUrl: true,
+            contractPdfData: true,
           },
         },
       },
@@ -1187,10 +1197,53 @@ export class ApartmentsService {
       ]),
     );
 
-    return apartments.map((apartment) => ({
-      ...apartment,
-      rating: ratingMap.get(apartment.id) ?? null,
-    }));
+    return apartments.map((apartment) => {
+      const latestCooperationContract = apartment.cooperationContracts?.[0];
+      const contractToken = latestCooperationContract?.contractPdfData
+        ? this.generatePdfToken(latestCooperationContract.id)
+        : null;
+
+      return {
+        ...apartment,
+        cooperationContracts: (apartment.cooperationContracts ?? []).map(
+          (contract) => ({
+            id: contract.id,
+            contractNumber: contract.contractNumber,
+            status: contract.status,
+            startDate: contract.startDate,
+            endDate: contract.endDate,
+            signedDate: contract.signedAt,
+            contractDocumentUrl: contract.contractDocumentUrl,
+            cooperationContractPdfUrl: contract.contractPdfData
+              ? `/apartments/cooperation-contracts/${contract.id}/pdf`
+              : null,
+            cooperationContractPublicPdfUrl: contractToken
+              ? `/apartments/cooperation-contracts/pdf/view?token=${contractToken}`
+              : null,
+          }),
+        ),
+        cooperationContract: latestCooperationContract
+          ? {
+              id: latestCooperationContract.id,
+              contractNumber: latestCooperationContract.contractNumber,
+              status: latestCooperationContract.status,
+              startDate: latestCooperationContract.startDate,
+              endDate: latestCooperationContract.endDate,
+              signedDate: latestCooperationContract.signedAt,
+              contractDocumentUrl:
+                latestCooperationContract.contractDocumentUrl,
+              cooperationContractPdfUrl:
+                latestCooperationContract.contractPdfData
+                  ? `/apartments/cooperation-contracts/${latestCooperationContract.id}/pdf`
+                  : null,
+              cooperationContractPublicPdfUrl: contractToken
+                ? `/apartments/cooperation-contracts/pdf/view?token=${contractToken}`
+                : null,
+            }
+          : null,
+        rating: ratingMap.get(apartment.id) ?? null,
+      };
+    });
   }
 
   /**
