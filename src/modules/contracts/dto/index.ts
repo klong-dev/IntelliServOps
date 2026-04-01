@@ -5,3 +5,4 @@ export * from './upload-contract-pdf.dto';
 export * from './cancel-contract.dto';
 export * from './cooperation-contract.dto';
 export * from './add-contract-member.dto';
+export * from './renew-contract.dto';

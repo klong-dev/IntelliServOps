@@ -181,6 +181,16 @@ describe('ContractsService', () => {
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
       prisma.rentalContract.findFirst.mockResolvedValue(null);
       prisma.rentalContract.count.mockResolvedValue(0);
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...created,
+        members: [],
+        apartment: null,
+        createdByStaff: null,
+        invoices: [],
+        contractPdfData: null,
+        landlordSignature: null,
+        tenantSignature: null,
+      } as any);
       // Service uses callback-style $transaction
       prisma.$transaction.mockImplementation(async (callback) =>
         callback({
@@ -191,7 +201,10 @@ describe('ContractsService', () => {
 
       const result = await service.create(createDto, operator);
 
-      expect(result).toEqual(created);
+      expect(result).toMatchObject({
+        id: created.id,
+        contractNumber: created.contractNumber,
+      });
     });
 
     it('should throw NotFoundException if apartment not found', async () => {
@@ -505,6 +518,191 @@ describe('ContractsService', () => {
           user,
         ),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('renewContract', () => {
+    it('should create draft renewal with auto dates when only extensionMonths is provided', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce({
+          id: 'contract-123',
+          contractNumber: 'CTR-2026-00001',
+          apartmentId: 'apt-123',
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          endDate: new Date('2026-12-31T00:00:00.000Z'),
+          monthlyRent: 10000000,
+          depositAmount: 20000000,
+          paymentDueDay: 5,
+          paymentMethod: 'bank_transfer',
+          utilitiesIncluded: null,
+          utilitiesCharges: null,
+          contractTerms: null,
+          specialConditions: null,
+          status: ContractStatus.active,
+          members: [
+            {
+              userId: user.sub,
+              memberType: 'primary',
+              isPrimaryContact: true,
+              sharePercentage: 100,
+            },
+          ],
+        } as any)
+        .mockResolvedValueOnce({
+          ...mockContract({
+            id: 'contract-999',
+            contractNumber: 'CTR-2026-00002',
+          }),
+          members: [{ user: { id: user.sub } }],
+          apartment: null,
+          createdByStaff: null,
+          invoices: [],
+          contractPdfData: null,
+          landlordSignature: null,
+          tenantSignature: null,
+        } as any);
+
+      prisma.rentalContract.findFirst.mockResolvedValue(null);
+      prisma.rentalContract.count.mockResolvedValue(1);
+
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback({
+          rentalContract: {
+            create: jest.fn().mockResolvedValue({ id: 'contract-999' }),
+          },
+          userContractMember: {
+            createMany: jest.fn().mockResolvedValue({}),
+          },
+        }),
+      );
+
+      jest.spyOn(service, 'regenerateContractPdf').mockResolvedValue();
+
+      const result = await service.renewContract(
+        'contract-123',
+        { extensionMonths: 12 },
+        user,
+      );
+
+      expect(result).toMatchObject({
+        sourceContractId: 'contract-123',
+        sourceContractNumber: 'CTR-2026-00001',
+        extensionMonths: 12,
+      });
+
+      expect(prisma.rentalContract.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            apartmentId: 'apt-123',
+          }),
+        }),
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(service.regenerateContractPdf).toHaveBeenCalledWith(
+        'contract-999',
+      );
+    });
+
+    it('should append additional members by CCCD when renewing', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce({
+          id: 'contract-123',
+          contractNumber: 'CTR-2026-00001',
+          apartmentId: 'apt-123',
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          endDate: new Date('2026-12-31T00:00:00.000Z'),
+          monthlyRent: 10000000,
+          depositAmount: 20000000,
+          paymentDueDay: 5,
+          paymentMethod: 'bank_transfer',
+          utilitiesIncluded: null,
+          utilitiesCharges: null,
+          contractTerms: null,
+          specialConditions: null,
+          status: ContractStatus.active,
+          members: [
+            {
+              userId: user.sub,
+              memberType: 'primary',
+              isPrimaryContact: true,
+              sharePercentage: 60,
+            },
+          ],
+        } as any)
+        .mockResolvedValueOnce({
+          ...mockContract({
+            id: 'contract-999',
+            contractNumber: 'CTR-2026-00002',
+          }),
+          members: [{ user: { id: user.sub } }, { user: { id: 'user-456' } }],
+          apartment: null,
+          createdByStaff: null,
+          invoices: [],
+          contractPdfData: null,
+          landlordSignature: null,
+          tenantSignature: null,
+        } as any);
+
+      prisma.userIdentity.findFirst.mockResolvedValue({
+        userId: 'user-456',
+        user: {
+          id: 'user-456',
+          isActive: true,
+          isVerified: true,
+        },
+      } as any);
+
+      prisma.rentalContract.findFirst.mockResolvedValue(null);
+      prisma.rentalContract.count.mockResolvedValue(1);
+
+      const createMany = jest.fn().mockResolvedValue({});
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback({
+          rentalContract: {
+            create: jest.fn().mockResolvedValue({ id: 'contract-999' }),
+          },
+          userContractMember: {
+            createMany,
+          },
+        }),
+      );
+
+      jest.spyOn(service, 'regenerateContractPdf').mockResolvedValue();
+
+      await service.renewContract(
+        'contract-123',
+        {
+          extensionMonths: 6,
+          additionalMembers: [
+            {
+              nationalId: '079203001234',
+              memberType: 'co_tenant' as any,
+              isPrimaryContact: false,
+            },
+          ],
+        },
+        user,
+      );
+
+      expect(prisma.userIdentity.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ nationalId: '079203001234' }),
+        }),
+      );
+
+      expect(createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ userId: user.sub }),
+            expect.objectContaining({ userId: 'user-456' }),
+          ]),
+        }),
+      );
     });
   });
 });
