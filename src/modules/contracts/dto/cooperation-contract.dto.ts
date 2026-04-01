@@ -63,7 +63,7 @@ export class SignCooperationContractResultDto {
     type: String,
     nullable: true,
     example:
-      'https://cdn.example.com/apartment-cooperation-contracts/apt-1/partner-signed.pdf',
+      'https://cdn.example.com/apartment-cooperation/cooperation-contracts/apt-1/partner-signed.pdf',
   })
   contractDocumentUrl: string | null;
 

@@ -6,4 +6,6 @@ export default registerAs('app', () => ({
   name: process.env.APP_NAME || 'IntelliRentOps',
   apiPrefix: process.env.API_PREFIX || 'api',
   apiVersion: process.env.API_VERSION || 'v1',
+  publicBaseUrl: process.env.APP_PUBLIC_BASE_URL || '',
+  localUploadDir: process.env.LOCAL_UPLOAD_DIR || 'uploads',
 }));

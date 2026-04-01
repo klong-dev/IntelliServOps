@@ -2,6 +2,9 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder, OpenAPIObject } from '@nestjs/swagger';
+import * as express from 'express';
+import { mkdirSync } from 'fs';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { TransformInterceptor } from './common/interceptors';
 import { AllExceptionsFilter } from './common/filters';
@@ -87,6 +90,12 @@ async function bootstrap() {
 
   // Expose OpenAPI spec as JSON and YAML for frontend code generation
   const expressApp = app.getHttpAdapter().getInstance();
+  const localUploadDir =
+    configService.get<string>('app.localUploadDir') || 'uploads';
+  const absoluteLocalUploadDir = join(process.cwd(), localUploadDir);
+
+  mkdirSync(absoluteLocalUploadDir, { recursive: true });
+  expressApp.use(`/${localUploadDir}`, express.static(absoluteLocalUploadDir));
 
   expressApp.get('/openapi/v1.json', (req: any, res: any) => {
     res.setHeader('Content-Type', 'application/json');
