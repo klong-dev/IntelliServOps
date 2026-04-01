@@ -1198,15 +1198,13 @@ export class ApartmentsService {
     );
 
     return apartments.map((apartment) => {
-      const latestCooperationContract = apartment.cooperationContracts?.[0];
-      const contractToken = latestCooperationContract?.contractPdfData
-        ? this.generatePdfToken(latestCooperationContract.id)
-        : null;
+      const cooperationContracts = (apartment.cooperationContracts ?? []).map(
+        (contract) => {
+          const contractToken = contract.contractPdfData
+            ? this.generatePdfToken(contract.id)
+            : null;
 
-      return {
-        ...apartment,
-        cooperationContracts: (apartment.cooperationContracts ?? []).map(
-          (contract) => ({
+          return {
             id: contract.id,
             contractNumber: contract.contractNumber,
             status: contract.status,
@@ -1220,27 +1218,15 @@ export class ApartmentsService {
             cooperationContractPublicPdfUrl: contractToken
               ? `/apartments/cooperation-contracts/pdf/view?token=${contractToken}`
               : null,
-          }),
-        ),
-        cooperationContract: latestCooperationContract
-          ? {
-              id: latestCooperationContract.id,
-              contractNumber: latestCooperationContract.contractNumber,
-              status: latestCooperationContract.status,
-              startDate: latestCooperationContract.startDate,
-              endDate: latestCooperationContract.endDate,
-              signedDate: latestCooperationContract.signedAt,
-              contractDocumentUrl:
-                latestCooperationContract.contractDocumentUrl,
-              cooperationContractPdfUrl:
-                latestCooperationContract.contractPdfData
-                  ? `/apartments/cooperation-contracts/${latestCooperationContract.id}/pdf`
-                  : null,
-              cooperationContractPublicPdfUrl: contractToken
-                ? `/apartments/cooperation-contracts/pdf/view?token=${contractToken}`
-                : null,
-            }
-          : null,
+          };
+        },
+      );
+      const latestCooperationContract = cooperationContracts[0] ?? null;
+
+      return {
+        ...apartment,
+        cooperationContracts,
+        cooperationContract: latestCooperationContract,
         rating: ratingMap.get(apartment.id) ?? null,
       };
     });

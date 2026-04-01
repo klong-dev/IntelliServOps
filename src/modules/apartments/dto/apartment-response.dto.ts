@@ -158,7 +158,7 @@ class ApartmentUserApartmentDto {
   rentalContract: ApartmentUserApartmentContractDto;
 }
 
-class ApartmentCooperationContractDto {
+export class ApartmentCooperationContractDto {
   @ApiProperty({ example: '3f5369be-815f-42cb-8a8b-971fbe4a3557' })
   id: string;
 
@@ -276,7 +276,17 @@ export class ApartmentListItemDto {
     example: [
       {
         id: '3f5369be-815f-42cb-8a8b-971fbe4a3557',
+        contractNumber: 'COOP-2026-00001',
         status: 'pending',
+        startDate: '2026-03-01T00:00:00.000Z',
+        endDate: '2027-03-01T00:00:00.000Z',
+        signedDate: '2026-03-01T10:20:30.000Z',
+        contractDocumentUrl:
+          'https://storage.example.com/cooperation/COOP-2026-00001.pdf',
+        cooperationContractPdfUrl:
+          '/apartments/cooperation-contracts/3f5369be-815f-42cb-8a8b-971fbe4a3557/pdf',
+        cooperationContractPublicPdfUrl:
+          '/apartments/cooperation-contracts/pdf/view?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
       },
     ],
   })
