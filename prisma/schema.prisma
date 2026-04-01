@@ -658,7 +658,7 @@ model Apartment {
   numberOfBedrooms      Int              @default(0)
   numberOfBathrooms     Int              @default(0)
   furnishingStatus      FurnishingStatus @default(unfurnished)
-  amenities             Json?
+  amenities             Json?            // Legacy column, replaced by apartmentAmenities relation
   baseRentPrice         Decimal          @db.Decimal(12, 2)
   depositAmount         Decimal?         @db.Decimal(12, 2)
   status                ApartmentStatus  @default(available)
@@ -685,6 +685,7 @@ model Apartment {
   maintenanceReqs   MaintenanceRequest[]
   tasks             Task[]
   apartmentPolicies ApartmentPolicy[]
+  apartmentAmenities ApartmentAmenity[]
   reservations      Reservation[]
   userApartments    UserApartment[]
   ratings           ApartmentRating[]
@@ -697,6 +698,36 @@ model Apartment {
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])
   @@map("apartments")
+}
+
+model Amenity {
+  id          String            @id @default(uuid())
+  code        String            @unique
+  name        String
+  description String?
+  icon        String?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  apartmentAmenities ApartmentAmenity[]
+
+  @@index([isActive])
+  @@index([name])
+  @@map("amenities")
+}
+
+model ApartmentAmenity {
+  apartmentId String
+  amenityId   String
+  createdAt   DateTime @default(now())
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  amenity   Amenity   @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([apartmentId, amenityId])
+  @@index([amenityId])
+  @@map("apartment_amenities")
 }
 
 model PartnerCooperationContract {
@@ -798,6 +829,12 @@ model RentalContract {
   utilitiesCharges    Json?
   contractTerms       String?
   specialConditions   String?
+  landlordName        String?
+  landlordIdNumber    String?
+  landlordIdIssueDate String?
+  landlordIdIssuePlace String?
+  landlordAddress     String?
+  landlordPhone       String?
   status              ContractStatus @default(draft)
   signedDate          DateTime?
   contractDocumentUrl String?

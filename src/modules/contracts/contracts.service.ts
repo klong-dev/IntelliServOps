@@ -13,6 +13,7 @@ import {
   CancelContractDto,
   AddContractMemberDto,
 } from './dto';
+import type { UpdateContractPdfContentDto } from './dto/update-contract-pdf-content.dto';
 import { RenewContractDto } from './dto/renew-contract.dto';
 import {
   ContractStatus,
@@ -99,6 +100,12 @@ export class ContractsService {
         paymentDueDay: true,
         paymentMethod: true,
         specialConditions: true,
+        landlordName: true,
+        landlordIdNumber: true,
+        landlordIdIssueDate: true,
+        landlordIdIssuePlace: true,
+        landlordAddress: true,
+        landlordPhone: true,
         landlordSignature: true,
         tenantSignature: true,
         apartment: {
@@ -163,6 +170,12 @@ export class ContractsService {
 
     const pdfData: ContractPdfData = {
       contractNumber: contract.contractNumber,
+      landlordName: contract.landlordName || undefined,
+      landlordIdNumber: contract.landlordIdNumber || undefined,
+      landlordIdIssueDate: contract.landlordIdIssueDate || undefined,
+      landlordIdIssuePlace: contract.landlordIdIssuePlace || undefined,
+      landlordAddress: contract.landlordAddress || undefined,
+      landlordPhone: contract.landlordPhone || undefined,
       tenantName: primaryMember?.user.fullName || undefined,
       tenantIdNumber: primaryMember?.user.identity?.nationalId || undefined,
       tenantIdIssueDate: primaryMember?.user.identity?.issueDate || undefined,
@@ -984,6 +997,96 @@ export class ContractsService {
         updatedAt: true,
       },
     });
+  }
+
+  async updateContractPdfContent(
+    id: string,
+    updateDto: UpdateContractPdfContentDto,
+    currentUser: JwtPayload,
+  ) {
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        startDate: true,
+        endDate: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (
+      contract.status === ContractStatus.terminated ||
+      contract.status === ContractStatus.expired
+    ) {
+      throw new ConflictException(
+        'Cannot edit PDF content of terminated or expired contract',
+      );
+    }
+
+    const nextStartDate = updateDto.startDate
+      ? new Date(updateDto.startDate)
+      : contract.startDate;
+    const nextEndDate = updateDto.endDate
+      ? new Date(updateDto.endDate)
+      : contract.endDate;
+
+    if (nextStartDate >= nextEndDate) {
+      throw new BadRequestException('startDate must be earlier than endDate');
+    }
+
+    const updateData: Prisma.RentalContractUpdateInput = {
+      ...(updateDto.landlordName !== undefined && {
+        landlordName: updateDto.landlordName,
+      }),
+      ...(updateDto.landlordIdNumber !== undefined && {
+        landlordIdNumber: updateDto.landlordIdNumber,
+      }),
+      ...(updateDto.landlordIdIssueDate !== undefined && {
+        landlordIdIssueDate: updateDto.landlordIdIssueDate,
+      }),
+      ...(updateDto.landlordIdIssuePlace !== undefined && {
+        landlordIdIssuePlace: updateDto.landlordIdIssuePlace,
+      }),
+      ...(updateDto.landlordAddress !== undefined && {
+        landlordAddress: updateDto.landlordAddress,
+      }),
+      ...(updateDto.landlordPhone !== undefined && {
+        landlordPhone: updateDto.landlordPhone,
+      }),
+      ...(updateDto.startDate && { startDate: new Date(updateDto.startDate) }),
+      ...(updateDto.endDate && { endDate: new Date(updateDto.endDate) }),
+      ...(updateDto.monthlyRent !== undefined && {
+        monthlyRent: updateDto.monthlyRent,
+      }),
+      ...(updateDto.depositAmount !== undefined && {
+        depositAmount: updateDto.depositAmount,
+      }),
+      ...(updateDto.paymentDueDay !== undefined && {
+        paymentDueDay: updateDto.paymentDueDay,
+      }),
+      ...(updateDto.paymentMethod && {
+        paymentMethod: updateDto.paymentMethod,
+      }),
+      ...(updateDto.specialConditions !== undefined && {
+        specialConditions: updateDto.specialConditions,
+      }),
+      ...(updateDto.contractTerms !== undefined && {
+        contractTerms: updateDto.contractTerms,
+      }),
+    };
+
+    await this.prisma.rentalContract.update({
+      where: { id },
+      data: updateData,
+    });
+
+    await this.regenerateContractPdf(id);
+
+    return this.findOne(id, currentUser);
   }
 
   /**

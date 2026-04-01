@@ -37,6 +37,7 @@ import {
   AddContractMemberDto,
   RenewContractDto,
   RenewContractResponseDto,
+  UpdateContractPdfContentDto,
   SignCooperationContractDto,
   SignCooperationContractResultDto,
   CancelCooperationContractDto,
@@ -358,6 +359,58 @@ export class ContractsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.contractsService.renewContract(id, renewDto, currentUser);
+  }
+
+  @Patch(':id/pdf-content')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Update editable PDF content of contract',
+    description:
+      'Update fields that are rendered in contract PDF and regenerate PDF immediately.',
+  })
+  @ApiBody({
+    type: UpdateContractPdfContentDto,
+    examples: {
+      updateRentAndDates: {
+        summary: 'Update rental terms and regenerate PDF',
+        value: {
+          landlordName: 'Cong ty TNHH IntelliServOps',
+          landlordIdNumber: '0312345678',
+          landlordIdIssueDate: '01/01/2020',
+          landlordIdIssuePlace: 'So KH&DT TP. Ho Chi Minh',
+          landlordAddress: 'TP. Ho Chi Minh, Viet Nam',
+          landlordPhone: '1900 0000',
+          startDate: '2026-04-01',
+          endDate: '2027-03-31',
+          monthlyRent: 16500000,
+          depositAmount: 33000000,
+          paymentDueDay: 7,
+          paymentMethod: 'bank_transfer',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        },
+      },
+    },
+  })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Contract PDF content updated and PDF regenerated',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid update data' })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Contract does not allow PDF content editing',
+  })
+  async updatePdfContent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateContractPdfContentDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.updateContractPdfContent(
+      id,
+      body,
+      currentUser,
+    );
   }
 
   @Patch(':id')
