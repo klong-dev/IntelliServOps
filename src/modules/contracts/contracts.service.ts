@@ -13,6 +13,7 @@ import {
   CancelContractDto,
   AddContractMemberDto,
 } from './dto';
+import { RenewContractDto } from './dto/renew-contract.dto';
 import {
   ContractStatus,
   ActorType,
@@ -73,6 +74,16 @@ export class ContractsService {
       return undefined;
     }
     return num.toLocaleString('vi-VN');
+  }
+
+  private addMonthsKeepingContractDay(baseDate: Date, months: number): Date {
+    const d = new Date(baseDate);
+    const day = d.getDate();
+    d.setMonth(d.getMonth() + months);
+    if (d.getDate() < day) {
+      d.setDate(0);
+    }
+    return d;
   }
 
   async regenerateContractPdf(contractId: string): Promise<void> {
@@ -1244,6 +1255,265 @@ export class ContractsService {
     await this.regenerateContractPdf(contractId);
 
     return this.findOne(contractId, currentUser);
+  }
+
+  async renewContract(
+    contractId: string,
+    renewDto: RenewContractDto,
+    currentUser: JwtPayload,
+  ) {
+    const sourceContract = await this.prisma.rentalContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        apartmentId: true,
+        startDate: true,
+        endDate: true,
+        monthlyRent: true,
+        depositAmount: true,
+        paymentDueDay: true,
+        paymentMethod: true,
+        utilitiesIncluded: true,
+        utilitiesCharges: true,
+        contractTerms: true,
+        specialConditions: true,
+        status: true,
+        members: {
+          where: { status: MemberStatus.active },
+          select: {
+            userId: true,
+            memberType: true,
+            isPrimaryContact: true,
+            sharePercentage: true,
+          },
+        },
+      },
+    });
+
+    if (!sourceContract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (currentUser.actorType !== 'user') {
+      throw new UnauthorizedException('Only users can renew rental contracts');
+    }
+
+    const isMember = sourceContract.members.some(
+      (member) => member.userId === currentUser.sub,
+    );
+    if (!isMember) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (
+      sourceContract.status !== ContractStatus.active &&
+      sourceContract.status !== ContractStatus.signed &&
+      sourceContract.status !== ContractStatus.expired
+    ) {
+      throw new ConflictException(
+        'Only active/signed/expired contracts can be renewed',
+      );
+    }
+
+    if (!sourceContract.members.length) {
+      throw new BadRequestException('Source contract has no active members');
+    }
+
+    const autoStartDate = new Date(sourceContract.endDate);
+    autoStartDate.setDate(autoStartDate.getDate() + 1);
+
+    const nextStartDate = renewDto.startDate
+      ? new Date(renewDto.startDate)
+      : autoStartDate;
+
+    if (isNaN(nextStartDate.getTime())) {
+      throw new BadRequestException('Invalid startDate');
+    }
+
+    let nextEndDate: Date;
+    if (renewDto.endDate) {
+      nextEndDate = new Date(renewDto.endDate);
+      if (isNaN(nextEndDate.getTime())) {
+        throw new BadRequestException('Invalid endDate');
+      }
+    } else {
+      if (!renewDto.extensionMonths) {
+        throw new BadRequestException(
+          'extensionMonths is required when endDate is not provided',
+        );
+      }
+      nextEndDate = this.addMonthsKeepingContractDay(
+        nextStartDate,
+        renewDto.extensionMonths,
+      );
+      nextEndDate.setDate(nextEndDate.getDate() - 1);
+    }
+
+    if (nextEndDate <= nextStartDate) {
+      throw new BadRequestException('endDate must be after startDate');
+    }
+
+    const overlappingContract = await this.prisma.rentalContract.findFirst({
+      where: {
+        apartmentId: sourceContract.apartmentId,
+        id: { not: sourceContract.id },
+        status: {
+          in: [
+            ContractStatus.draft,
+            ContractStatus.pending,
+            ContractStatus.signed,
+            ContractStatus.active,
+          ],
+        },
+        startDate: { lte: nextEndDate },
+        endDate: { gte: nextStartDate },
+      },
+      select: { id: true },
+    });
+
+    if (overlappingContract) {
+      throw new ConflictException('Apartment has an overlapping contract');
+    }
+
+    const normalizedMembers: Array<{
+      userId: string;
+      memberType: MemberType;
+      isPrimaryContact: boolean;
+      sharePercentage: Prisma.Decimal | number | null;
+    }> = sourceContract.members.map((member) => ({
+      userId: member.userId,
+      memberType: member.memberType,
+      isPrimaryContact: member.isPrimaryContact,
+      sharePercentage: member.sharePercentage,
+    }));
+
+    for (const additionalMember of renewDto.additionalMembers ?? []) {
+      const nationalId = additionalMember.nationalId?.trim();
+      if (!nationalId) {
+        throw new BadRequestException(
+          'additionalMembers.nationalId is required',
+        );
+      }
+
+      const identity = await this.prisma.userIdentity.findFirst({
+        where: {
+          nationalId,
+          isVerified: true,
+        },
+        select: {
+          userId: true,
+          user: {
+            select: {
+              id: true,
+              isActive: true,
+              isVerified: true,
+            },
+          },
+        },
+      });
+
+      if (!identity || !identity.user.isActive || !identity.user.isVerified) {
+        throw new BadRequestException(
+          `No active verified user found for CCCD: ${nationalId}`,
+        );
+      }
+
+      const existedMember = normalizedMembers.some(
+        (member) => member.userId === identity.userId,
+      );
+      if (existedMember) {
+        throw new ConflictException(
+          `User with CCCD ${nationalId} is already in renewed contract members`,
+        );
+      }
+
+      normalizedMembers.push({
+        userId: identity.userId,
+        memberType: additionalMember.memberType ?? MemberType.co_tenant,
+        isPrimaryContact: additionalMember.isPrimaryContact ?? false,
+        sharePercentage: additionalMember.sharePercentage ?? null,
+      });
+    }
+
+    const primaryMembers = normalizedMembers.filter(
+      (member) => member.memberType === MemberType.primary,
+    );
+    if (primaryMembers.length !== 1) {
+      throw new BadRequestException(
+        'Renewed contract must have exactly one primary member',
+      );
+    }
+
+    const primaryContacts = normalizedMembers.filter(
+      (member) => member.isPrimaryContact,
+    );
+    if (primaryContacts.length > 1) {
+      throw new BadRequestException(
+        'Only one primary contact is allowed in renewed contract members',
+      );
+    }
+
+    const primaryUserId = primaryMembers[0].userId;
+    const primaryContactUserId = primaryContacts[0]?.userId;
+    if (primaryContactUserId && primaryContactUserId !== primaryUserId) {
+      throw new BadRequestException(
+        'Primary contact must be the same user as primary member',
+      );
+    }
+
+    const contractNumber = await this.generateContractNumber();
+
+    const renewedContract = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.rentalContract.create({
+        data: {
+          contractNumber,
+          apartment: { connect: { id: sourceContract.apartmentId } },
+          startDate: nextStartDate,
+          endDate: nextEndDate,
+          monthlyRent: renewDto.monthlyRent ?? sourceContract.monthlyRent,
+          depositAmount: renewDto.depositAmount ?? sourceContract.depositAmount,
+          paymentDueDay: renewDto.paymentDueDay ?? sourceContract.paymentDueDay,
+          paymentMethod: renewDto.paymentMethod ?? sourceContract.paymentMethod,
+          utilitiesIncluded:
+            (renewDto.utilitiesIncluded as any) ??
+            (sourceContract.utilitiesIncluded as any),
+          utilitiesCharges:
+            (renewDto.utilitiesCharges as any) ??
+            (sourceContract.utilitiesCharges as any),
+          contractTerms: renewDto.contractTerms ?? sourceContract.contractTerms,
+          specialConditions:
+            renewDto.specialConditions ?? sourceContract.specialConditions,
+          status: ContractStatus.draft,
+        },
+        select: { id: true },
+      });
+
+      await tx.userContractMember.createMany({
+        data: normalizedMembers.map((member) => ({
+          userId: member.userId,
+          rentalContractId: created.id,
+          memberType: member.memberType,
+          isPrimaryContact: member.isPrimaryContact,
+          sharePercentage: member.sharePercentage,
+          status: MemberStatus.active,
+        })),
+      });
+
+      return created;
+    });
+
+    await this.regenerateContractPdf(renewedContract.id);
+
+    const detail = await this.findOne(renewedContract.id, currentUser);
+    const effectiveMonths = renewDto.extensionMonths ?? null;
+
+    return {
+      sourceContractId: sourceContract.id,
+      sourceContractNumber: sourceContract.contractNumber,
+      extensionMonths: effectiveMonths,
+      renewedContract: detail,
+    };
   }
 
   private async generateContractNumber(): Promise<string> {
