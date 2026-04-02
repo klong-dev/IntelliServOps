@@ -97,7 +97,7 @@ export class UsersController {
   }
 
   @Get('search/by-national-id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary: 'Search user by national ID',
     description: 'Search one user by CCCD/CMND number from identity data.',

@@ -401,6 +401,13 @@ export class ContractsService {
             isPrimaryContact: true,
           },
         },
+        renewalContracts: {
+          select: {
+            id: true,
+          },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
         invoices: {
           where: {
             invoiceType: InvoiceType.contractDeposit,
@@ -420,11 +427,12 @@ export class ContractsService {
     const contracts = await this.prisma.rentalContract.findMany(findAllArgs);
 
     const items = contracts.map(
-      ({ contractPdfData, invoices, ...contract }) => {
+      ({ contractPdfData, invoices, renewalContracts, ...contract }) => {
         const pdfToken = contractPdfData
           ? this.generatePdfToken(contract.id)
           : null;
         const paidDepositInvoice = invoices?.[0] ?? null;
+        const latestRenewal = renewalContracts?.[0] ?? null;
 
         return {
           ...contract,
@@ -432,6 +440,8 @@ export class ContractsService {
           pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
           isDepositPaid: !!paidDepositInvoice,
           depositPaidAt: paidDepositInvoice?.paidAt ?? null,
+          isRenewed: !!latestRenewal,
+          latestRenewalContractId: latestRenewal?.id ?? null,
         };
       },
     );
@@ -496,6 +506,13 @@ export class ContractsService {
             dueDate: true,
           },
         },
+        renewalContracts: {
+          select: {
+            id: true,
+          },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -551,6 +568,8 @@ export class ContractsService {
       hasTenantSignature: !!tenantSignature,
       isDepositPaid: !!paidDepositInvoice,
       depositPaidAt: paidDepositInvoice?.paidAt ?? null,
+      isRenewed: !!rest.renewalContracts?.length,
+      latestRenewalContractId: rest.renewalContracts?.[0]?.id ?? null,
     };
   }
 
