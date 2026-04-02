@@ -434,6 +434,26 @@ export class ContractsController {
     return this.contractsService.activate(id);
   }
 
+  @Patch(':id/activate-paid')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({
+    summary: 'Activate contract after deposit paid',
+    description:
+      'Activate pending/signed contract when deposit invoice is paid and contract is not expired.',
+  })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Contract activated after deposit payment validation',
+  })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Contract cannot be activated because it is expired, invalid status, or deposit not paid',
+  })
+  async activatePaid(@Param('id', ParseUUIDPipe) id: string) {
+    return this.contractsService.activateWhenDepositPaid(id);
+  }
+
   @Patch(':id/terminate')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({ summary: 'Terminate contract' })
