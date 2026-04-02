@@ -136,6 +136,9 @@ export class ContractListItemDto {
   @ApiProperty({ example: 'active' })
   status: string;
 
+  @ApiProperty({ example: 'renewal' })
+  category: string;
+
   @ApiProperty()
   startDate: Date;
 
@@ -248,6 +251,9 @@ export class ContractDetailDto {
 
   @ApiProperty({ example: 'active' })
   status: string;
+
+  @ApiProperty({ example: 'normal' })
+  category: string;
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   signedDate: Date | null;
