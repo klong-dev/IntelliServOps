@@ -15,10 +15,15 @@ import { IoTService } from './iot.service';
 import {
   ControlDeviceDto,
   ControlDeviceResponseDto,
+  CreateIoTBoardDeviceDto,
+  CreateIoTBoardDto,
   CreateIoTDeviceDto,
   CreateUtilityMeterDto,
   CreateUtilityReadingDto,
   DeviceActionDto,
+  IoTBoardDeleteResultDto,
+  IoTBoardDetailDto,
+  IoTBoardListItemDto,
   IoTDeviceDetailDto,
   IoTDeviceListItemDto,
   IoTGatewayStatusDto,
@@ -26,6 +31,8 @@ import {
   IoTTestSequenceResponseDto,
   SetDoorPasswordDto,
   TestSequenceDto,
+  UpdateIoTBoardDeviceDto,
+  UpdateIoTBoardDto,
   UpdateIoTDeviceDto,
   UpdateUtilityMeterDto,
   UtilityMeterDetailDto,
@@ -144,6 +151,136 @@ export class IoTController {
     @Body() body: TestSequenceDto,
   ) {
     return this.iotService.runDeviceTestSequence(espId, body.holdMs);
+  }
+
+  // ============================================================================
+  // IoT Boards
+  // ============================================================================
+
+  @Get('boards')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'List IoT boards with their child devices',
+  })
+  @ApiQuery({ name: 'apartmentId', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: IoTStatus })
+  @ApiJsonResponse(IoTBoardListItemDto, {
+    isArray: true,
+    description: 'List of MQTT boards with grouped devices',
+  })
+  async findAllBoards(
+    @Query('apartmentId') apartmentId?: string,
+    @Query('status') status?: IoTStatus,
+  ) {
+    return this.iotService.findAllBoards(apartmentId, status);
+  }
+
+  @Get('boards/:boardId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Get IoT board details with grouped child devices',
+  })
+  @ApiJsonResponse(IoTBoardDetailDto, {
+    description: 'Board details with child devices',
+  })
+  @ApiResponse({ status: 404, description: 'IoT board not found' })
+  async findOneBoard(@Param('boardId') boardId: string) {
+    return this.iotService.findOneBoard(boardId);
+  }
+
+  @Post('boards')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Create IoT board with child devices',
+  })
+  @ApiJsonResponse(IoTBoardDetailDto, {
+    status: 201,
+    description: 'IoT board created successfully',
+  })
+  async createBoard(@Body() createDto: CreateIoTBoardDto) {
+    return this.iotService.createBoard(createDto);
+  }
+
+  @Patch('boards/:boardId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Update IoT board metadata',
+  })
+  @ApiJsonResponse(IoTBoardDetailDto, {
+    description: 'IoT board updated successfully',
+  })
+  async updateBoard(
+    @Param('boardId') boardId: string,
+    @Body() updateDto: UpdateIoTBoardDto,
+  ) {
+    return this.iotService.updateBoard(boardId, updateDto);
+  }
+
+  @Delete('boards/:boardId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Deactivate an IoT board and all child devices',
+  })
+  @ApiJsonResponse(IoTBoardDeleteResultDto, {
+    description: 'IoT board deactivated successfully',
+  })
+  async removeBoard(@Param('boardId') boardId: string) {
+    return this.iotService.removeBoard(boardId);
+  }
+
+  @Post('boards/:boardId/devices')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Add a child device to an IoT board',
+  })
+  @ApiJsonResponse(IoTDeviceDetailDto, {
+    status: 201,
+    description: 'IoT board device created successfully',
+  })
+  async createBoardDevice(
+    @Param('boardId') boardId: string,
+    @Body() createDto: CreateIoTBoardDeviceDto,
+  ) {
+    return this.iotService.createBoardDevice(boardId, createDto);
+  }
+
+  @Patch('boards/:boardId/devices/:deviceId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Update a child device on an IoT board',
+  })
+  @ApiJsonResponse(IoTDeviceDetailDto, {
+    description: 'IoT board device updated successfully',
+  })
+  async updateBoardDevice(
+    @Param('boardId') boardId: string,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Body() updateDto: UpdateIoTBoardDeviceDto,
+  ) {
+    return this.iotService.updateBoardDevice(boardId, deviceId, updateDto);
+  }
+
+  @Delete('boards/:boardId/devices/:deviceId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Deactivate a child device on an IoT board',
+  })
+  @ApiJsonResponse(IoTDeviceDetailDto, {
+    description: 'IoT board device deactivated successfully',
+  })
+  async removeBoardDevice(
+    @Param('boardId') boardId: string,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+  ) {
+    return this.iotService.removeBoardDevice(boardId, deviceId);
   }
 
   // ============================================================================

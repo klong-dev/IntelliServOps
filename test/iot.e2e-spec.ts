@@ -88,6 +88,115 @@ describe('IoTController (e2e)', () => {
     expect(response.body.data.details.payload).toBe('on_1');
   });
 
+  it('lists MQTT boards with grouped child devices without auth', async () => {
+    prisma.ioTDevice.findMany.mockResolvedValue([
+      {
+        id: deviceId,
+        deviceName: 'Front Door Lock',
+        deviceType: 'smart_lock',
+        status: 'active',
+        isControllableByTenant: true,
+        lastOnlineAt: new Date('2026-03-31T00:00:00.000Z'),
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            controlType: 'door',
+            channelId: 1,
+          },
+        },
+        apartment: {
+          id: apartmentId,
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+        room: null,
+      },
+    ] as any);
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/iot/boards')
+      .expect(200);
+
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0]).toMatchObject({
+      id: 'ESP_A101',
+      name: 'A101 Main Board',
+      deviceCount: 1,
+    });
+  });
+
+  it('creates an MQTT board with child devices without auth', async () => {
+    prisma.apartment.findUnique.mockResolvedValue({ id: apartmentId } as any);
+    prisma.ioTDevice.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: deviceId,
+          deviceName: 'Front Door Lock',
+          deviceType: 'smart_lock',
+          status: 'active',
+          isControllableByTenant: true,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-03-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              controlType: 'door',
+              channelId: 1,
+            },
+          },
+          apartment: {
+            id: apartmentId,
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+          room: null,
+        },
+      ] as any);
+    prisma.$transaction.mockResolvedValue([{ id: deviceId }] as any);
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/iot/boards')
+      .send({
+        boardId: 'ESP_A101',
+        boardName: 'A101 Main Board',
+        apartmentId,
+        devices: [
+          {
+            deviceName: 'Front Door Lock',
+            deviceType: 'smart_lock',
+            mqttControlType: 'door',
+            mqttChannelId: 1,
+          },
+        ],
+      })
+      .expect(201);
+
+    expect(response.body.data).toMatchObject({
+      id: 'ESP_A101',
+      name: 'A101 Main Board',
+      deviceCount: 1,
+    });
+    expect(prisma.ioTDevice.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          apartmentId,
+          configuration: expect.objectContaining({
+            mqtt: expect.objectContaining({
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it('allows apartment device listing without auth for test mode', async () => {
     prisma.ioTDevice.findMany.mockResolvedValue([
       {

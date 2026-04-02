@@ -7,6 +7,14 @@ describe('IoTController', () => {
 
   const iotService = {
     getGatewayStatus: jest.fn(),
+    findAllBoards: jest.fn(),
+    findOneBoard: jest.fn(),
+    createBoard: jest.fn(),
+    updateBoard: jest.fn(),
+    removeBoard: jest.fn(),
+    createBoardDevice: jest.fn(),
+    updateBoardDevice: jest.fn(),
+    removeBoardDevice: jest.fn(),
     triggerLight: jest.fn(),
     triggerAlarm: jest.fn(),
     triggerDoor: jest.fn(),
@@ -58,6 +66,44 @@ describe('IoTController', () => {
 
     expect(result).toEqual({ success: true });
     expect(iotService.triggerLight).toHaveBeenCalledWith('ESP_A101', 1, 'ON');
+  });
+
+  it('should delegate board listing to service', async () => {
+    iotService.findAllBoards.mockResolvedValue([{ id: 'ESP_A101' }]);
+
+    await expect(controller.findAllBoards()).resolves.toEqual([
+      { id: 'ESP_A101' },
+    ]);
+    expect(iotService.findAllBoards).toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it('should delegate board creation to service', async () => {
+    iotService.createBoard.mockResolvedValue({ id: 'ESP_A101' });
+
+    await expect(
+      controller.createBoard({
+        boardId: 'ESP_A101',
+        boardName: 'A101 Main Board',
+        apartmentId: '11111111-1111-4111-8111-111111111111',
+        devices: [],
+      } as any),
+    ).resolves.toEqual({ id: 'ESP_A101' });
+    expect(iotService.createBoard).toHaveBeenCalled();
+  });
+
+  it('should delegate board device update to service', async () => {
+    iotService.updateBoardDevice.mockResolvedValue({ id: 'device-123' });
+
+    await expect(
+      controller.updateBoardDevice('ESP_A101', 'device-123', {
+        deviceName: 'Updated Lamp',
+      }),
+    ).resolves.toEqual({ id: 'device-123' });
+    expect(iotService.updateBoardDevice).toHaveBeenCalledWith(
+      'ESP_A101',
+      'device-123',
+      { deviceName: 'Updated Lamp' },
+    );
   });
 
   it('should delegate door password configuration to service', () => {
