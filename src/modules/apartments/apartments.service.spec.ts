@@ -116,6 +116,60 @@ describe('ApartmentsService', () => {
 
     expect(result.id).toBe('apt-123');
     expect(result.rating).toBe(4.67);
+    expect(result.canRateApartment).toBe(false);
+    expect(result.hasRatedApartment).toBe(false);
+    expect(result.ratingEligibilityReason).toBe('not_authenticated');
+  });
+
+  it('should mark canRateApartment=true for user with active contract and no previous rating', async () => {
+    const user = mockUserJwtPayload();
+
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.2 },
+    } as any);
+    prisma.userContractMember.findFirst.mockResolvedValue({ id: 'm-1' } as any);
+    prisma.apartmentRating.findUnique.mockResolvedValue(null);
+
+    const result = await service.findOne('apt-123', user);
+
+    expect(result.canRateApartment).toBe(true);
+    expect(result.hasRatedApartment).toBe(false);
+    expect(result.ratingEligibilityReason).toBeNull();
+  });
+
+  it('should mark canRateApartment=false when user already rated apartment', async () => {
+    const user = mockUserJwtPayload();
+
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.2 },
+    } as any);
+    prisma.userContractMember.findFirst.mockResolvedValue({ id: 'm-1' } as any);
+    prisma.apartmentRating.findUnique.mockResolvedValue({ id: 'r-1' } as any);
+
+    const result = await service.findOne('apt-123', user);
+
+    expect(result.canRateApartment).toBe(false);
+    expect(result.hasRatedApartment).toBe(true);
+    expect(result.ratingEligibilityReason).toBe('already_rated');
+  });
+
+  it('should mark reason=no_active_contract when user has no active membership', async () => {
+    const user = mockUserJwtPayload();
+
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.2 },
+    } as any);
+    prisma.userContractMember.findFirst.mockResolvedValue(null);
+    prisma.apartmentRating.findUnique.mockResolvedValue(null);
+
+    const result = await service.findOne('apt-123', user);
+
+    expect(result.canRateApartment).toBe(false);
+    expect(result.hasRatedApartment).toBe(false);
+    expect(result.ratingEligibilityReason).toBe('no_active_contract');
   });
 
   it('should throw NotFoundException when apartment detail is missing', async () => {
@@ -212,6 +266,9 @@ describe('ApartmentsService', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as any);
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback(prisma as any),
+    );
 
     const result = await service.update(
       'apt-123',

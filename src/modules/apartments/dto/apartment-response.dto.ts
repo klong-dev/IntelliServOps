@@ -451,6 +451,38 @@ export class ApartmentDetailDto {
   @ApiPropertyOptional({ type: Number, nullable: true })
   yearBuilt: number | null;
 
+  @ApiProperty({
+    example: false,
+    description:
+      'Cho biet user hien tai co du dieu kien danh gia apartment hay khong',
+  })
+  canRateApartment: boolean;
+
+  @ApiProperty({
+    example: false,
+    description: 'Cho biet user hien tai da danh gia apartment nay chua',
+  })
+  hasRatedApartment: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    enum: [
+      'not_authenticated',
+      'not_user_role',
+      'no_active_contract',
+      'already_rated',
+    ],
+    description: 'Ly do user hien tai khong the danh gia apartment',
+    example: 'no_active_contract',
+  })
+  ratingEligibilityReason:
+    | 'not_authenticated'
+    | 'not_user_role'
+    | 'no_active_contract'
+    | 'already_rated'
+    | null;
+
   @ApiPropertyOptional({ type: String, nullable: true })
   ownerId: string | null;
 

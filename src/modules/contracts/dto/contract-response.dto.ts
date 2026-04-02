@@ -232,6 +232,12 @@ export class ContractListItemDto {
   @ApiPropertyOptional({ type: Date, nullable: true })
   depositPaidAt: Date | null;
 
+  @ApiProperty({ example: false })
+  isRenewed: boolean;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  latestRenewalContractId: string | null;
+
   @ApiPropertyOptional({
     type: String,
     nullable: true,
@@ -371,6 +377,12 @@ export class ContractDetailDto {
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   depositPaidAt: Date | null;
+
+  @ApiProperty({ example: false })
+  isRenewed: boolean;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  latestRenewalContractId: string | null;
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;

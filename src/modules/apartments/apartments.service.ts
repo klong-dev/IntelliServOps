@@ -546,7 +546,7 @@ export class ApartmentsService {
   /**
    * Get apartment by ID with full details
    */
-  async findOne(id: string) {
+  async findOne(id: string, currentUser?: JwtPayload) {
     const [apartment, ratingAggregate] = await Promise.all([
       this.prisma.apartment.findUnique({
         where: { id },
@@ -657,11 +657,65 @@ export class ApartmentsService {
       throw new NotFoundException('Apartment not found');
     }
 
+    let canRateApartment = false;
+    let hasRatedApartment = false;
+    let ratingEligibilityReason:
+      | 'not_authenticated'
+      | 'not_user_role'
+      | 'no_active_contract'
+      | 'already_rated'
+      | null = null;
+
+    if (!currentUser) {
+      ratingEligibilityReason = 'not_authenticated';
+    } else if (currentUser.actorType !== 'user') {
+      ratingEligibilityReason = 'not_user_role';
+    }
+
+    if (currentUser?.actorType === 'user') {
+      const [activeMembership, existingRating] = await Promise.all([
+        this.prisma.userContractMember.findFirst({
+          where: {
+            userId: currentUser.sub,
+            status: MemberStatus.active,
+            rentalContract: {
+              status: ContractStatus.active,
+              apartmentId: id,
+            },
+          },
+          select: { id: true },
+        }),
+        this.prisma.apartmentRating.findUnique({
+          where: {
+            userId_apartmentId: {
+              userId: currentUser.sub,
+              apartmentId: id,
+            },
+          },
+          select: { id: true },
+        }),
+      ]);
+
+      hasRatedApartment = !!existingRating;
+      canRateApartment = !!activeMembership && !hasRatedApartment;
+
+      if (hasRatedApartment) {
+        ratingEligibilityReason = 'already_rated';
+      } else if (!activeMembership) {
+        ratingEligibilityReason = 'no_active_contract';
+      } else {
+        ratingEligibilityReason = null;
+      }
+    }
+
     return {
       ...apartment,
       amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       streetAddress: apartment.streetAddress,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
+      canRateApartment,
+      hasRatedApartment,
+      ratingEligibilityReason,
     };
   }
 

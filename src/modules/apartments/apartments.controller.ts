@@ -13,6 +13,7 @@ import {
   BadRequestException,
   Res,
   StreamableFile,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -54,6 +55,7 @@ import {
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
 import { Public, Roles, CurrentUser } from '../../common/decorators';
+import { OptionalJwtAuthGuard } from '../../common/guards';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { LocalMediaStorageService } from '../../shared/services/local-media-storage.service';
@@ -207,11 +209,16 @@ export class ApartmentsController {
 
   @Get(':id')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Get apartment details' })
   @ApiJsonResponse(ApartmentDetailDto, { description: 'Apartment details' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.apartmentsService.findOne(id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser?: JwtPayload,
+  ) {
+    return this.apartmentsService.findOne(id, currentUser);
   }
 
   @Get('cooperation-contracts/pdf/view')
