@@ -87,6 +87,32 @@ export class ContractsService {
     return d;
   }
 
+  private getUtcDayStart(date = new Date()): Date {
+    return new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+  }
+
+  private async syncExpiredContractsByDate(): Promise<void> {
+    const todayStart = this.getUtcDayStart();
+
+    await this.prisma.rentalContract.updateMany({
+      where: {
+        status: {
+          in: [
+            ContractStatus.pending,
+            ContractStatus.signed,
+            ContractStatus.active,
+          ],
+        },
+        endDate: { lt: todayStart },
+      },
+      data: {
+        status: ContractStatus.expired,
+      },
+    });
+  }
+
   async regenerateContractPdf(contractId: string): Promise<void> {
     const contract = await this.prisma.rentalContract.findUnique({
       where: { id: contractId },
@@ -318,6 +344,8 @@ export class ContractsService {
    * Admin/Operator see all, Staff see assigned, User see own
    */
   async findAll(currentUser: JwtPayload, status?: ContractStatus) {
+    await this.syncExpiredContractsByDate();
+
     const where: Prisma.RentalContractWhereInput = {
       ...(status && { status }),
     };
@@ -338,6 +366,7 @@ export class ContractsService {
         endDate: true,
         monthlyRent: true,
         status: true,
+        category: true,
         createdAt: true,
         contractPdfData: true,
         terminationReason: true,
@@ -365,7 +394,7 @@ export class ContractsService {
         },
       },
       orderBy: { createdAt: 'desc' },
-    });
+    } as any);
 
     const items = contracts.map(({ contractPdfData, ...contract }) => {
       const pdfToken = contractPdfData
@@ -386,6 +415,8 @@ export class ContractsService {
    * Get contract by ID with full details
    */
   async findOne(id: string, currentUser: JwtPayload) {
+    await this.syncExpiredContractsByDate();
+
     const contract = await this.prisma.rentalContract.findUnique({
       where: { id },
       include: {
@@ -1093,6 +1124,8 @@ export class ContractsService {
    * Activate contract (sign)
    */
   async activate(id: string) {
+    await this.syncExpiredContractsByDate();
+
     const contract = await this.prisma.rentalContract.findUnique({
       where: { id },
       include: { apartment: true },
@@ -1109,6 +1142,21 @@ export class ContractsService {
       throw new ConflictException(
         'Contract must be pending or signed to activate',
       );
+    }
+
+    const todayStart = this.getUtcDayStart();
+    if (contract.startDate > todayStart) {
+      throw new ConflictException(
+        'Contract can only be activated on or after startDate',
+      );
+    }
+
+    if (contract.endDate < todayStart) {
+      await this.prisma.rentalContract.update({
+        where: { id },
+        data: { status: ContractStatus.expired },
+      });
+      throw new ConflictException('Contract already expired');
     }
 
     // Update contract and apartment status in transaction
@@ -1365,6 +1413,8 @@ export class ContractsService {
     renewDto: RenewContractDto,
     currentUser: JwtPayload,
   ) {
+    await this.syncExpiredContractsByDate();
+
     const sourceContract = await this.prisma.rentalContract.findUnique({
       where: { id: contractId },
       select: {
@@ -1588,7 +1638,9 @@ export class ContractsService {
           specialConditions:
             renewDto.specialConditions ?? sourceContract.specialConditions,
           status: ContractStatus.draft,
-        },
+          category: 'renewal',
+          renewedFromContract: { connect: { id: sourceContract.id } },
+        } as any,
         select: { id: true },
       });
 

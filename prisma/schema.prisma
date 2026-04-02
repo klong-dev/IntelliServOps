@@ -110,6 +110,11 @@ enum ContractStatus {
   renewed
 }
 
+enum RentalContractCategory {
+  normal
+  renewal
+}
+
 enum PartnerCooperationContractStatus {
   draft
   pending
@@ -836,6 +841,8 @@ model RentalContract {
   landlordAddress     String?
   landlordPhone       String?
   status              ContractStatus @default(draft)
+  category            RentalContractCategory @default(normal)
+  renewedFromContractId String?
   signedDate          DateTime?
   contractDocumentUrl String?
   contractPdfData     Bytes?              // Generated PDF document
@@ -851,6 +858,8 @@ model RentalContract {
   // Relations
   apartment           Apartment            @relation(fields: [apartmentId], references: [id])
   createdByStaff      Staff?               @relation("ContractCreatedByStaff", fields: [createdByStaffId], references: [id])
+  renewedFromContract RentalContract?      @relation("RentalContractRenewals", fields: [renewedFromContractId], references: [id])
+  renewalContracts    RentalContract[]     @relation("RentalContractRenewals")
   reservation         Reservation?
   members             UserContractMember[]
   invoices            Invoice[]
@@ -863,6 +872,8 @@ model RentalContract {
 
   @@index([apartmentId])
   @@index([status])
+  @@index([category])
+  @@index([renewedFromContractId])
   @@index([startDate])
   @@index([endDate])
   @@map("rental_contracts")

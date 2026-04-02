@@ -361,6 +361,48 @@ describe('ContractsService', () => {
         ConflictException,
       );
     });
+
+    it('should throw ConflictException when startDate is in the future', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        startDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        endDate: new Date(Date.now() + 40 * 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+
+      await expect(service.activate('contract-123')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should mark contract expired and reject activation when endDate has passed', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        startDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+        endDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+
+      await expect(service.activate('contract-123')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.rentalContract.update).toHaveBeenCalledWith({
+        where: { id: 'contract-123' },
+        data: { status: ContractStatus.expired },
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
   });
 
   describe('terminate', () => {

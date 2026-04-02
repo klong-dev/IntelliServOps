@@ -295,6 +295,7 @@ export class PaymentsService {
                 status: true,
                 apartmentId: true,
                 startDate: true,
+                endDate: true,
                 members: {
                   select: {
                     userId: true,
@@ -370,6 +371,7 @@ export class PaymentsService {
             status: true,
             apartmentId: true,
             startDate: true,
+            endDate: true,
             members: {
               select: {
                 userId: true,
@@ -660,6 +662,7 @@ export class PaymentsService {
                 status: true,
                 apartmentId: true,
                 startDate: true,
+                endDate: true,
                 members: {
                   select: {
                     userId: true,
@@ -801,6 +804,12 @@ export class PaymentsService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
+  private getUtcDayStart(date = new Date()): Date {
+    return new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+  }
+
   private appendContractActivationOperations(
     txOperations: Prisma.PrismaPromise<any>[],
     invoiceType: InvoiceType,
@@ -810,6 +819,7 @@ export class PaymentsService {
       status: ContractStatus;
       apartmentId: string;
       startDate: Date;
+      endDate: Date;
       members: Array<{
         userId: string;
         memberType: string;
@@ -825,6 +835,31 @@ export class PaymentsService {
       rentalContract.status !== ContractStatus.signed ||
       !this.isDepositInvoiceType(invoiceType)
     ) {
+      return {
+        activated: false,
+        apartmentDoorPassword: null,
+        memberUserIds: [],
+      };
+    }
+
+    const todayStart = this.getUtcDayStart();
+
+    if (rentalContract.startDate > todayStart) {
+      return {
+        activated: false,
+        apartmentDoorPassword: null,
+        memberUserIds: [],
+      };
+    }
+
+    if (rentalContract.endDate < todayStart) {
+      txOperations.push(
+        this.prisma.rentalContract.update({
+          where: { id: rentalContract.id },
+          data: { status: ContractStatus.expired },
+        }),
+      );
+
       return {
         activated: false,
         apartmentDoorPassword: null,

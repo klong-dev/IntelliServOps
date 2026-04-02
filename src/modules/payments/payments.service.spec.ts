@@ -57,6 +57,8 @@ describe('PaymentsService', () => {
       id: 'contract-123',
       status: ContractStatus.signed,
       apartmentId: 'apt-123',
+      startDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       members: [{ userId: 'user-123' }],
     },
     ...overrides,
@@ -368,6 +370,36 @@ describe('PaymentsService', () => {
       await service.confirm('payment-123', 'tx-123');
 
       expect(prisma.rentalContract.update).not.toHaveBeenCalled();
+      expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should not activate contract before startDate', async () => {
+      const payment = mockPayment({ status: PaymentStatus.pending });
+
+      prisma.payment.findUnique.mockResolvedValue({
+        ...payment,
+        invoice: mockInvoice({
+          rentalContract: {
+            id: 'contract-123',
+            status: ContractStatus.signed,
+            apartmentId: 'apt-123',
+            startDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+            members: [{ userId: 'user-123' }],
+          },
+        }),
+      } as any);
+      prisma.$transaction.mockResolvedValue([] as any);
+
+      await service.confirm('payment-123', 'tx-123');
+
+      expect(prisma.rentalContract.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'contract-123' },
+          data: { status: ContractStatus.active },
+        }),
+      );
+      expect(prisma.apartment.update).not.toHaveBeenCalled();
       expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
     });
   });
