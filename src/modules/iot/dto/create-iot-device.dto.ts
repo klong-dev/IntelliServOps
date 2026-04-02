@@ -92,6 +92,14 @@ export class CreateIoTDeviceDto {
   mqttEspId?: string;
 
   @ApiPropertyOptional({
+    example: 'A101 Main Board',
+    description: 'Human-readable board name for the MQTT target device',
+  })
+  @IsString()
+  @IsOptional()
+  mqttBoardName?: string;
+
+  @ApiPropertyOptional({
     enum: MQTT_CONTROL_TYPES,
     example: 'door',
     description:

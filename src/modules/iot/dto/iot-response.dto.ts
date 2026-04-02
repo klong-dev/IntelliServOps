@@ -156,6 +156,13 @@ export class IoTDeviceDetailDto {
   @ApiPropertyOptional({ type: String, nullable: true, example: 'ESP_A101' })
   mqttEspId: string | null;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'A101 Main Board',
+  })
+  mqttBoardName: string | null;
+
   @ApiPropertyOptional({ type: String, nullable: true, example: 'door' })
   mqttControlType: string | null;
 

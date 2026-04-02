@@ -1,5 +1,7 @@
 export * from './create-iot-device.dto';
+export * from './create-iot-board.dto';
 export * from './update-iot-device.dto';
+export * from './update-iot-board.dto';
 export * from './create-utility-meter.dto';
 export * from './update-utility-meter.dto';
 export * from './create-utility-reading.dto';
@@ -8,3 +10,4 @@ export * from './device-action.dto';
 export * from './set-door-password.dto';
 export * from './test-sequence.dto';
 export * from './iot-response.dto';
+export * from './iot-board-response.dto';

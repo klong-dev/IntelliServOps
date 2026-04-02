@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -50,6 +51,7 @@ describe('IoTService', () => {
       vendor: 'ESP32',
       mqtt: {
         espId: 'ESP_A101',
+        boardName: 'A101 Main Board',
         controlType: 'door',
         channelId: 1,
       },
@@ -83,6 +85,32 @@ describe('IoTService', () => {
     ...overrides,
   });
 
+  const mockBoardSourceDevice = (overrides = {}) => ({
+    id: 'device-123',
+    deviceName: 'Front Door Lock',
+    deviceType: 'smart_lock',
+    status: IoTStatus.active,
+    isControllableByTenant: true,
+    lastOnlineAt: new Date('2026-03-31T00:00:00.000Z'),
+    createdAt: new Date('2026-03-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+    configuration: {
+      mqtt: {
+        espId: 'ESP_A101',
+        boardName: 'A101 Main Board',
+        controlType: 'door',
+        channelId: 1,
+      },
+    },
+    apartment: {
+      id: 'apt-123',
+      apartmentNumber: 'A101',
+      streetAddress: '123 Nguyen Hue',
+    },
+    room: null,
+    ...overrides,
+  });
+
   beforeEach(async () => {
     prisma = createPrismaMock();
     const module: TestingModule = await Test.createTestingModule({
@@ -111,6 +139,146 @@ describe('IoTService', () => {
     });
   });
 
+  describe('boards', () => {
+    it('should group devices by MQTT board id', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice(),
+        mockBoardSourceDevice({
+          id: 'device-456',
+          deviceName: 'Living Room Light',
+          deviceType: 'light',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              controlType: 'light',
+              channelId: 2,
+            },
+          },
+        }),
+      ] as any);
+
+      const result = await service.findAllBoards();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        deviceCount: 2,
+      });
+      expect(result[0].devices).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'device-123',
+            mqttControlType: 'door',
+            mqttChannelId: 1,
+          }),
+          expect.objectContaining({
+            id: 'device-456',
+            mqttControlType: 'light',
+            mqttChannelId: 2,
+          }),
+        ]),
+      );
+    });
+
+    it('should create a board and propagate board metadata to child devices', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.ioTDevice.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          mockBoardSourceDevice(),
+          mockBoardSourceDevice({
+            id: 'device-456',
+            deviceName: 'Living Room Light',
+            deviceType: 'light',
+            configuration: {
+              mqtt: {
+                espId: 'ESP_A101',
+                boardName: 'A101 Main Board',
+                controlType: 'light',
+                channelId: 2,
+              },
+            },
+          }),
+        ] as any);
+      prisma.$transaction.mockResolvedValue([
+        { id: 'device-123' },
+        { id: 'device-456' },
+      ] as any);
+
+      const result = await service.createBoard({
+        boardId: 'ESP_A101',
+        boardName: 'A101 Main Board',
+        apartmentId: 'apt-123',
+        devices: [
+          {
+            deviceName: 'Front Door Lock',
+            deviceType: 'smart_lock' as any,
+            mqttControlType: 'door',
+            mqttChannelId: 1,
+          },
+          {
+            deviceName: 'Living Room Light',
+            deviceType: 'light' as any,
+            mqttControlType: 'light',
+            mqttChannelId: 2,
+          },
+        ],
+      });
+
+      expect(prisma.ioTDevice.create).toHaveBeenCalledTimes(2);
+      expect(prisma.ioTDevice.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          data: expect.objectContaining({
+            apartmentId: 'apt-123',
+            configuration: expect.objectContaining({
+              mqtt: expect.objectContaining({
+                espId: 'ESP_A101',
+                boardName: 'A101 Main Board',
+                controlType: 'door',
+                channelId: 1,
+              }),
+            }),
+          }),
+        }),
+      );
+      expect(result).toMatchObject({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        deviceCount: 2,
+      });
+    });
+
+    it('should reject duplicate board assignments on the same board', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.createBoard({
+          boardId: 'ESP_A101',
+          boardName: 'A101 Main Board',
+          apartmentId: 'apt-123',
+          devices: [
+            {
+              deviceName: 'Light 1',
+              deviceType: 'light' as any,
+              mqttControlType: 'light',
+              mqttChannelId: 1,
+            },
+            {
+              deviceName: 'Light 2',
+              deviceType: 'light' as any,
+              mqttControlType: 'light',
+              mqttChannelId: 1,
+            },
+          ],
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe('createDevice', () => {
     it('should merge MQTT metadata into configuration', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
@@ -123,6 +291,7 @@ describe('IoTService', () => {
         deviceType: 'smart_lock' as any,
         configuration: { vendor: 'ESP32' },
         mqttEspId: 'ESP_A101',
+        mqttBoardName: 'A101 Main Board',
         mqttControlType: 'door',
         mqttChannelId: 1,
       });
@@ -134,6 +303,7 @@ describe('IoTService', () => {
               vendor: 'ESP32',
               mqtt: {
                 espId: 'ESP_A101',
+                boardName: 'A101 Main Board',
                 controlType: 'door',
                 channelId: 1,
               },
@@ -142,6 +312,7 @@ describe('IoTService', () => {
         }),
       );
       expect(result.mqttEspId).toBe('ESP_A101');
+      expect(result.mqttBoardName).toBe('A101 Main Board');
       expect(result.mqttControlType).toBe('door');
     });
 
