@@ -427,6 +427,12 @@ describe('ContractsService', () => {
       );
 
       expect(result[0].status).toBe(ContractStatus.terminated);
+      expect(prisma.invoice.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ rentalContractId: 'contract-123' }),
+          data: expect.objectContaining({ status: 'cancelled' }),
+        }),
+      );
     });
 
     it('should throw NotFoundException if not found', async () => {
@@ -482,6 +488,12 @@ describe('ContractsService', () => {
         where: { createdContractId: 'contract-123' },
         data: { status: ReservationStatus.cancelled },
       });
+      expect(prisma.invoice.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ rentalContractId: 'contract-123' }),
+          data: expect.objectContaining({ status: 'cancelled' }),
+        }),
+      );
     });
 
     it('should throw NotFoundException if user is not member', async () => {
@@ -755,6 +767,49 @@ describe('ContractsService', () => {
           ]),
         }),
       );
+    });
+  });
+
+  describe('activateWhenDepositPaid', () => {
+    it('should activate contract when deposit invoice is paid', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+      prisma.invoice.findFirst.mockResolvedValue({ id: 'inv-1' } as any);
+      prisma.$transaction.mockResolvedValue([
+        { ...contract, status: ContractStatus.active },
+        {},
+      ] as any);
+
+      const result = await service.activateWhenDepositPaid('contract-123');
+
+      expect(result[0].status).toBe(ContractStatus.active);
+    });
+
+    it('should reject activation when deposit invoice is not paid', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+      prisma.invoice.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.activateWhenDepositPaid('contract-123'),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

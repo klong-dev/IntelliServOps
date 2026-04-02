@@ -226,6 +226,12 @@ export class ContractListItemDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   terminationReason: string | null;
 
+  @ApiProperty({ example: false })
+  isDepositPaid: boolean;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  depositPaidAt: Date | null;
+
   @ApiPropertyOptional({
     type: String,
     nullable: true,
@@ -359,6 +365,12 @@ export class ContractDetailDto {
 
   @ApiProperty({ example: false })
   hasTenantSignature: boolean;
+
+  @ApiProperty({ example: false })
+  isDepositPaid: boolean;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  depositPaidAt: Date | null;
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;

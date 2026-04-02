@@ -50,6 +50,14 @@ export class ContractsService {
     dueDate: true,
   } as const;
 
+  private readonly cancellableInvoiceStatuses: InvoiceStatus[] = [
+    InvoiceStatus.draft,
+    InvoiceStatus.issued,
+    InvoiceStatus.sent,
+    InvoiceStatus.partially_paid,
+    InvoiceStatus.overdue,
+  ];
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly apartmentsService: ApartmentsService,
@@ -357,7 +365,7 @@ export class ContractsService {
       };
     }
 
-    const contracts = await this.prisma.rentalContract.findMany({
+    const findAllArgs = Prisma.validator<Prisma.RentalContractFindManyArgs>()({
       where,
       select: {
         id: true,
@@ -393,21 +401,40 @@ export class ContractsService {
             isPrimaryContact: true,
           },
         },
+        invoices: {
+          where: {
+            invoiceType: InvoiceType.contractDeposit,
+            status: InvoiceStatus.paid,
+          },
+          select: {
+            id: true,
+            paidAt: true,
+          },
+          take: 1,
+          orderBy: { paidAt: 'desc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
-    } as any);
-
-    const items = contracts.map(({ contractPdfData, ...contract }) => {
-      const pdfToken = contractPdfData
-        ? this.generatePdfToken(contract.id)
-        : null;
-
-      return {
-        ...contract,
-        hasPdf: !!contractPdfData,
-        pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
-      };
     });
+
+    const contracts = await this.prisma.rentalContract.findMany(findAllArgs);
+
+    const items = contracts.map(
+      ({ contractPdfData, invoices, ...contract }) => {
+        const pdfToken = contractPdfData
+          ? this.generatePdfToken(contract.id)
+          : null;
+        const paidDepositInvoice = invoices?.[0] ?? null;
+
+        return {
+          ...contract,
+          hasPdf: !!contractPdfData,
+          pdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
+          isDepositPaid: !!paidDepositInvoice,
+          depositPaidAt: paidDepositInvoice?.paidAt ?? null,
+        };
+      },
+    );
 
     return items;
   }
@@ -486,6 +513,18 @@ export class ContractsService {
       }
     }
 
+    const paidDepositInvoice = await this.prisma.invoice.findFirst({
+      where: {
+        rentalContractId: id,
+        invoiceType: InvoiceType.contractDeposit,
+        status: InvoiceStatus.paid,
+      },
+      select: {
+        paidAt: true,
+      },
+      orderBy: { paidAt: 'desc' },
+    });
+
     // Convert binary PDF to base64 for JSON response
     const { contractPdfData, landlordSignature, tenantSignature, ...rest } =
       contract as any;
@@ -510,6 +549,8 @@ export class ContractsService {
       publicPdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
       hasLandlordSignature: !!landlordSignature,
       hasTenantSignature: !!tenantSignature,
+      isDepositPaid: !!paidDepositInvoice,
+      depositPaidAt: paidDepositInvoice?.paidAt ?? null,
     };
   }
 
@@ -1211,6 +1252,17 @@ export class ContractsService {
         where: { id: contract.apartmentId },
         data: { status: ApartmentStatus.available },
       }),
+      this.prisma.invoice.updateMany({
+        where: {
+          rentalContractId: id,
+          status: { in: this.cancellableInvoiceStatuses },
+        },
+        data: {
+          status: InvoiceStatus.cancelled,
+          cancelledAt: new Date(),
+          cancellationReason: `Contract terminated: ${reason}`,
+        },
+      }),
       this.prisma.userContractMember.updateMany({
         where: { rentalContractId: id },
         data: { status: MemberStatus.moved_out, moveOutDate: new Date() },
@@ -1281,6 +1333,18 @@ export class ContractsService {
         data: { status: ApartmentStatus.available },
       });
 
+      await tx.invoice.updateMany({
+        where: {
+          rentalContractId: id,
+          status: { in: this.cancellableInvoiceStatuses },
+        },
+        data: {
+          status: InvoiceStatus.cancelled,
+          cancelledAt: terminatedAt,
+          cancellationReason: cancelReason,
+        },
+      });
+
       await tx.userContractMember.updateMany({
         where: { rentalContractId: id },
         data: { status: MemberStatus.moved_out, moveOutDate: terminatedAt },
@@ -1296,6 +1360,69 @@ export class ContractsService {
     });
 
     return await this.findOne(id, currentUser);
+  }
+
+  /**
+   * Activate contract when deposit has been paid and contract is still valid.
+   */
+  async activateWhenDepositPaid(id: string) {
+    await this.syncExpiredContractsByDate();
+
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id },
+      include: { apartment: true },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (
+      contract.status !== ContractStatus.pending &&
+      contract.status !== ContractStatus.signed
+    ) {
+      throw new ConflictException(
+        'Contract must be pending or signed to activate',
+      );
+    }
+
+    const todayStart = this.getUtcDayStart();
+    if (contract.endDate < todayStart) {
+      await this.prisma.rentalContract.update({
+        where: { id },
+        data: { status: ContractStatus.expired },
+      });
+      throw new ConflictException('Contract already expired');
+    }
+
+    const paidDepositInvoice = await this.prisma.invoice.findFirst({
+      where: {
+        rentalContractId: id,
+        invoiceType: InvoiceType.contractDeposit,
+        status: InvoiceStatus.paid,
+      },
+      select: { id: true },
+    });
+
+    if (!paidDepositInvoice) {
+      throw new ConflictException(
+        'Contract deposit invoice must be paid before activation',
+      );
+    }
+
+    return this.prisma.$transaction([
+      this.prisma.rentalContract.update({
+        where: { id },
+        data: {
+          status: ContractStatus.active,
+          signedDate: new Date(),
+        },
+      }),
+      this.prisma.apartment.update({
+        where: { id: contract.apartmentId },
+        data: { status: ApartmentStatus.occupied },
+      }),
+    ]);
   }
 
   async addMemberByNationalId(
