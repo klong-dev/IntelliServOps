@@ -139,7 +139,28 @@ describe('ContractsService', () => {
   describe('findOne', () => {
     it('should return contract by ID', async () => {
       const admin = mockAdminJwtPayload();
-      const contract = mockContract();
+      const contract = {
+        ...mockContract(),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A-101',
+          wardCode: null,
+          provinceCode: null,
+          buildingName: null,
+          streetAddress: null,
+          numberOfBedrooms: 2,
+          numberOfBathrooms: 1,
+          totalArea: 75,
+          usableArea: 70,
+        },
+        members: [],
+        createdByStaff: null,
+        invoices: [],
+        renewalContracts: [],
+        contractPdfData: null,
+        landlordSignature: null,
+        tenantSignature: null,
+      };
       prisma.rentalContract.findUnique.mockResolvedValue(contract as any);
 
       const result = await service.findOne('contract-123', admin);
@@ -149,6 +170,7 @@ describe('ContractsService', () => {
         hasPdf: false,
         pdfUrl: '/contracts/contract-123/pdf',
         publicPdfUrl: null,
+        maxAddableMembers: 2,
       });
     });
 
@@ -523,6 +545,7 @@ describe('ContractsService', () => {
         .mockResolvedValueOnce({
           id: 'contract-123',
           status: ContractStatus.draft,
+          apartment: { numberOfBedrooms: 2 },
           members: [{ userId: user.sub, memberType: 'primary' }],
         } as any)
         .mockResolvedValueOnce({
@@ -572,6 +595,7 @@ describe('ContractsService', () => {
       prisma.rentalContract.findUnique.mockResolvedValue({
         id: 'contract-123',
         status: ContractStatus.signed,
+        apartment: { numberOfBedrooms: 2 },
         members: [{ userId: user.sub, memberType: 'primary' }],
       } as any);
 
@@ -582,6 +606,31 @@ describe('ContractsService', () => {
           user,
         ),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('should reject adding member when current member count reaches apartment bedroom limit', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        status: ContractStatus.draft,
+        apartment: { numberOfBedrooms: 2 },
+        members: [
+          { userId: user.sub, memberType: 'primary' },
+          { userId: 'user-789', memberType: 'co_tenant' },
+        ],
+      } as any);
+
+      await expect(
+        service.addMemberByNationalId(
+          'contract-123',
+          { nationalId: '079203001234' },
+          user,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.userIdentity.findFirst).not.toHaveBeenCalled();
+      expect(prisma.userContractMember.create).not.toHaveBeenCalled();
     });
   });
 

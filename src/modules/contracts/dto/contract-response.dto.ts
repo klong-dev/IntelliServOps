@@ -384,6 +384,13 @@ export class ContractDetailDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   latestRenewalContractId: string | null;
 
+  @ApiProperty({
+    example: 1,
+    description:
+      'Maximum number of additional members that can still be added to this contract based on apartment bedrooms',
+  })
+  maxAddableMembers: number;
+
   @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;
 

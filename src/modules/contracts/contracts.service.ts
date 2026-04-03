@@ -557,10 +557,16 @@ export class ContractsService {
         nationalId: member.user.identity?.nationalId || null,
       },
     }));
+    const bedroomLimit = rest.apartment?.numberOfBedrooms ?? 0;
+    const maxAddableMembers = Math.max(
+      0,
+      bedroomLimit > 0 ? bedroomLimit - membersWithNationalId.length : 0,
+    );
 
     return {
       ...rest,
       members: membersWithNationalId,
+      maxAddableMembers,
       hasPdf: !!contractPdfData,
       pdfUrl: `/contracts/${id}/pdf`,
       publicPdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
@@ -1454,6 +1460,11 @@ export class ContractsService {
       select: {
         id: true,
         status: true,
+        apartment: {
+          select: {
+            numberOfBedrooms: true,
+          },
+        },
         members: {
           select: {
             userId: true,
@@ -1486,6 +1497,17 @@ export class ContractsService {
       if (!hasPermission) {
         throw new NotFoundException('Contract not found');
       }
+    }
+
+    const bedroomLimit = contract.apartment?.numberOfBedrooms;
+    if (
+      typeof bedroomLimit === 'number' &&
+      bedroomLimit > 0 &&
+      contract.members.length >= bedroomLimit
+    ) {
+      throw new BadRequestException(
+        `Contract can have at most ${bedroomLimit} members based on apartment bedrooms`,
+      );
     }
 
     const normalizedNationalId = body.nationalId.trim();
