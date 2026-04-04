@@ -171,6 +171,8 @@ describe('ContractsService', () => {
         pdfUrl: '/contracts/contract-123/pdf',
         publicPdfUrl: null,
         maxAddableMembers: 2,
+        maxOccupants: 2,
+        currentOccupants: 0,
       });
     });
 
@@ -635,7 +637,7 @@ describe('ContractsService', () => {
   });
 
   describe('renewContract', () => {
-    it('should create draft renewal with auto dates when only extensionMonths is provided', async () => {
+    it('should keep old months and members when renewalOption is keep_current', async () => {
       const user = mockUserJwtPayload();
 
       prisma.rentalContract.findUnique
@@ -654,6 +656,10 @@ describe('ContractsService', () => {
           contractTerms: null,
           specialConditions: null,
           status: ContractStatus.active,
+          apartment: {
+            id: 'apt-123',
+            numberOfBedrooms: 3,
+          },
           members: [
             {
               userId: user.sub,
@@ -695,7 +701,7 @@ describe('ContractsService', () => {
 
       const result = await service.renewContract(
         'contract-123',
-        { extensionMonths: 12 },
+        { renewalOption: 'keep_current' as any },
         user,
       );
 
@@ -703,6 +709,7 @@ describe('ContractsService', () => {
         sourceContractId: 'contract-123',
         sourceContractNumber: 'CTR-2026-00001',
         extensionMonths: 12,
+        renewalOption: 'keep_current',
       });
 
       expect(prisma.rentalContract.findFirst).toHaveBeenCalledWith(
@@ -719,7 +726,7 @@ describe('ContractsService', () => {
       );
     });
 
-    it('should append additional members by CCCD when renewing', async () => {
+    it('should replace members with requester and memberNationalIds when renewalOption is customize', async () => {
       const user = mockUserJwtPayload();
 
       prisma.rentalContract.findUnique
@@ -738,6 +745,10 @@ describe('ContractsService', () => {
           contractTerms: null,
           specialConditions: null,
           status: ContractStatus.active,
+          apartment: {
+            id: 'apt-123',
+            numberOfBedrooms: 3,
+          },
           members: [
             {
               userId: user.sub,
@@ -790,14 +801,9 @@ describe('ContractsService', () => {
       await service.renewContract(
         'contract-123',
         {
+          renewalOption: 'customize' as any,
           extensionMonths: 6,
-          additionalMembers: [
-            {
-              nationalId: '079203001234',
-              memberType: 'co_tenant' as any,
-              isPrimaryContact: false,
-            },
-          ],
+          memberNationalIds: ['079203001234'],
         },
         user,
       );

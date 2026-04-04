@@ -1,29 +1,35 @@
 import {
+  ArrayUnique,
   IsArray,
+  IsEnum,
   IsInt,
   IsOptional,
+  IsString,
   Max,
   Min,
-  ValidateNested,
 } from 'class-validator';
-import {
-  PartialType,
-  OmitType,
-  ApiProperty,
-  ApiPropertyOptional,
-} from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { CreateContractDto } from './create-contract.dto';
-import { AddContractMemberDto } from './add-contract-member.dto';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ContractDetailDto } from './contract-response.dto';
 
-export class RenewContractDto extends PartialType(
-  OmitType(CreateContractDto, ['apartmentId', 'members'] as const),
-) {
+export enum RenewalOption {
+  KEEP_CURRENT = 'keep_current',
+  CUSTOMIZE = 'customize',
+}
+
+export class RenewContractDto {
+  @ApiProperty({
+    enum: RenewalOption,
+    example: RenewalOption.KEEP_CURRENT,
+    description:
+      'Renew option. keep_current: keep old duration and members. customize: provide new extensionMonths and optional memberNationalIds.',
+  })
+  @IsEnum(RenewalOption)
+  renewalOption: RenewalOption;
+
   @ApiPropertyOptional({
     example: 12,
     description:
-      'Number of months to extend. If startDate/endDate are not provided, system auto-calculates next term from previous endDate.',
+      'Number of months to extend. Required when renewalOption is customize.',
   })
   @IsOptional()
   @IsInt()
@@ -32,15 +38,16 @@ export class RenewContractDto extends PartialType(
   extensionMonths?: number;
 
   @ApiPropertyOptional({
-    type: [AddContractMemberDto],
+    type: [String],
+    example: ['079203009999', '079203008888'],
     description:
-      'Additional members to append into renewed contract by CCCD number.',
+      'List of member CCCD numbers. Only applied when renewalOption is customize. Final members will be current user + this list, old members are not kept.',
   })
   @IsOptional()
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => AddContractMemberDto)
-  additionalMembers?: AddContractMemberDto[];
+  @ArrayUnique()
+  @IsString({ each: true })
+  memberNationalIds?: string[];
 }
 
 export class RenewContractResponseDto {
@@ -62,6 +69,13 @@ export class RenewContractResponseDto {
     description: 'Effective extension months used to calculate new endDate',
   })
   extensionMonths: number | null;
+
+  @ApiProperty({
+    enum: RenewalOption,
+    example: RenewalOption.KEEP_CURRENT,
+    description: 'Applied renewal option for this request',
+  })
+  renewalOption: RenewalOption;
 
   @ApiProperty({
     type: ContractDetailDto,
