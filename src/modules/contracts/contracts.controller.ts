@@ -37,6 +37,7 @@ import {
   AddContractMemberDto,
   RenewContractDto,
   RenewContractResponseDto,
+  RenewalOption,
   UpdateContractPdfContentDto,
   SignCooperationContractDto,
   SignCooperationContractResultDto,
@@ -311,34 +312,23 @@ export class ContractsController {
   @ApiOperation({
     summary: 'Renew rental contract',
     description:
-      'Create a new draft (unsigned) renewal contract from an existing contract. Request may update important fields, append new members by CCCD, or only provide extensionMonths for automatic new date calculation.',
+      'Create a new draft (unsigned) renewal contract from an existing contract with 2 options: keep_current (keep old duration and members) or customize (provide extensionMonths and new members by CCCD).',
   })
   @ApiBody({
     type: RenewContractDto,
     examples: {
-      renewByMonthsOnly: {
-        summary: 'Renew by months only',
+      keepEverythingAsOldContract: {
+        summary: 'Keep current months and members',
         value: {
-          extensionMonths: 12,
+          renewalOption: RenewalOption.KEEP_CURRENT,
         },
       },
-      renewWithUpdatedTermsAndMembers: {
-        summary: 'Renew with updated terms and extra member',
+      customizeMonthsAndMembers: {
+        summary: 'Customize months and replace members by CCCD',
         value: {
-          extensionMonths: 18,
-          monthlyRent: 17000000,
-          depositAmount: 34000000,
-          paymentDueDay: 7,
-          paymentMethod: 'bank_transfer',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          additionalMembers: [
-            {
-              nationalId: '079203009999',
-              memberType: 'co_tenant',
-              isPrimaryContact: false,
-              sharePercentage: 25,
-            },
-          ],
+          renewalOption: RenewalOption.CUSTOMIZE,
+          extensionMonths: 12,
+          memberNationalIds: ['079203009999', '079203008888'],
         },
       },
     },

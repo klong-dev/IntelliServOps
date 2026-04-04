@@ -14,7 +14,7 @@ import {
   AddContractMemberDto,
 } from './dto';
 import type { UpdateContractPdfContentDto } from './dto/update-contract-pdf-content.dto';
-import { RenewContractDto } from './dto/renew-contract.dto';
+import { RenewContractDto, RenewalOption } from './dto/renew-contract.dto';
 import {
   ContractStatus,
   ActorType,
@@ -93,6 +93,24 @@ export class ContractsService {
       d.setDate(0);
     }
     return d;
+  }
+
+  private getContractDurationMonthsInclusive(
+    startDate: Date,
+    endDate: Date,
+  ): number {
+    const endExclusive = new Date(endDate);
+    endExclusive.setDate(endExclusive.getDate() + 1);
+
+    let months =
+      (endExclusive.getFullYear() - startDate.getFullYear()) * 12 +
+      (endExclusive.getMonth() - startDate.getMonth());
+
+    if (endExclusive.getDate() < startDate.getDate()) {
+      months -= 1;
+    }
+
+    return Math.max(1, months);
   }
 
   private getUtcDayStart(date = new Date()): Date {
@@ -558,6 +576,8 @@ export class ContractsService {
       },
     }));
     const bedroomLimit = rest.apartment?.numberOfBedrooms ?? 0;
+    const maxOccupants = bedroomLimit > 0 ? bedroomLimit : 0;
+    const currentOccupants = membersWithNationalId.length;
     const maxAddableMembers = Math.max(
       0,
       bedroomLimit > 0 ? bedroomLimit - membersWithNationalId.length : 0,
@@ -567,6 +587,8 @@ export class ContractsService {
       ...rest,
       members: membersWithNationalId,
       maxAddableMembers,
+      maxOccupants,
+      currentOccupants,
       hasPdf: !!contractPdfData,
       pdfUrl: `/contracts/${id}/pdf`,
       publicPdfUrl: pdfToken ? `/contracts/pdf/view?token=${pdfToken}` : null,
@@ -1605,6 +1627,12 @@ export class ContractsService {
         contractTerms: true,
         specialConditions: true,
         status: true,
+        apartment: {
+          select: {
+            id: true,
+            numberOfBedrooms: true,
+          },
+        },
         members: {
           where: { status: MemberStatus.active },
           select: {
@@ -1646,38 +1674,139 @@ export class ContractsService {
       throw new BadRequestException('Source contract has no active members');
     }
 
+    if (!sourceContract.apartment?.id) {
+      throw new NotFoundException('Apartment not found for source contract');
+    }
+
+    const bedroomLimit = sourceContract.apartment.numberOfBedrooms ?? 0;
+    if (bedroomLimit > 0 && sourceContract.members.length > bedroomLimit) {
+      throw new BadRequestException(
+        `Source contract exceeds max occupants (${bedroomLimit}) based on apartment bedrooms`,
+      );
+    }
+
+    const renewalOption = renewDto.renewalOption;
+    if (!renewalOption) {
+      throw new BadRequestException('renewalOption is required');
+    }
+
     const autoStartDate = new Date(sourceContract.endDate);
     autoStartDate.setDate(autoStartDate.getDate() + 1);
 
-    const nextStartDate = renewDto.startDate
-      ? new Date(renewDto.startDate)
-      : autoStartDate;
+    const nextStartDate = autoStartDate;
 
-    if (isNaN(nextStartDate.getTime())) {
-      throw new BadRequestException('Invalid startDate');
-    }
+    let effectiveMonths = renewDto.extensionMonths ?? null;
+    let normalizedMembers: Array<{
+      userId: string;
+      memberType: MemberType;
+      isPrimaryContact: boolean;
+      sharePercentage: Prisma.Decimal | number | null;
+    }> = [];
 
-    let nextEndDate: Date;
-    if (renewDto.endDate) {
-      nextEndDate = new Date(renewDto.endDate);
-      if (isNaN(nextEndDate.getTime())) {
-        throw new BadRequestException('Invalid endDate');
-      }
-    } else {
-      if (!renewDto.extensionMonths) {
+    if (renewalOption === RenewalOption.KEEP_CURRENT) {
+      if (
+        renewDto.extensionMonths !== undefined ||
+        (renewDto.memberNationalIds?.length ?? 0) > 0
+      ) {
         throw new BadRequestException(
-          'extensionMonths is required when endDate is not provided',
+          'Do not provide extensionMonths or memberNationalIds when renewalOption is keep_current',
         );
       }
-      nextEndDate = this.addMonthsKeepingContractDay(
-        nextStartDate,
-        renewDto.extensionMonths,
+
+      effectiveMonths = this.getContractDurationMonthsInclusive(
+        sourceContract.startDate,
+        sourceContract.endDate,
       );
-      nextEndDate.setDate(nextEndDate.getDate() - 1);
+
+      normalizedMembers = sourceContract.members.map((member) => ({
+        userId: member.userId,
+        memberType: member.memberType,
+        isPrimaryContact: member.isPrimaryContact,
+        sharePercentage: member.sharePercentage,
+      }));
+    } else if (renewalOption === RenewalOption.CUSTOMIZE) {
+      if (!renewDto.extensionMonths) {
+        throw new BadRequestException(
+          'extensionMonths is required when renewalOption is customize',
+        );
+      }
+
+      effectiveMonths = renewDto.extensionMonths;
+      normalizedMembers.push({
+        userId: currentUser.sub,
+        memberType: MemberType.primary,
+        isPrimaryContact: true,
+        sharePercentage: 100,
+      });
+
+      const trimmedNationalIds = (renewDto.memberNationalIds ?? [])
+        .map((nationalId) => nationalId.trim())
+        .filter(Boolean);
+
+      const deduplicatedNationalIds = Array.from(new Set(trimmedNationalIds));
+      if (deduplicatedNationalIds.length !== trimmedNationalIds.length) {
+        throw new BadRequestException(
+          'memberNationalIds contains duplicate CCCD numbers',
+        );
+      }
+
+      for (const nationalId of deduplicatedNationalIds) {
+        const identity = await this.prisma.userIdentity.findFirst({
+          where: {
+            nationalId,
+            isVerified: true,
+          },
+          select: {
+            userId: true,
+            user: {
+              select: {
+                id: true,
+                isActive: true,
+                isVerified: true,
+              },
+            },
+          },
+        });
+
+        if (!identity || !identity.user.isActive || !identity.user.isVerified) {
+          throw new BadRequestException(
+            `No active verified user found for CCCD: ${nationalId}`,
+          );
+        }
+
+        if (identity.userId === currentUser.sub) {
+          throw new BadRequestException(
+            `CCCD ${nationalId} belongs to the renewal requester and should not be repeated`,
+          );
+        }
+
+        normalizedMembers.push({
+          userId: identity.userId,
+          memberType: MemberType.co_tenant,
+          isPrimaryContact: false,
+          sharePercentage: null,
+        });
+      }
     }
+
+    if (!effectiveMonths) {
+      throw new BadRequestException('Cannot determine extension months');
+    }
+
+    const nextEndDate = this.addMonthsKeepingContractDay(
+      nextStartDate,
+      effectiveMonths,
+    );
+    nextEndDate.setDate(nextEndDate.getDate() - 1);
 
     if (nextEndDate <= nextStartDate) {
       throw new BadRequestException('endDate must be after startDate');
+    }
+
+    if (bedroomLimit > 0 && normalizedMembers.length > bedroomLimit) {
+      throw new BadRequestException(
+        `Renewed contract can have at most ${bedroomLimit} members based on apartment bedrooms`,
+      );
     }
 
     const overlappingContract = await this.prisma.rentalContract.findFirst({
@@ -1700,66 +1829,6 @@ export class ContractsService {
 
     if (overlappingContract) {
       throw new ConflictException('Apartment has an overlapping contract');
-    }
-
-    const normalizedMembers: Array<{
-      userId: string;
-      memberType: MemberType;
-      isPrimaryContact: boolean;
-      sharePercentage: Prisma.Decimal | number | null;
-    }> = sourceContract.members.map((member) => ({
-      userId: member.userId,
-      memberType: member.memberType,
-      isPrimaryContact: member.isPrimaryContact,
-      sharePercentage: member.sharePercentage,
-    }));
-
-    for (const additionalMember of renewDto.additionalMembers ?? []) {
-      const nationalId = additionalMember.nationalId?.trim();
-      if (!nationalId) {
-        throw new BadRequestException(
-          'additionalMembers.nationalId is required',
-        );
-      }
-
-      const identity = await this.prisma.userIdentity.findFirst({
-        where: {
-          nationalId,
-          isVerified: true,
-        },
-        select: {
-          userId: true,
-          user: {
-            select: {
-              id: true,
-              isActive: true,
-              isVerified: true,
-            },
-          },
-        },
-      });
-
-      if (!identity || !identity.user.isActive || !identity.user.isVerified) {
-        throw new BadRequestException(
-          `No active verified user found for CCCD: ${nationalId}`,
-        );
-      }
-
-      const existedMember = normalizedMembers.some(
-        (member) => member.userId === identity.userId,
-      );
-      if (existedMember) {
-        throw new ConflictException(
-          `User with CCCD ${nationalId} is already in renewed contract members`,
-        );
-      }
-
-      normalizedMembers.push({
-        userId: identity.userId,
-        memberType: additionalMember.memberType ?? MemberType.co_tenant,
-        isPrimaryContact: additionalMember.isPrimaryContact ?? false,
-        sharePercentage: additionalMember.sharePercentage ?? null,
-      });
     }
 
     const primaryMembers = normalizedMembers.filter(
@@ -1797,19 +1866,14 @@ export class ContractsService {
           apartment: { connect: { id: sourceContract.apartmentId } },
           startDate: nextStartDate,
           endDate: nextEndDate,
-          monthlyRent: renewDto.monthlyRent ?? sourceContract.monthlyRent,
-          depositAmount: renewDto.depositAmount ?? sourceContract.depositAmount,
-          paymentDueDay: renewDto.paymentDueDay ?? sourceContract.paymentDueDay,
-          paymentMethod: renewDto.paymentMethod ?? sourceContract.paymentMethod,
-          utilitiesIncluded:
-            (renewDto.utilitiesIncluded as any) ??
-            (sourceContract.utilitiesIncluded as any),
-          utilitiesCharges:
-            (renewDto.utilitiesCharges as any) ??
-            (sourceContract.utilitiesCharges as any),
-          contractTerms: renewDto.contractTerms ?? sourceContract.contractTerms,
-          specialConditions:
-            renewDto.specialConditions ?? sourceContract.specialConditions,
+          monthlyRent: sourceContract.monthlyRent,
+          depositAmount: sourceContract.depositAmount,
+          paymentDueDay: sourceContract.paymentDueDay,
+          paymentMethod: sourceContract.paymentMethod,
+          utilitiesIncluded: sourceContract.utilitiesIncluded as any,
+          utilitiesCharges: sourceContract.utilitiesCharges as any,
+          contractTerms: sourceContract.contractTerms,
+          specialConditions: sourceContract.specialConditions,
           status: ContractStatus.draft,
           category: 'renewal',
           renewedFromContract: { connect: { id: sourceContract.id } },
@@ -1834,12 +1898,12 @@ export class ContractsService {
     await this.regenerateContractPdf(renewedContract.id);
 
     const detail = await this.findOne(renewedContract.id, currentUser);
-    const effectiveMonths = renewDto.extensionMonths ?? null;
 
     return {
       sourceContractId: sourceContract.id,
       sourceContractNumber: sourceContract.contractNumber,
       extensionMonths: effectiveMonths,
+      renewalOption,
       renewedContract: detail,
     };
   }
