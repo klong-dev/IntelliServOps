@@ -287,6 +287,22 @@ export class ApartmentsService {
     return Number(value.toFixed(2));
   }
 
+  private resolveGlobalCommissionRate(at: Date) {
+    return this.prisma.cooperationCommissionPhase.findFirst({
+      where: {
+        isActive: true,
+        effectiveFrom: { lte: at },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: at } }],
+      },
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        phaseName: true,
+        commissionRate: true,
+      },
+    });
+  }
+
   private mapApartmentAmenities(
     apartmentAmenities:
       | Array<{
@@ -1556,10 +1572,14 @@ export class ApartmentsService {
     const endDate = new Date(startDate);
     endDate.setFullYear(endDate.getFullYear() + 1);
 
+    const activeCommissionPhase =
+      await this.resolveGlobalCommissionRate(startDate);
     const commissionRate =
-      apartment.owner.commissionRate != null
-        ? Number(apartment.owner.commissionRate)
-        : 10;
+      activeCommissionPhase?.commissionRate != null
+        ? Number(activeCommissionPhase.commissionRate)
+        : apartment.owner.commissionRate != null
+          ? Number(apartment.owner.commissionRate)
+          : 10;
 
     const pdfData: PartnerCooperationPdfData = {
       contractNumber,
@@ -1573,7 +1593,9 @@ export class ApartmentsService {
       cooperationStartDate: this.formatDateDdMmYyyy(startDate),
       cooperationEndDate: this.formatDateDdMmYyyy(endDate),
       monthlyRevenueCommissionRate: commissionRate.toFixed(2),
-      notes: 'Hop dong hop tac khai thac can ho giua partner va IntelliServOps',
+      notes: activeCommissionPhase
+        ? `Muc hoa hong ap dung theo giai doan: ${activeCommissionPhase.phaseName}`
+        : 'Hop dong hop tac khai thac can ho giua partner va IntelliServOps',
     };
 
     const pdfBuffer =
@@ -1591,8 +1613,9 @@ export class ApartmentsService {
           commissionRate,
           status: PartnerCooperationContractStatus.pending,
           terms: 'COOPERATION_CONTRACT_TEMPLATE',
-          notes:
-            'Generated when operator approved partner cooperation apartment',
+          notes: activeCommissionPhase
+            ? `Generated when operator approved partner cooperation apartment | Applied phase: ${activeCommissionPhase.phaseName}`
+            : 'Generated when operator approved partner cooperation apartment',
           contractPdfData: new Uint8Array(pdfBuffer),
         },
         select: {

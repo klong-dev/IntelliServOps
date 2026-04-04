@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 
 // Config
 import {
@@ -43,6 +44,7 @@ import { ApartmentPoliciesModule } from './modules/apartment-policies';
 import { ReservationsModule } from './modules/reservations';
 import { ChatModule } from './modules/chat';
 import { AmenitiesModule } from './modules/amenities';
+import { RevenueModule } from './modules/revenue';
 
 // App Core
 import { AppController } from './app.controller';
@@ -68,6 +70,7 @@ import { AppService } from './app.service';
 
     // Event System (for centralized notification triggers)
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
 
     // Shared Infrastructure (Prisma, Redis, Queue)
     SharedModule,
@@ -94,6 +97,7 @@ import { AppService } from './app.service';
     ReservationsModule,
     ChatModule,
     AmenitiesModule,
+    RevenueModule,
   ],
   controllers: [AppController],
   providers: [
