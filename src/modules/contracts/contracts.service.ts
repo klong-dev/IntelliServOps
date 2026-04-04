@@ -358,7 +358,6 @@ export class ContractsService {
       ...(status && { status }),
     };
 
-    // Users can only see their own contracts
     if (currentUser.actorType === 'user') {
       where.members = {
         some: { userId: currentUser.sub },
@@ -386,6 +385,7 @@ export class ContractsService {
             provinceCode: true,
             buildingName: true,
             streetAddress: true,
+            numberOfBedrooms: true,
           },
         },
         members: {
