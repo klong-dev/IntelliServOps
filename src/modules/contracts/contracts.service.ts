@@ -4,7 +4,9 @@ import {
   ConflictException,
   BadRequestException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateContractDto,
@@ -12,6 +14,8 @@ import {
   UploadContractPdfDto,
   CancelContractDto,
   AddContractMemberDto,
+  CooperationCommissionPhaseInputDto,
+  SetGlobalCooperationCommissionPhasesDto,
 } from './dto';
 import type { UpdateContractPdfContentDto } from './dto/update-contract-pdf-content.dto';
 import { RenewContractDto, RenewalOption } from './dto/renew-contract.dto';
@@ -37,6 +41,7 @@ import * as crypto from 'crypto';
 
 @Injectable()
 export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
   private readonly PDF_TOKEN_SECRET =
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly PDF_TOKEN_EXPIRY = 5 * 60 * 1000; // 5 minutes
@@ -137,6 +142,243 @@ export class ContractsService {
         status: ContractStatus.expired,
       },
     });
+  }
+
+  private computeMonthlyBillingPeriod(
+    contractStartDate: Date,
+    contractEndDate: Date,
+    monthOffset: number,
+  ): { periodStart: Date; periodEnd: Date } {
+    const periodStart = this.addMonthsKeepingContractDay(
+      contractStartDate,
+      monthOffset,
+    );
+    const nextPeriodStart = this.addMonthsKeepingContractDay(periodStart, 1);
+    const periodEnd = new Date(nextPeriodStart);
+    periodEnd.setDate(periodEnd.getDate() - 1);
+
+    if (periodEnd > contractEndDate) {
+      return {
+        periodStart,
+        periodEnd: new Date(contractEndDate),
+      };
+    }
+
+    return { periodStart, periodEnd };
+  }
+
+  private resolveInvoiceDueDate(
+    periodStart: Date,
+    paymentDueDay: number,
+    now: Date,
+  ): Date {
+    const dueDate = new Date(
+      Date.UTC(
+        periodStart.getUTCFullYear(),
+        periodStart.getUTCMonth(),
+        paymentDueDay,
+      ),
+    );
+
+    if (dueDate.getUTCMonth() !== periodStart.getUTCMonth()) {
+      dueDate.setUTCDate(0);
+    }
+
+    const todayStart = this.getUtcDayStart(now);
+    if (dueDate < todayStart) {
+      const adjusted = new Date(todayStart);
+      adjusted.setUTCDate(adjusted.getUTCDate() + 1);
+      return adjusted;
+    }
+
+    return dueDate;
+  }
+
+  private async generateRentInvoiceNumber(refDate: Date): Promise<string> {
+    const year = refDate.getFullYear();
+    const month = String(refDate.getMonth() + 1).padStart(2, '0');
+    const prefix = `INV-REN-${year}${month}`;
+    const count = await this.prisma.invoice.count({
+      where: {
+        invoiceNumber: { startsWith: prefix },
+      },
+    });
+
+    return `${prefix}-${String(count + 1).padStart(5, '0')}`;
+  }
+
+  private async createRentInvoiceForPeriod(params: {
+    contractId: string;
+    contractNumber: string;
+    monthlyRent: Prisma.Decimal | number;
+    paymentMethod: PaymentMethodType;
+    paymentDueDay: number;
+    periodStart: Date;
+    periodEnd: Date;
+    memberUserIds: string[];
+  }): Promise<void> {
+    const periodMarker = `${params.periodStart.toISOString().slice(0, 10)}`;
+    const marker = `RENT_INVOICE_FOR_CONTRACT:${params.contractId}:${periodMarker}`;
+
+    const existingRentInvoice = await this.prisma.invoice.findFirst({
+      where: {
+        rentalContractId: params.contractId,
+        invoiceType: InvoiceType.rent,
+        billingPeriodStart: params.periodStart,
+        billingPeriodEnd: params.periodEnd,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingRentInvoice) {
+      return;
+    }
+
+    const now = new Date();
+    const dueDate = this.resolveInvoiceDueDate(
+      params.periodStart,
+      params.paymentDueDay,
+      now,
+    );
+    const rentAmount = Number(params.monthlyRent);
+    const invoiceNumber = await this.generateRentInvoiceNumber(now);
+    const rentItems: Prisma.InputJsonArray = [
+      {
+        description: `Monthly rent for ${params.contractNumber}`,
+        amount: rentAmount,
+        quantity: 1,
+        itemType: 'rent',
+      },
+    ];
+    const invoiceContent: Prisma.InputJsonObject = {
+      title: `Rent invoice ${invoiceNumber}`,
+      description: `Billing period ${params.periodStart.toISOString().slice(0, 10)} to ${params.periodEnd.toISOString().slice(0, 10)}`,
+      items: rentItems,
+    };
+
+    const createdInvoice = await this.prisma.invoice.create({
+      data: {
+        invoiceNumber,
+        rentalContract: { connect: { id: params.contractId } },
+        invoiceType: InvoiceType.rent,
+        invoiceContent,
+        billingPeriodStart: params.periodStart,
+        billingPeriodEnd: params.periodEnd,
+        issueDate: now,
+        dueDate,
+        baseRent: rentAmount,
+        totalAmount: rentAmount,
+        paymentMethod: params.paymentMethod,
+        status: InvoiceStatus.issued,
+        notes: `Auto-created monthly rent invoice. ${marker}`,
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        dueDate: true,
+      },
+    });
+
+    if (!createdInvoice) {
+      return;
+    }
+
+    for (const userId of params.memberUserIds) {
+      await this.notifySafely({
+        recipientType: ActorType.user,
+        recipientId: userId,
+        title: 'Hoa don tien nha moi',
+        message: `Hoa don ${createdInvoice.invoiceNumber} da duoc tao. Han thanh toan: ${this.formatDate(createdInvoice.dueDate)}.`,
+        actionUrl: `/invoices/${createdInvoice.id}`,
+        actionLabel: 'Thanh toan ngay',
+        relatedEntityType: 'Invoice',
+        relatedEntityId: createdInvoice.id,
+      });
+    }
+  }
+
+  private async generateMissingMonthlyRentInvoicesForContract(
+    contractId: string,
+    upToDate = this.getUtcDayStart(),
+  ): Promise<void> {
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id: contractId },
+      select: {
+        id: true,
+        contractNumber: true,
+        startDate: true,
+        endDate: true,
+        monthlyRent: true,
+        paymentMethod: true,
+        paymentDueDay: true,
+        status: true,
+        members: {
+          where: { status: MemberStatus.active },
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (!contract || contract.status !== ContractStatus.active) {
+      return;
+    }
+
+    let monthOffset = 0;
+    while (true) {
+      const { periodStart, periodEnd } = this.computeMonthlyBillingPeriod(
+        contract.startDate,
+        contract.endDate,
+        monthOffset,
+      );
+
+      if (periodStart > contract.endDate || periodStart > upToDate) {
+        break;
+      }
+
+      await this.createRentInvoiceForPeriod({
+        contractId: contract.id,
+        contractNumber: contract.contractNumber,
+        monthlyRent: contract.monthlyRent,
+        paymentMethod: contract.paymentMethod,
+        paymentDueDay: contract.paymentDueDay,
+        periodStart,
+        periodEnd,
+        memberUserIds: (contract.members ?? []).map((member) => member.userId),
+      });
+
+      monthOffset += 1;
+    }
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async generateMonthlyRentInvoices(): Promise<void> {
+    const today = this.getUtcDayStart();
+    const contracts = await this.prisma.rentalContract.findMany({
+      where: {
+        status: ContractStatus.active,
+        startDate: { lte: today },
+        endDate: { gte: today },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    for (const contract of contracts) {
+      try {
+        await this.generateMissingMonthlyRentInvoicesForContract(
+          contract.id,
+          today,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to generate monthly rent invoice for contract ${contract.id}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
   }
 
   async regenerateContractPdf(contractId: string): Promise<void> {
@@ -293,6 +535,130 @@ export class ContractsService {
     } catch {
       // Do not block contract flow when notification delivery fails.
     }
+  }
+
+  private normalizeCommissionPhaseInput(
+    phase: CooperationCommissionPhaseInputDto,
+  ) {
+    const effectiveFrom = new Date(phase.effectiveFrom);
+    const effectiveTo = phase.effectiveTo ? new Date(phase.effectiveTo) : null;
+
+    if (Number.isNaN(effectiveFrom.getTime())) {
+      throw new BadRequestException(
+        `Invalid effectiveFrom for phase ${phase.phaseName}`,
+      );
+    }
+
+    if (effectiveTo && Number.isNaN(effectiveTo.getTime())) {
+      throw new BadRequestException(
+        `Invalid effectiveTo for phase ${phase.phaseName}`,
+      );
+    }
+
+    if (effectiveTo && effectiveTo <= effectiveFrom) {
+      throw new BadRequestException(
+        `effectiveTo must be later than effectiveFrom for phase ${phase.phaseName}`,
+      );
+    }
+
+    return {
+      phaseName: phase.phaseName.trim(),
+      effectiveFrom,
+      effectiveTo,
+      commissionRate: phase.commissionRate,
+    };
+  }
+
+  private validateCommissionPhaseOverlaps(
+    phases: Array<{
+      phaseName: string;
+      effectiveFrom: Date;
+      effectiveTo: Date | null;
+      commissionRate: number;
+    }>,
+  ) {
+    const sorted = [...phases].sort(
+      (a, b) => a.effectiveFrom.getTime() - b.effectiveFrom.getTime(),
+    );
+
+    for (let i = 0; i < sorted.length; i++) {
+      const current = sorted[i];
+      const currentEnd = current.effectiveTo;
+
+      if (!currentEnd) {
+        if (i < sorted.length - 1) {
+          throw new BadRequestException(
+            `Open-ended phase ${current.phaseName} must be the last phase`,
+          );
+        }
+        continue;
+      }
+
+      const next = sorted[i + 1];
+      if (next && next.effectiveFrom <= currentEnd) {
+        throw new BadRequestException(
+          `Commission phases ${current.phaseName} and ${next.phaseName} are overlapping`,
+        );
+      }
+    }
+
+    return sorted;
+  }
+
+  async setGlobalCooperationCommissionPhases(
+    dto: SetGlobalCooperationCommissionPhasesDto,
+    adminId: string,
+  ) {
+    const normalizedPhases = dto.phases.map((phase) =>
+      this.normalizeCommissionPhaseInput(phase),
+    );
+    const sortedPhases = this.validateCommissionPhaseOverlaps(normalizedPhases);
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.cooperationCommissionPhase.updateMany({
+        where: { isActive: true },
+        data: {
+          isActive: false,
+          updatedByAdminId: adminId,
+        },
+      });
+
+      await tx.cooperationCommissionPhase.createMany({
+        data: sortedPhases.map((phase) => ({
+          phaseName: phase.phaseName,
+          effectiveFrom: phase.effectiveFrom,
+          effectiveTo: phase.effectiveTo,
+          commissionRate: phase.commissionRate,
+          isActive: true,
+          createdByAdminId: adminId,
+          updatedByAdminId: adminId,
+        })),
+      });
+    });
+
+    const phases = await this.prisma.cooperationCommissionPhase.findMany({
+      where: { isActive: true },
+      orderBy: { effectiveFrom: 'asc' },
+      select: {
+        id: true,
+        phaseName: true,
+        effectiveFrom: true,
+        effectiveTo: true,
+        commissionRate: true,
+      },
+    });
+
+    return {
+      phases: phases.map((phase) => ({
+        id: phase.id,
+        phaseName: phase.phaseName,
+        effectiveFrom: phase.effectiveFrom,
+        effectiveTo: phase.effectiveTo,
+        commissionRate: Number(phase.commissionRate),
+      })),
+      updatedAt: now,
+    };
   }
 
   /**
@@ -1252,8 +1618,7 @@ export class ContractsService {
       throw new ConflictException('Contract already expired');
     }
 
-    // Update contract and apartment status in transaction
-    return this.prisma.$transaction([
+    const result = await this.prisma.$transaction([
       this.prisma.rentalContract.update({
         where: { id },
         data: {
@@ -1266,6 +1631,16 @@ export class ContractsService {
         data: { status: ApartmentStatus.occupied },
       }),
     ]);
+
+    const invoiceGenerationDate =
+      contract.startDate > todayStart ? contract.startDate : todayStart;
+
+    await this.generateMissingMonthlyRentInvoicesForContract(
+      id,
+      invoiceGenerationDate,
+    );
+
+    return result;
   }
 
   /**
@@ -1457,7 +1832,7 @@ export class ContractsService {
       );
     }
 
-    return this.prisma.$transaction([
+    const result = await this.prisma.$transaction([
       this.prisma.rentalContract.update({
         where: { id },
         data: {
@@ -1470,6 +1845,16 @@ export class ContractsService {
         data: { status: ApartmentStatus.occupied },
       }),
     ]);
+
+    const invoiceGenerationDate =
+      contract.startDate > todayStart ? contract.startDate : todayStart;
+
+    await this.generateMissingMonthlyRentInvoicesForContract(
+      id,
+      invoiceGenerationDate,
+    );
+
+    return result;
   }
 
   async addMemberByNationalId(

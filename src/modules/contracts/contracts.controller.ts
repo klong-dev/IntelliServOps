@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Patch,
   Param,
@@ -43,6 +44,8 @@ import {
   SignCooperationContractResultDto,
   CancelCooperationContractDto,
   CancelCooperationContractResultDto,
+  SetGlobalCooperationCommissionPhasesDto,
+  SetGlobalCooperationCommissionPhasesResultDto,
 } from './dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
@@ -225,6 +228,31 @@ export class ContractsController {
         signedDate: body.signedDate,
         contractDocumentUrl: uploadedUrl,
       },
+    );
+  }
+
+  @Put('cooperation/commission-phases')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Admin setup global cooperation commission phases',
+    description:
+      'Replace all active global commission phases for partner cooperation contracts. New cooperation contracts use phase matched by contract start date.',
+  })
+  @ApiBody({ type: SetGlobalCooperationCommissionPhasesDto })
+  @ApiJsonResponse(SetGlobalCooperationCommissionPhasesResultDto, {
+    description: 'Global cooperation commission phases updated',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid phase dates or overlapping phase ranges',
+  })
+  async setGlobalCooperationCommissionPhases(
+    @Body() body: SetGlobalCooperationCommissionPhasesDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.setGlobalCooperationCommissionPhases(
+      body,
+      currentUser.sub,
     );
   }
 

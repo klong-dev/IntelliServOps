@@ -515,6 +515,7 @@ model User {
   apartments            Apartment[]
   partnerRequests       PartnerRequest[]
   cooperationContracts  PartnerCooperationContract[] @relation("PartnerCooperationContractByPartner")
+  partnerPayoutTransfers PartnerPayoutTransfer[]     @relation("PartnerPayoutTransferByPartner")
 
   @@index([phone])
   @@index([supabaseId])
@@ -586,6 +587,7 @@ model Staff {
   verifiedReadings           UtilityReading[]           @relation("ReadingVerifiedByStaff")
   pendingGuestRegistrations  PendingGuestRegistration[] @relation("PendingRegistrationByStaff")
   staffNotes                 StaffNote[]
+  confirmedPartnerPayoutTransfers PartnerPayoutTransfer[] @relation("PartnerPayoutTransferConfirmedByStaff")
 
   @@index([role])
   @@index([isActive])
@@ -763,6 +765,49 @@ model PartnerCooperationContract {
   @@index([startDate])
   @@index([endDate])
   @@map("partner_cooperation_contracts")
+}
+
+model PartnerPayoutTransfer {
+  id                          String    @id @default(uuid())
+  partnerId                   String
+  periodMonth                 String
+  periodStart                 DateTime
+  periodEnd                   DateTime
+  totalGrossAmount            Decimal   @db.Decimal(14, 2)
+  totalSystemCommissionAmount Decimal   @db.Decimal(14, 2)
+  totalNetPayoutAmount        Decimal   @db.Decimal(14, 2)
+  transferProofImageUrl       String
+  transferNote                String?
+  confirmedByStaffId          String
+  confirmedAt                 DateTime
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  partner                     User      @relation("PartnerPayoutTransferByPartner", fields: [partnerId], references: [id])
+  confirmedByStaff            Staff     @relation("PartnerPayoutTransferConfirmedByStaff", fields: [confirmedByStaffId], references: [id])
+
+  @@unique([partnerId, periodMonth])
+  @@index([periodMonth])
+  @@index([confirmedByStaffId])
+  @@map("partner_payout_transfers")
+}
+
+model CooperationCommissionPhase {
+  id             String    @id @default(uuid())
+  phaseName      String
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  commissionRate Decimal   @db.Decimal(5, 2)
+  isActive       Boolean   @default(true)
+  createdByAdminId String?
+  updatedByAdminId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([effectiveFrom])
+  @@index([effectiveTo])
+  @@map("cooperation_commission_phases")
 }
 
 model ApartmentRating {
