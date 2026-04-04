@@ -182,6 +182,9 @@ export class ContractListItemDto {
   @ApiProperty({ example: '15000000.00' })
   monthlyRent: string;
 
+  @ApiProperty({ example: '30000000.00' })
+  depositAmount: string;
+
   @ApiProperty()
   createdAt: Date;
 

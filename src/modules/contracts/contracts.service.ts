@@ -756,6 +756,7 @@ export class ContractsService {
         startDate: true,
         endDate: true,
         monthlyRent: true,
+        depositAmount: true,
         status: true,
         category: true,
         createdAt: true,
