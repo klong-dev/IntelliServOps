@@ -90,6 +90,7 @@ describe('ContractsService', () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
         id: 'contract-123',
+        depositAmount: 20000000,
         hasPdf: false,
         pdfUrl: null,
       });
