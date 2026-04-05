@@ -988,10 +988,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.staff,
         recipientId: partner.createdByStaffId,
-        title: 'Partner gui can ho hop tac moi',
-        message: `Partner vua gui can ho ${apartment.apartmentNumber} cho quy trinh hop tac.`,
+        title: 'Partner gửi căn hộ hợp tác mới',
+        message: `Partner vừa gửi căn hộ ${apartment.apartmentNumber} cho quy trình hợp tác.`,
         actionUrl: `/apartments/${apartment.id}`,
-        actionLabel: 'Xem can ho',
+        actionLabel: 'Xem căn hộ',
         relatedEntityType: 'Apartment',
         relatedEntityId: apartment.id,
       });
@@ -1189,10 +1189,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.user,
         recipientId: apartment.ownerId,
-        title: 'Can ho hop tac bi tu choi',
-        message: `Can ho ${apartment.apartmentNumber} da bi operator tu choi. Ly do: ${reason}`,
+        title: 'Căn hộ hợp tác bị từ chối',
+        message: `Căn hộ ${apartment.apartmentNumber} đã bị operator từ chối. Lý do: ${reason}`,
         actionUrl: `/apartments/${id}`,
-        actionLabel: 'Xem chi tiet',
+        actionLabel: 'Xem chi tiết',
         relatedEntityType: 'Apartment',
         relatedEntityId: id,
       });
@@ -1650,10 +1650,10 @@ export class ApartmentsService {
     await this.notifySafely({
       recipientType: ActorType.user,
       recipientId: ownerId,
-      title: 'Can ho hop tac da duoc duyet',
-      message: `Can ho ${result.approvedApartment.apartmentNumber} da duoc operator duyet va tao hop dong hop tac.`,
+      title: 'Căn hộ hợp tác đã được duyệt',
+      message: `Căn hộ ${result.approvedApartment.apartmentNumber} đã được operator duyệt và tạo hợp đồng hợp tác.`,
       actionUrl: `/apartments/${id}/cooperation-contract`,
-      actionLabel: 'Xem hop dong',
+      actionLabel: 'Xem hợp đồng',
       relatedEntityType: 'Apartment',
       relatedEntityId: id,
     });
@@ -1777,10 +1777,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.operator,
         recipientId: contract.approvedByOperatorId,
-        title: 'Partner da ky hop dong hop tac',
-        message: `Partner da ky va upload hop dong cho can ho ${apartment.apartmentNumber}.`,
+        title: 'Partner đã ký hợp đồng hợp tác',
+        message: `Partner đã ký và tải lên hợp đồng cho căn hộ ${apartment.apartmentNumber}.`,
         actionUrl: `/apartments/${apartmentId}/cooperation-contract`,
-        actionLabel: 'Xem hop dong',
+        actionLabel: 'Xem hợp đồng',
         relatedEntityType: 'Apartment',
         relatedEntityId: apartmentId,
       });
@@ -1894,10 +1894,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.operator,
         recipientId: contract.approvedByOperatorId,
-        title: 'Partner da huy hop dong hop tac',
-        message: `Partner da huy hop dong hop tac cua can ho ${apartment.apartmentNumber}.`,
+        title: 'Partner đã hủy hợp đồng hợp tác',
+        message: `Partner đã hủy hợp đồng hợp tác của căn hộ ${apartment.apartmentNumber}.`,
         actionUrl: `/apartments/${apartmentId}/cooperation-contract`,
-        actionLabel: 'Xem hop dong',
+        actionLabel: 'Xem hợp đồng',
         relatedEntityType: 'Apartment',
         relatedEntityId: apartmentId,
       });

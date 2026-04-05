@@ -108,6 +108,88 @@ describe('MaintenanceService', () => {
     });
   });
 
+  describe('findHistory', () => {
+    it('should return paginated maintenance history for admin', async () => {
+      const admin = mockAdminJwtPayload();
+      const items = [
+        mockMaintenanceRequest(),
+        mockMaintenanceRequest({ id: 'm2' }),
+      ];
+
+      prisma.maintenanceRequest.findMany.mockResolvedValue(items as any);
+      prisma.maintenanceRequest.count.mockResolvedValue(2);
+
+      const result = await service.findHistory(admin, { page: 1, limit: 10 });
+
+      expect(result).toEqual({
+        items,
+        total: 2,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
+      expect(prisma.maintenanceRequest.findMany).toHaveBeenCalledWith({
+        where: {},
+        select: expect.any(Object),
+        orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 10,
+      });
+      expect(prisma.maintenanceRequest.count).toHaveBeenCalledWith({
+        where: {},
+      });
+    });
+
+    it('should apply user scope and filters when querying history', async () => {
+      const user = mockUserJwtPayload();
+      const fromDate = '2026-01-01T00:00:00.000Z';
+      const toDate = '2026-01-31T23:59:59.999Z';
+
+      prisma.maintenanceRequest.findMany.mockResolvedValue([] as any);
+      prisma.maintenanceRequest.count.mockResolvedValue(0);
+
+      await service.findHistory(user, {
+        status: MaintenanceStatus.completed,
+        fromDate,
+        toDate,
+        page: 2,
+        limit: 5,
+      });
+
+      expect(prisma.maintenanceRequest.findMany).toHaveBeenCalledWith({
+        where: {
+          status: MaintenanceStatus.completed,
+          userId: user.sub,
+          createdAt: {
+            gte: new Date(fromDate),
+            lte: new Date(toDate),
+          },
+        },
+        select: expect.any(Object),
+        orderBy: { createdAt: 'desc' },
+        skip: 5,
+        take: 5,
+      });
+    });
+
+    it('should cap limit at 100', async () => {
+      const admin = mockAdminJwtPayload();
+
+      prisma.maintenanceRequest.findMany.mockResolvedValue([] as any);
+      prisma.maintenanceRequest.count.mockResolvedValue(0);
+
+      const result = await service.findHistory(admin, { page: 1, limit: 500 });
+
+      expect(prisma.maintenanceRequest.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 0,
+          take: 100,
+        }),
+      );
+      expect(result.limit).toBe(100);
+    });
+  });
+
   describe('findOne', () => {
     it('should return maintenance request by ID', async () => {
       const request = mockMaintenanceRequest();
