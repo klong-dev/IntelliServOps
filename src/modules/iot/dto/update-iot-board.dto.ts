@@ -1,6 +1,9 @@
 import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
-import { CreateIoTBoardDeviceDto, CreateIoTBoardDto } from './create-iot-board.dto';
+import {
+  CreateIoTBoardDeviceDto,
+  CreateIoTBoardDto,
+} from './create-iot-board.dto';
 
 export class UpdateIoTBoardDto extends PartialType(CreateIoTBoardDto) {
   @ApiPropertyOptional({

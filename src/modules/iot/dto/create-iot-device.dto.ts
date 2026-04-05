@@ -11,9 +11,30 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IoTDeviceType } from '@prisma/client';
-import { Type } from 'class-transformer';
-import { MQTT_CONTROL_TYPES } from '../iot-mqtt.types';
+import { MQTT_DEVICE_TOPICS } from '../iot-mqtt.types';
+
+const toTrimmedString = (value: unknown) =>
+  typeof value === 'string' ? value.trim() : value;
+
+const readObjectValue = (obj: unknown, key: string) =>
+  obj && typeof obj === 'object'
+    ? (obj as Record<string, unknown>)[key]
+    : undefined;
+
+const toOptionalNumber = (value: unknown) => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    return value;
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(value.trim());
+  return Number.isFinite(parsed) ? parsed : value;
+};
 
 export class CreateIoTDeviceDto {
   @ApiProperty({ example: 'Smart Lock - Front Door' })
@@ -85,50 +106,71 @@ export class CreateIoTDeviceDto {
 
   @ApiPropertyOptional({
     example: 'ESP_A101',
-    description: 'MQTT target device identifier used as topic prefix',
+    description: 'MQTT target board identifier used as the topic prefix',
   })
+  @Transform(({ value }) => toTrimmedString(value))
   @IsString()
   @IsOptional()
   mqttEspId?: string;
 
   @ApiPropertyOptional({
     example: 'A101 Main Board',
-    description: 'Human-readable board name for the MQTT target device',
+    description: 'Human-readable board name',
   })
+  @Transform(({ value }) => toTrimmedString(value))
   @IsString()
   @IsOptional()
   mqttBoardName?: string;
 
   @ApiPropertyOptional({
-    enum: MQTT_CONTROL_TYPES,
+    enum: MQTT_DEVICE_TOPICS,
     example: 'door',
     description:
-      'MQTT control topic for this device. When omitted, generic control falls back from deviceType where possible.',
+      "MQTT topic configured in the ESP firmware for this device. Legacy field 'mqttControlType' is also accepted.",
   })
-  @IsIn(MQTT_CONTROL_TYPES)
+  @Transform(({ value, obj }) =>
+    toTrimmedString(value ?? readObjectValue(obj, 'mqttControlType')),
+  )
+  @IsIn(MQTT_DEVICE_TOPICS)
   @IsOptional()
-  mqttControlType?: (typeof MQTT_CONTROL_TYPES)[number];
-
-  @ApiPropertyOptional({
-    example: 1,
-    description: 'MQTT relay/channel index appended to the payload',
-  })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  mqttChannelId?: number;
+  mqttTopic?: (typeof MQTT_DEVICE_TOPICS)[number];
 
   @ApiPropertyOptional({
     example: 1,
     description:
-      'Optional door-password channel. Defaults to mqttChannelId when omitted.',
+      "Logical device id appended to the MQTT payload as ACTION_id. Legacy field 'mqttChannelId' is also accepted.",
   })
-  @Type(() => Number)
+  @Transform(({ value, obj }) =>
+    toOptionalNumber(value ?? readObjectValue(obj, 'mqttChannelId')),
+  )
   @IsInt()
   @Min(1)
   @IsOptional()
-  mqttDoorPasswordChannelId?: number;
+  mqttDeviceId?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      "Optional device id used for door-password responses. Defaults to 'mqttDeviceId' when omitted. Legacy field 'mqttDoorPasswordChannelId' is also accepted.",
+  })
+  @Transform(({ value, obj }) =>
+    toOptionalNumber(
+      value ?? readObjectValue(obj, 'mqttDoorPasswordChannelId'),
+    ),
+  )
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  mqttDoorPasswordDeviceId?: number;
+
+  @ApiPropertyOptional({
+    example: 'CLOSED',
+    description: 'Latest known state reported back from the IoT board',
+  })
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @IsOptional()
+  mqttState?: string;
 
   @ApiPropertyOptional()
   @IsString()

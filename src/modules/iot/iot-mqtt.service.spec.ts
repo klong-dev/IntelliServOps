@@ -1,9 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import {
   BadRequestException,
   ConflictException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { connect } from 'mqtt';
 import { IoTMqttService } from './iot-mqtt.service';
 
@@ -14,60 +16,80 @@ jest.mock('mqtt', () => ({
 describe('IoTMqttService', () => {
   const connectMock = connect as jest.MockedFunction<typeof connect>;
 
-  const createClient = (connected = true) =>
-    ({
+  const createClient = (connected = true) => {
+    const handlers: Record<string, (...args: any[]) => void> = {};
+    const client = {
       connected,
       publish: jest.fn(),
-      subscribe: jest.fn(),
-      on: jest.fn(),
+      subscribe: jest.fn((topic, callback) => callback?.()),
+      on: jest.fn((event: string, handler: (...args: any[]) => void) => {
+        handlers[event] = handler;
+        return client;
+      }),
       end: jest.fn(),
-    }) as any;
+      handlers,
+    };
+
+    return client;
+  };
+
+  const createService = (overrides?: Record<string, string | undefined>) => {
+    const client = createClient();
+    const eventEmitter = { emit: jest.fn() };
+
+    connectMock.mockReturnValue(client);
+
+    const service = new IoTMqttService(
+      {
+        get: jest.fn((key: string) => {
+          const defaults: Record<string, string | undefined> = {
+            MQTT_BROKER_URL: 'mqtt://broker.hivemq.com:1883',
+            DEFAULT_DOOR_PASSWORD: '290304',
+          };
+
+          return { ...defaults, ...overrides }[key];
+        }),
+      } as unknown as ConfigService,
+      eventEmitter as unknown as EventEmitter2,
+    );
+
+    return { service, client, eventEmitter };
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('should connect to MQTT broker using configured options', () => {
-    const client = createClient();
-    connectMock.mockReturnValue(client);
-
-    const service = new IoTMqttService({
-      get: jest.fn((key: string) =>
-        key === 'MQTT_BROKER_URL' ? 'mqtt://broker.hivemq.com:1883' : undefined,
-      ),
-    } as unknown as ConfigService);
+    const { service } = createService();
 
     expect(connectMock).toHaveBeenCalledWith('mqtt://broker.hivemq.com:1883', {
       reconnectPeriod: 2000,
       connectTimeout: 10000,
     });
-    expect(service.getGatewayStatus().mqttConnected).toBe(true);
+    expect(service.getGatewayStatus()).toEqual({
+      success: true,
+      mqttConnected: true,
+      brokerUrl: 'mqtt://broker.hivemq.com:1883',
+      statusTopic: 'HOMEIQ/+/status',
+      telemetryTopic: 'HOMEIQ/+/telemetry',
+    });
   });
 
-  it('should publish light command to the expected topic and payload', () => {
-    const client = createClient();
-    connectMock.mockReturnValue(client);
-    const service = new IoTMqttService({
-      get: jest.fn((key: string) =>
-        key === 'MQTT_BROKER_URL' ? 'mqtt://broker.hivemq.com:1883' : undefined,
-      ),
-    } as unknown as ConfigService);
+  it('should publish a generic device command to the expected topic and payload', () => {
+    const { service, client } = createService();
 
-    const result = service.triggerLight('ESP_A101', 'on', 1);
+    const result = service.controlDevice('ESP_A101', 'ON', 1, 'light');
 
-    expect(client.publish).toHaveBeenCalledWith('ESP_A101/light', 'on_1');
+    expect(client.publish).toHaveBeenCalledWith('ESP_A101/light', 'ON_1');
     expect(result.topic).toBe('ESP_A101/light');
-    expect(result.payload).toBe('on_1');
+    expect(result.payload).toBe('ON_1');
+    expect(result.deviceTopic).toBe('light');
+    expect(result.deviceId).toBe(1);
   });
 
   it('should publish door password to the expected topic', () => {
-    const client = createClient();
-    connectMock.mockReturnValue(client);
-    const service = new IoTMqttService({
-      get: jest.fn((key: string) =>
-        key === 'MQTT_BROKER_URL' ? 'mqtt://broker.hivemq.com:1883' : undefined,
-      ),
-    } as unknown as ConfigService);
+    const { service, client } = createService();
 
     const result = service.sendDoorPassword('ESP_A101', 1, '290304');
 
@@ -75,67 +97,78 @@ describe('IoTMqttService', () => {
       'ESP_A101/get/door-password',
       '290304',
     );
-    expect(result.controlType).toBe('door');
+    expect(result.doorId).toBe(1);
   });
 
-  it('should reject invalid door actions', () => {
-    const client = createClient();
-    connectMock.mockReturnValue(client);
-    const service = new IoTMqttService({
-      get: jest.fn((key: string) =>
-        key === 'MQTT_BROKER_URL' ? 'mqtt://broker.hivemq.com:1883' : undefined,
-      ),
-    } as unknown as ConfigService);
+  it('should publish telemetry and health-check signals', () => {
+    const { service, client } = createService();
 
-    expect(() => service.triggerDoor('ESP_A101', 'lock', 1)).toThrow(
+    service.getTelemetry('ESP_A101');
+    service.checkOnline('ESP_A101');
+
+    expect(client.publish).toHaveBeenNthCalledWith(
+      1,
+      'ESP_A101/get/telemetry',
+      'GET_TELEMETRY',
+    );
+    expect(client.publish).toHaveBeenNthCalledWith(
+      2,
+      'HOMEIQ/ESP_A101/status',
+      'ARE_YOU_OK',
+    );
+  });
+
+  it('should reject invalid device actions', () => {
+    const { service } = createService();
+
+    expect(() => service.controlDevice('ESP_A101', 'OPEN', 1, 'door')).toThrow(
       BadRequestException,
     );
   });
 
   it('should reject publish requests when MQTT client is disconnected', () => {
     const client = createClient(false);
+    const eventEmitter = { emit: jest.fn() };
     connectMock.mockReturnValue(client);
-    const service = new IoTMqttService({
-      get: jest.fn((key: string) =>
-        key === 'MQTT_BROKER_URL' ? 'mqtt://broker.hivemq.com:1883' : undefined,
-      ),
-    } as unknown as ConfigService);
 
-    expect(() => service.triggerLight('ESP_A101', 'on', 1)).toThrow(
+    const service = new IoTMqttService(
+      {
+        get: jest.fn((key: string) =>
+          key === 'MQTT_BROKER_URL'
+            ? 'mqtt://broker.hivemq.com:1883'
+            : undefined,
+        ),
+      } as unknown as ConfigService,
+      eventEmitter as unknown as EventEmitter2,
+    );
+
+    expect(() => service.controlDevice('ESP_A101', 'ON', 1, 'light')).toThrow(
       ServiceUnavailableException,
     );
   });
 
   it('should run the MQTT test sequence in the expected order', async () => {
     jest.useFakeTimers();
-    const client = createClient();
-    connectMock.mockReturnValue(client);
-    const service = new IoTMqttService({
-      get: jest.fn((key: string) =>
-        key === 'MQTT_BROKER_URL' ? 'mqtt://broker.hivemq.com:1883' : undefined,
-      ),
-    } as unknown as ConfigService);
+    const { service, client } = createService();
 
     const promise = service.runTestSequence('ESP_A101', 1);
     await jest.runAllTimersAsync();
     const result = await promise;
 
     expect(client.publish).toHaveBeenCalledTimes(10);
-    expect(client.publish).toHaveBeenNthCalledWith(1, 'ESP_A101/light', 'on_1');
-    expect(client.publish).toHaveBeenNthCalledWith(10, 'ESP_A101/door', 'close_1');
+    expect(client.publish).toHaveBeenNthCalledWith(1, 'ESP_A101/light', 'ON_1');
+    expect(client.publish).toHaveBeenNthCalledWith(
+      10,
+      'ESP_A101/door',
+      'OFF_1',
+    );
     expect(result.totalSteps).toBe(10);
     jest.useRealTimers();
   });
 
   it('should prevent overlapping test sequences for the same ESP id', async () => {
     jest.useFakeTimers();
-    const client = createClient();
-    connectMock.mockReturnValue(client);
-    const service = new IoTMqttService({
-      get: jest.fn((key: string) =>
-        key === 'MQTT_BROKER_URL' ? 'mqtt://broker.hivemq.com:1883' : undefined,
-      ),
-    } as unknown as ConfigService);
+    const { service } = createService();
 
     const pending = service.runTestSequence('ESP_A101', 50);
 
@@ -146,5 +179,44 @@ describe('IoTMqttService', () => {
     await jest.runAllTimersAsync();
     await pending;
     jest.useRealTimers();
+  });
+
+  it('should emit telemetry events from subscribed telemetry topics', () => {
+    const { client, eventEmitter } = createService();
+
+    client.handlers.message(
+      'HOMEIQ/ESP_A101/telemetry',
+      Buffer.from('{"water_total":12.5,"energy_total":3.2}'),
+    );
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'iot.mqtt.telemetry',
+      expect.objectContaining({
+        espId: 'ESP_A101',
+        waterTotal: 12.5,
+        energyTotal: 3.2,
+      }),
+    );
+  });
+
+  it('should auto-send fallback door password when board requests it', () => {
+    const { client, eventEmitter } = createService();
+
+    client.handlers.message(
+      'HOMEIQ/ESP_A101/status',
+      Buffer.from('GET_DOOR_PASSWORD'),
+    );
+
+    expect(client.publish).toHaveBeenCalledWith(
+      'ESP_A101/get/door-password',
+      '290304',
+    );
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'iot.mqtt.status',
+      expect.objectContaining({
+        espId: 'ESP_A101',
+        type: 'door_password_requested',
+      }),
+    );
   });
 });

@@ -1,12 +1,22 @@
-export const MQTT_CONTROL_TYPES = ['light', 'alarm', 'door', 'curtain'] as const;
+export const MQTT_DEVICE_TOPICS = [
+  'light',
+  'alarm',
+  'door',
+  'curtain',
+] as const;
+export const MQTT_CONTROL_TYPES = MQTT_DEVICE_TOPICS;
+export const MQTT_BINARY_ACTIONS = ['ON', 'OFF'] as const;
 
-export type MqttControlType = (typeof MQTT_CONTROL_TYPES)[number];
+export type MqttDeviceTopic = (typeof MQTT_DEVICE_TOPICS)[number];
+export type MqttControlType = MqttDeviceTopic;
+export type MqttBinaryAction = (typeof MQTT_BINARY_ACTIONS)[number];
 
 export interface DeviceMqttControlConfig {
   espId: string;
-  controlType: MqttControlType;
-  channelId: number;
-  doorPasswordChannelId?: number | null;
+  topic: MqttDeviceTopic;
+  deviceId: number;
+  doorPasswordDeviceId?: number | null;
+  state?: string | null;
 }
 
 export interface IoTMqttPublishResult {
@@ -14,8 +24,17 @@ export interface IoTMqttPublishResult {
   topic: string;
   payload: string;
   espId: string;
-  controlType: MqttControlType;
-  channelId: number;
+  deviceTopic: MqttDeviceTopic;
+  deviceId: number;
+  action?: MqttBinaryAction;
+  publishedAt: Date;
+}
+
+export interface IoTMqttSignalResult {
+  brokerUrl: string | null;
+  topic: string;
+  payload: string;
+  espId: string;
   publishedAt: Date;
 }
 
@@ -24,4 +43,32 @@ export interface IoTMqttGatewayStatus {
   mqttConnected: boolean;
   brokerUrl: string | null;
   statusTopic: string;
+  telemetryTopic: string;
+}
+
+export interface IoTMqttStatusEvent {
+  espId: string;
+  rawTopic: string;
+  message: string;
+  receivedAt: Date;
+  type:
+    | 'door_password_requested'
+    | 'fire'
+    | 'fire_ack'
+    | 'online'
+    | 'device_state'
+    | 'unknown';
+  deviceTopic?: MqttDeviceTopic;
+  deviceId?: number;
+  state?: string;
+}
+
+export interface IoTMqttTelemetryEvent {
+  espId: string;
+  rawTopic: string;
+  message: string;
+  receivedAt: Date;
+  waterTotal?: number;
+  energyTotal?: number;
+  parsedPayload?: Record<string, unknown>;
 }

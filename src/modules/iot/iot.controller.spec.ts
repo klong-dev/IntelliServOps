@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { Test, TestingModule } from '@nestjs/testing';
 import { IoTController } from './iot.controller';
 import { IoTService } from './iot.service';
@@ -7,6 +8,8 @@ describe('IoTController', () => {
 
   const iotService = {
     getGatewayStatus: jest.fn(),
+    requestTelemetry: jest.fn(),
+    checkHealth: jest.fn(),
     findAllBoards: jest.fn(),
     findOneBoard: jest.fn(),
     createBoard: jest.fn(),
@@ -21,6 +24,7 @@ describe('IoTController', () => {
     triggerCurtain: jest.fn(),
     configureDoorPassword: jest.fn(),
     runDeviceTestSequence: jest.fn(),
+    controlDeviceByTopic: jest.fn(),
     findAllDevices: jest.fn(),
     findOneDevice: jest.fn(),
     findDevicesByApartment: jest.fn(),
@@ -59,13 +63,28 @@ describe('IoTController', () => {
     });
   });
 
-  it('should delegate direct light control to service', () => {
-    iotService.triggerLight.mockReturnValue({ success: true });
+  it('should delegate telemetry request to service', () => {
+    iotService.requestTelemetry.mockReturnValue({ success: true });
 
-    const result = controller.triggerLight('ESP_A101', 1, { action: 'ON' });
+    expect(controller.requestTelemetry('ESP_A101')).toEqual({ success: true });
+    expect(iotService.requestTelemetry).toHaveBeenCalledWith('ESP_A101');
+  });
+
+  it('should delegate generic MQTT topic control to service', () => {
+    iotService.controlDeviceByTopic.mockReturnValue({ success: true });
+
+    const result = controller.controlDeviceByTopic('ESP_A101', 1, {
+      topic: 'light',
+      action: 'ON',
+    });
 
     expect(result).toEqual({ success: true });
-    expect(iotService.triggerLight).toHaveBeenCalledWith('ESP_A101', 1, 'ON');
+    expect(iotService.controlDeviceByTopic).toHaveBeenCalledWith(
+      'ESP_A101',
+      1,
+      'light',
+      'ON',
+    );
   });
 
   it('should delegate board listing to service', async () => {
@@ -137,11 +156,11 @@ describe('IoTController', () => {
     iotService.controlDevice.mockResolvedValue({ status: 'sent' });
 
     await expect(
-      controller.controlDevice('device-123', { command: 'unlock' }),
+      controller.controlDevice('device-123', { action: 'ON' }),
     ).resolves.toEqual({ status: 'sent' });
     expect(iotService.controlDevice).toHaveBeenCalledWith(
       'device-123',
-      'unlock',
+      'ON',
       undefined,
     );
   });

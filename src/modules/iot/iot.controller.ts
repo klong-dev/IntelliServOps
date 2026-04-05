@@ -21,6 +21,7 @@ import {
   CreateUtilityMeterDto,
   CreateUtilityReadingDto,
   DeviceActionDto,
+  DirectMqttControlDto,
   IoTBoardDeleteResultDto,
   IoTBoardDetailDto,
   IoTBoardListItemDto,
@@ -28,6 +29,7 @@ import {
   IoTDeviceListItemDto,
   IoTGatewayStatusDto,
   IoTMqttCommandResultDto,
+  IoTMqttSignalResultDto,
   IoTTestSequenceResponseDto,
   SetDoorPasswordDto,
   TestSequenceDto,
@@ -137,6 +139,28 @@ export class IoTController {
     @Body() body: SetDoorPasswordDto,
   ) {
     return this.iotService.configureDoorPassword(espId, id, body.password);
+  }
+
+  @Post('devices/:espId/get-telemetry')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Request telemetry from MQTT board' })
+  @ApiJsonResponse(IoTMqttSignalResultDto, {
+    description: 'Telemetry request published to MQTT broker',
+  })
+  requestTelemetry(@Param('espId') espId: string) {
+    return this.iotService.requestTelemetry(espId);
+  }
+
+  @Get('devices/:espId/check-health')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Send health check signal to MQTT board' })
+  @ApiJsonResponse(IoTMqttSignalResultDto, {
+    description: 'Health check signal published to MQTT broker',
+  })
+  checkHealth(@Param('espId') espId: string) {
+    return this.iotService.checkHealth(espId);
   }
 
   @Post('devices/:espId/test-sequence')
@@ -346,14 +370,15 @@ export class IoTController {
 
   @Patch('devices/:id')
   @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Update IoT device' })
   @ApiJsonResponse(IoTDeviceDetailDto, { description: 'Device updated' })
   async updateDevice(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateIoTDeviceDto,
+    @CurrentUser() currentUser?: JwtPayload,
   ) {
-    return this.iotService.updateDevice(id, updateDto);
+    return this.iotService.updateDevice(id, updateDto, currentUser);
   }
 
   @Delete('devices/:id')
@@ -371,7 +396,7 @@ export class IoTController {
   @ApiOperation({
     summary: 'Send command to IoT device',
     description:
-      'Control device over MQTT using stored device metadata. Tenants must have an active contract.',
+      'Control device over MQTT using stored topic/deviceId metadata. Tenants must have an active contract.',
   })
   @ApiJsonResponse(ControlDeviceResponseDto, { description: 'Command sent' })
   @ApiResponse({ status: 403, description: 'Access denied' })
@@ -380,7 +405,30 @@ export class IoTController {
     @Body() controlDto: ControlDeviceDto,
     @CurrentUser() currentUser?: JwtPayload,
   ) {
-    return this.iotService.controlDevice(id, controlDto.command, currentUser);
+    return this.iotService.controlDevice(id, controlDto.action, currentUser);
+  }
+
+  @Post('devices/:espId/:deviceId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Publish a generic MQTT device command by topic and device id',
+  })
+  @ApiJsonResponse(IoTMqttCommandResultDto, {
+    status: 201,
+    description: 'Generic MQTT command published to MQTT broker',
+  })
+  controlDeviceByTopic(
+    @Param('espId') espId: string,
+    @Param('deviceId', ParseIntPipe) deviceId: number,
+    @Body() body: DirectMqttControlDto,
+  ) {
+    return this.iotService.controlDeviceByTopic(
+      espId,
+      deviceId,
+      body.topic,
+      body.action,
+    );
   }
 
   // ============================================================================

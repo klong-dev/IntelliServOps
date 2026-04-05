@@ -7,31 +7,59 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { connect, type MqttClient } from 'mqtt';
 import {
+  MQTT_BINARY_ACTIONS,
+  MQTT_DEVICE_TOPICS,
   type IoTMqttGatewayStatus,
   type IoTMqttPublishResult,
-  type MqttControlType,
+  type IoTMqttSignalResult,
+  type IoTMqttStatusEvent,
+  type IoTMqttTelemetryEvent,
+  type MqttBinaryAction,
+  type MqttDeviceTopic,
 } from './iot-mqtt.types';
 
 const MQTT_STATUS_TOPIC_DEFAULT = 'HOMEIQ/+/status';
+const MQTT_TELEMETRY_TOPIC_DEFAULT = 'HOMEIQ/+/telemetry';
 const MQTT_RECONNECT_PERIOD_MS = 2000;
 const MQTT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_TEST_HOLD_MS = 2000;
+
+const MQTT_GET_DOOR_PASSWORD_TOPIC = 'get/door-password';
+const MQTT_GET_TELEMETRY_TOPIC = 'get/telemetry';
+
+const MQTT_MESSAGE_GET_TELEMETRY = 'GET_TELEMETRY';
+const MQTT_MESSAGE_GET_DOOR_PASSWORD = 'GET_DOOR_PASSWORD';
+const MQTT_MESSAGE_HEALTH_CHECK = 'ARE_YOU_OK';
+const MQTT_MESSAGE_FIRE = 'FIRE';
+const MQTT_MESSAGE_FIRE_ACK = 'FIRE_ACK';
+const MQTT_MESSAGE_ONLINE = 'ONLINE';
 
 @Injectable()
 export class IoTMqttService implements OnModuleDestroy {
   private readonly logger = new Logger(IoTMqttService.name);
   private readonly brokerUrl: string | null;
   private readonly statusTopic: string;
+  private readonly telemetryTopic: string;
+  private readonly defaultDoorPassword: string | null;
   private readonly runningTestSequences = new Set<string>();
   private client: MqttClient | null = null;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {
     this.brokerUrl = this.configService.get<string>('MQTT_BROKER_URL') ?? null;
     this.statusTopic =
       this.configService.get<string>('MQTT_STATUS_TOPIC') ??
       MQTT_STATUS_TOPIC_DEFAULT;
+    this.telemetryTopic =
+      this.configService.get<string>('MQTT_TELEMETRY_TOPIC') ??
+      MQTT_TELEMETRY_TOPIC_DEFAULT;
+    this.defaultDoorPassword =
+      this.configService.get<string>('DEFAULT_DOOR_PASSWORD')?.trim() || null;
 
     if (!this.brokerUrl) {
       this.logger.warn(
@@ -47,15 +75,18 @@ export class IoTMqttService implements OnModuleDestroy {
 
     this.client.on('connect', () => {
       this.logger.log(`Connected to MQTT broker ${this.brokerUrl}`);
-      this.client?.subscribe(this.statusTopic, (error) => {
-        if (error) {
-          this.logger.error(
-            `Failed to subscribe to MQTT status topic ${this.statusTopic}: ${error.message}`,
-          );
-          return;
-        }
 
-        this.logger.log(`Subscribed to MQTT status topic ${this.statusTopic}`);
+      [this.statusTopic, this.telemetryTopic].forEach((topic) => {
+        this.client?.subscribe(topic, (error) => {
+          if (error) {
+            this.logger.error(
+              `Failed to subscribe to MQTT topic ${topic}: ${error.message}`,
+            );
+            return;
+          }
+
+          this.logger.log(`Subscribed to MQTT topic ${topic}`);
+        });
       });
     });
 
@@ -68,8 +99,7 @@ export class IoTMqttService implements OnModuleDestroy {
     });
 
     this.client.on('message', (topic, message) => {
-      const payload = message.toString();
-      this.logger.debug(`MQTT message received on ${topic}: ${payload}`);
+      this.handleIncomingMessage(topic, message.toString());
     });
   }
 
@@ -85,7 +115,27 @@ export class IoTMqttService implements OnModuleDestroy {
       mqttConnected: Boolean(this.client?.connected),
       brokerUrl: this.brokerUrl,
       statusTopic: this.statusTopic,
+      telemetryTopic: this.telemetryTopic,
     };
+  }
+
+  controlDevice(
+    espId: string,
+    action: string,
+    deviceId: number,
+    topic: MqttDeviceTopic,
+  ): IoTMqttPublishResult {
+    const normalizedEspId = this.normalizeEspId(espId);
+    const normalizedTopic = this.normalizeDeviceTopic(topic);
+    const normalizedAction = this.normalizeBinaryAction(action);
+    const normalizedDeviceId = this.normalizeDeviceId(deviceId);
+
+    return this.publishDeviceCommand(
+      normalizedEspId,
+      normalizedTopic,
+      normalizedDeviceId,
+      normalizedAction,
+    );
   }
 
   triggerLight(
@@ -93,8 +143,7 @@ export class IoTMqttService implements OnModuleDestroy {
     action: string,
     lightId: number,
   ): IoTMqttPublishResult {
-    this.validateBinaryAction(action, 'light');
-    return this.publish(espId, 'light', lightId, action, `light_${lightId}`);
+    return this.controlDevice(espId, action, lightId, 'light');
   }
 
   triggerAlarm(
@@ -102,8 +151,7 @@ export class IoTMqttService implements OnModuleDestroy {
     action: string,
     alarmId: number,
   ): IoTMqttPublishResult {
-    this.validateBinaryAction(action, 'alarm');
-    return this.publish(espId, 'alarm', alarmId, action, `alarm_${alarmId}`);
+    return this.controlDevice(espId, action, alarmId, 'alarm');
   }
 
   triggerDoor(
@@ -111,8 +159,7 @@ export class IoTMqttService implements OnModuleDestroy {
     action: string,
     doorId: number,
   ): IoTMqttPublishResult {
-    this.validateOpenCloseAction(action, 'door');
-    return this.publish(espId, 'door', doorId, action, `door_${doorId}`);
+    return this.controlDevice(espId, action, doorId, 'door');
   }
 
   triggerCurtain(
@@ -120,32 +167,50 @@ export class IoTMqttService implements OnModuleDestroy {
     action: string,
     curtainId: number,
   ): IoTMqttPublishResult {
-    this.validateOpenCloseAction(action, 'curtain');
-    return this.publish(
-      espId,
-      'curtain',
-      curtainId,
-      action,
-      `curtain_${curtainId}`,
-    );
+    return this.controlDevice(espId, action, curtainId, 'curtain');
   }
 
   sendDoorPassword(
     espId: string,
     doorId: number,
     password: string,
-  ): IoTMqttPublishResult {
+  ): IoTMqttSignalResult & { doorId: number; password: string } {
+    const normalizedEspId = this.normalizeEspId(espId);
+    const normalizedDoorId = this.normalizeDeviceId(doorId);
     const normalizedPassword = password.trim();
+
     if (!normalizedPassword) {
       throw new BadRequestException('password is required');
     }
 
-    return this.publishRaw(
-      espId,
-      'get/door-password',
-      normalizedPassword,
-      'door',
-      doorId,
+    return {
+      ...this.publishSignal(
+        `${normalizedEspId}/${MQTT_GET_DOOR_PASSWORD_TOPIC}`,
+        normalizedPassword,
+        normalizedEspId,
+      ),
+      password: normalizedPassword,
+      doorId: normalizedDoorId,
+    };
+  }
+
+  getTelemetry(espId: string): IoTMqttSignalResult {
+    const normalizedEspId = this.normalizeEspId(espId);
+
+    return this.publishSignal(
+      `${normalizedEspId}/${MQTT_GET_TELEMETRY_TOPIC}`,
+      MQTT_MESSAGE_GET_TELEMETRY,
+      normalizedEspId,
+    );
+  }
+
+  checkOnline(espId: string): IoTMqttSignalResult {
+    const normalizedEspId = this.normalizeEspId(espId);
+
+    return this.publishSignal(
+      `HOMEIQ/${normalizedEspId}/status`,
+      MQTT_MESSAGE_HEALTH_CHECK,
+      normalizedEspId,
     );
   }
 
@@ -173,26 +238,21 @@ export class IoTMqttService implements OnModuleDestroy {
     const waitTime =
       typeof holdMs === 'number' && holdMs > 0 ? holdMs : DEFAULT_TEST_HOLD_MS;
 
-    const sequence = [
-      { name: 'LIGHT_1_ON', run: () => this.triggerLight(normalizedEspId, 'on', 1) },
-      { name: 'LIGHT_1_OFF', run: () => this.triggerLight(normalizedEspId, 'off', 1) },
-      { name: 'LIGHT_2_ON', run: () => this.triggerLight(normalizedEspId, 'on', 2) },
-      { name: 'LIGHT_2_OFF', run: () => this.triggerLight(normalizedEspId, 'off', 2) },
-      { name: 'ALARM_1_ON', run: () => this.triggerAlarm(normalizedEspId, 'on', 1) },
-      { name: 'ALARM_1_OFF', run: () => this.triggerAlarm(normalizedEspId, 'off', 1) },
-      {
-        name: 'CURTAIN_1_OPEN',
-        run: () => this.triggerCurtain(normalizedEspId, 'open', 1),
-      },
-      {
-        name: 'CURTAIN_1_CLOSE',
-        run: () => this.triggerCurtain(normalizedEspId, 'close', 1),
-      },
-      { name: 'DOOR_1_OPEN', run: () => this.triggerDoor(normalizedEspId, 'open', 1) },
-      {
-        name: 'DOOR_1_CLOSE',
-        run: () => this.triggerDoor(normalizedEspId, 'close', 1),
-      },
+    const sequence: Array<{
+      topic: MqttDeviceTopic;
+      deviceId: number;
+      action: MqttBinaryAction;
+    }> = [
+      { topic: 'light', deviceId: 1, action: 'ON' },
+      { topic: 'light', deviceId: 1, action: 'OFF' },
+      { topic: 'light', deviceId: 2, action: 'ON' },
+      { topic: 'light', deviceId: 2, action: 'OFF' },
+      { topic: 'alarm', deviceId: 1, action: 'ON' },
+      { topic: 'alarm', deviceId: 1, action: 'OFF' },
+      { topic: 'curtain', deviceId: 1, action: 'ON' },
+      { topic: 'curtain', deviceId: 1, action: 'OFF' },
+      { topic: 'door', deviceId: 1, action: 'ON' },
+      { topic: 'door', deviceId: 1, action: 'OFF' },
     ];
 
     const steps: Array<{
@@ -208,8 +268,13 @@ export class IoTMqttService implements OnModuleDestroy {
         const item = sequence[index];
         steps.push({
           order: index + 1,
-          action: item.name,
-          details: item.run(),
+          action: `${item.topic}_${item.deviceId}_${item.action}`,
+          details: this.controlDevice(
+            normalizedEspId,
+            item.action,
+            item.deviceId,
+            item.topic,
+          ),
         });
 
         if (index < sequence.length - 1) {
@@ -229,28 +294,99 @@ export class IoTMqttService implements OnModuleDestroy {
     }
   }
 
-  private publish(
-    espId: string,
-    controlType: MqttControlType,
-    channelId: number,
-    action: string,
-    label: string,
-  ): IoTMqttPublishResult {
-    const payload = `${action}_${channelId}`;
-    return this.publishRaw(espId, controlType, payload, controlType, channelId);
+  private handleIncomingMessage(topic: string, message: string) {
+    this.logger.debug(`MQTT message received on ${topic}: ${message}`);
+    const receivedAt = new Date();
+
+    if (this.isTelemetryTopic(topic)) {
+      const telemetryEvent = this.buildTelemetryEvent(
+        topic,
+        message,
+        receivedAt,
+      );
+      this.logger.log(
+        `[METER] espId=${telemetryEvent.espId}, message=${telemetryEvent.message}`,
+      );
+      this.eventEmitter.emit('iot.mqtt.telemetry', telemetryEvent);
+      return;
+    }
+
+    if (!this.isStatusTopic(topic)) {
+      return;
+    }
+
+    const statusEvent = this.buildStatusEvent(topic, message, receivedAt);
+
+    switch (statusEvent.type) {
+      case 'door_password_requested':
+        this.logger.log(
+          `[${statusEvent.espId}] requested door password from MQTT status topic`,
+        );
+        if (this.defaultDoorPassword) {
+          try {
+            this.sendDoorPassword(
+              statusEvent.espId,
+              statusEvent.deviceId ?? 1,
+              this.defaultDoorPassword,
+            );
+          } catch (error) {
+            const mqttError =
+              error instanceof Error ? error.message : 'Unknown MQTT error';
+            this.logger.error(
+              `Failed to send fallback door password to ${statusEvent.espId}: ${mqttError}`,
+            );
+          }
+        }
+        break;
+      case 'fire':
+        this.logger.warn(`[${statusEvent.espId}] fire alarm activated`);
+        break;
+      case 'fire_ack':
+        this.logger.log(`[${statusEvent.espId}] fire alarm acknowledged`);
+        break;
+      case 'online':
+        this.logger.log(`[${statusEvent.espId}] ONLINE`);
+        break;
+      case 'device_state':
+        this.logger.log(
+          `[${statusEvent.espId}] ${statusEvent.deviceTopic ?? 'device'} state=${statusEvent.state ?? statusEvent.message}`,
+        );
+        break;
+      default:
+        break;
+    }
+
+    this.eventEmitter.emit('iot.mqtt.status', statusEvent);
   }
 
-  private publishRaw(
+  private publishDeviceCommand(
     espId: string,
-    topicSuffix: string,
-    payload: string,
-    controlType: MqttControlType,
-    channelId: number,
+    topic: MqttDeviceTopic,
+    deviceId: number,
+    action: MqttBinaryAction,
   ): IoTMqttPublishResult {
-    const normalizedEspId = this.normalizeEspId(espId);
-    const normalizedChannelId = this.normalizeChannelId(channelId);
-    const topic = `${normalizedEspId}/${topicSuffix}`;
+    this.ensureConnected();
+    const mqttTopic = `${espId}/${topic}`;
+    const payload = `${action}_${deviceId}`;
+    this.client!.publish(mqttTopic, payload);
 
+    return {
+      brokerUrl: this.brokerUrl,
+      topic: mqttTopic,
+      payload,
+      espId,
+      deviceTopic: topic,
+      deviceId,
+      action,
+      publishedAt: new Date(),
+    };
+  }
+
+  private publishSignal(
+    topic: string,
+    payload: string,
+    espId: string,
+  ): IoTMqttSignalResult {
     this.ensureConnected();
     this.client!.publish(topic, payload);
 
@@ -258,11 +394,373 @@ export class IoTMqttService implements OnModuleDestroy {
       brokerUrl: this.brokerUrl,
       topic,
       payload,
-      espId: normalizedEspId,
-      controlType,
-      channelId: normalizedChannelId,
+      espId,
       publishedAt: new Date(),
     };
+  }
+
+  private buildStatusEvent(
+    topic: string,
+    message: string,
+    receivedAt: Date,
+  ): IoTMqttStatusEvent {
+    const espId = this.extractEspIdFromTopic(topic);
+    const normalizedMessage = message.trim();
+    const upperMessage = normalizedMessage.toUpperCase();
+
+    if (upperMessage === MQTT_MESSAGE_GET_DOOR_PASSWORD) {
+      return {
+        espId,
+        rawTopic: topic,
+        message: normalizedMessage,
+        receivedAt,
+        type: 'door_password_requested',
+        deviceTopic: 'door',
+        deviceId: 1,
+        state: 'PASSWORD_REQUESTED',
+      };
+    }
+
+    if (upperMessage === MQTT_MESSAGE_FIRE) {
+      return {
+        espId,
+        rawTopic: topic,
+        message: normalizedMessage,
+        receivedAt,
+        type: 'fire',
+        deviceTopic: 'alarm',
+        state: 'FIRE',
+      };
+    }
+
+    if (upperMessage === MQTT_MESSAGE_FIRE_ACK) {
+      return {
+        espId,
+        rawTopic: topic,
+        message: normalizedMessage,
+        receivedAt,
+        type: 'fire_ack',
+        deviceTopic: 'alarm',
+        state: 'FIRE_ACK',
+      };
+    }
+
+    if (upperMessage === MQTT_MESSAGE_ONLINE) {
+      return {
+        espId,
+        rawTopic: topic,
+        message: normalizedMessage,
+        receivedAt,
+        type: 'online',
+        state: 'ONLINE',
+      };
+    }
+
+    const inferred = this.parseStructuredStatusMessage(normalizedMessage);
+
+    if (
+      inferred.deviceTopic ||
+      inferred.deviceId !== undefined ||
+      inferred.state
+    ) {
+      return {
+        espId,
+        rawTopic: topic,
+        message: normalizedMessage,
+        receivedAt,
+        type: 'device_state',
+        ...inferred,
+      };
+    }
+
+    return {
+      espId,
+      rawTopic: topic,
+      message: normalizedMessage,
+      receivedAt,
+      type: 'unknown',
+    };
+  }
+
+  private buildTelemetryEvent(
+    topic: string,
+    message: string,
+    receivedAt: Date,
+  ): IoTMqttTelemetryEvent {
+    const espId = this.extractEspIdFromTopic(topic);
+    const parsedPayload =
+      this.tryParseJsonObject(message) ??
+      this.parseTelemetryKeyValuePairs(message);
+
+    return {
+      espId,
+      rawTopic: topic,
+      message,
+      receivedAt,
+      waterTotal: this.readTelemetryNumber(parsedPayload, [
+        ['water_total'],
+        ['waterTotal'],
+        ['telemetry', 'water_total'],
+        ['telemetry', 'waterTotal'],
+        ['water'],
+      ]),
+      energyTotal: this.readTelemetryNumber(parsedPayload, [
+        ['energy_total'],
+        ['energyTotal'],
+        ['telemetry', 'energy_total'],
+        ['telemetry', 'energyTotal'],
+        ['electricity_total'],
+        ['electricityTotal'],
+        ['energy'],
+      ]),
+      ...(parsedPayload ? { parsedPayload } : {}),
+    };
+  }
+
+  private parseStructuredStatusMessage(message: string): {
+    deviceTopic?: MqttDeviceTopic;
+    deviceId?: number;
+    state?: string;
+  } {
+    const parsedJson = this.tryParseJsonObject(message);
+
+    if (parsedJson) {
+      const deviceTopic = this.readDeviceTopicFromUnknown(
+        parsedJson.topic ??
+          parsedJson.deviceTopic ??
+          parsedJson.type ??
+          parsedJson.deviceType,
+      );
+      const deviceId = this.readPositiveIntegerFromUnknown(
+        parsedJson.deviceId ?? parsedJson.id ?? parsedJson.channelId,
+      );
+      const state = this.normalizeIncomingState(
+        deviceTopic,
+        parsedJson.state ??
+          parsedJson.status ??
+          parsedJson.action ??
+          parsedJson.message,
+      );
+
+      return {
+        ...(deviceTopic ? { deviceTopic } : {}),
+        ...(deviceId !== undefined ? { deviceId } : {}),
+        ...(state ? { state } : {}),
+      };
+    }
+
+    const tokens = message
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .split('_')
+      .filter(Boolean);
+
+    const topicToken = tokens.find((token) =>
+      ['LIGHT', 'ALARM', 'DOOR', 'CURTAIN', 'LOCK', 'SMARTLOCK'].includes(
+        token,
+      ),
+    );
+
+    const deviceIdToken = tokens.find((token) => /^\d+$/.test(token));
+    const state = this.normalizeIncomingState(
+      this.readDeviceTopicFromUnknown(topicToken),
+      tokens.join('_'),
+    );
+
+    return {
+      ...(this.readDeviceTopicFromUnknown(topicToken)
+        ? { deviceTopic: this.readDeviceTopicFromUnknown(topicToken) }
+        : {}),
+      ...(deviceIdToken ? { deviceId: Number(deviceIdToken) } : {}),
+      ...(state ? { state } : {}),
+    };
+  }
+
+  private tryParseJsonObject(
+    value: string,
+  ): Record<string, unknown> | undefined {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return undefined;
+      }
+
+      return parsed as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseTelemetryKeyValuePairs(
+    message: string,
+  ): Record<string, unknown> | undefined {
+    const result: Record<string, unknown> = {};
+    const matches = message.matchAll(
+      /([a-zA-Z_][a-zA-Z0-9_]*)\s*[:=]\s*(-?\d+(?:\.\d+)?)/g,
+    );
+
+    for (const match of matches) {
+      result[match[1]] = Number(match[2]);
+    }
+
+    return Object.keys(result).length > 0 ? result : undefined;
+  }
+
+  private readTelemetryNumber(
+    source: Record<string, unknown> | undefined,
+    candidatePaths: string[][],
+  ): number | undefined {
+    if (!source) {
+      return undefined;
+    }
+
+    for (const path of candidatePaths) {
+      let current: unknown = source;
+
+      for (const segment of path) {
+        if (!current || typeof current !== 'object' || Array.isArray(current)) {
+          current = undefined;
+          break;
+        }
+
+        current = (current as Record<string, unknown>)[segment];
+      }
+
+      const parsed = this.readNumberFromUnknown(current);
+      if (parsed !== undefined) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private normalizeIncomingState(
+    topic: MqttDeviceTopic | undefined,
+    value: unknown,
+  ): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim().toUpperCase();
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (normalized.includes('FIRE_ACK')) {
+      return 'FIRE_ACK';
+    }
+
+    if (normalized.includes('FIRE')) {
+      return 'FIRE';
+    }
+
+    if (normalized.includes('ONLINE')) {
+      return 'ONLINE';
+    }
+
+    if (normalized.includes('OFFLINE')) {
+      return 'OFFLINE';
+    }
+
+    if (
+      normalized.includes('OPEN') ||
+      normalized.includes('UNLOCK') ||
+      (topic &&
+        (topic === 'door' || topic === 'curtain') &&
+        normalized === 'ON')
+    ) {
+      return 'OPEN';
+    }
+
+    if (
+      normalized.includes('CLOSE') ||
+      normalized.includes('CLOSED') ||
+      normalized.includes('LOCK') ||
+      (topic &&
+        (topic === 'door' || topic === 'curtain') &&
+        normalized === 'OFF')
+    ) {
+      return 'CLOSED';
+    }
+
+    if (normalized.includes('ON')) {
+      return 'ON';
+    }
+
+    if (normalized.includes('OFF')) {
+      return 'OFF';
+    }
+
+    return normalized;
+  }
+
+  private readDeviceTopicFromUnknown(
+    value: unknown,
+  ): MqttDeviceTopic | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === 'lock' || normalized === 'smartlock') {
+      return 'door';
+    }
+
+    return MQTT_DEVICE_TOPICS.find((topic) => topic === normalized);
+  }
+
+  private readPositiveIntegerFromUnknown(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+      return value;
+    }
+
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+      const parsed = Number(value.trim());
+      return parsed > 0 ? parsed : undefined;
+    }
+
+    return undefined;
+  }
+
+  private readNumberFromUnknown(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private isStatusTopic(topic: string) {
+    return topic.endsWith('/status');
+  }
+
+  private isTelemetryTopic(topic: string) {
+    return topic.endsWith('/telemetry') || topic.endsWith('/meter');
+  }
+
+  private extractEspIdFromTopic(topic: string) {
+    const parts = topic.split('/').filter(Boolean);
+
+    if (parts[0] === 'HOMEIQ' && parts.length > 1) {
+      return parts[1];
+    }
+
+    if (parts.length > 0) {
+      return parts[0];
+    }
+
+    return 'UNKNOWN';
   }
 
   private ensureConnected() {
@@ -273,9 +771,7 @@ export class IoTMqttService implements OnModuleDestroy {
     }
 
     if (!this.client?.connected) {
-      throw new ServiceUnavailableException(
-        'MQTT client is not connected yet',
-      );
+      throw new ServiceUnavailableException('MQTT client is not connected yet');
     }
   }
 
@@ -288,28 +784,38 @@ export class IoTMqttService implements OnModuleDestroy {
     return normalized;
   }
 
-  private normalizeChannelId(channelId: number): number {
-    if (!Number.isInteger(channelId) || channelId <= 0) {
-      throw new BadRequestException('device channel id must be a positive integer');
+  private normalizeDeviceId(deviceId: number): number {
+    if (!Number.isInteger(deviceId) || deviceId <= 0) {
+      throw new BadRequestException('deviceId must be a positive integer');
     }
 
-    return channelId;
+    return deviceId;
   }
 
-  private validateBinaryAction(action: string, controlType: string) {
-    if (action !== 'on' && action !== 'off') {
+  private normalizeBinaryAction(action: string): MqttBinaryAction {
+    const normalized = action.trim().toUpperCase();
+    if (!MQTT_BINARY_ACTIONS.some((candidate) => candidate === normalized)) {
       throw new BadRequestException(
-        `${controlType} action must be 'on' or 'off'`,
+        "Invalid action. Only 'ON' or 'OFF' are accepted",
       );
     }
+
+    return normalized as MqttBinaryAction;
   }
 
-  private validateOpenCloseAction(action: string, controlType: string) {
-    if (action !== 'open' && action !== 'close') {
+  private normalizeDeviceTopic(topic: string): MqttDeviceTopic {
+    const normalized = topic.trim().toLowerCase();
+    const matched = MQTT_DEVICE_TOPICS.find(
+      (candidate) => candidate === normalized,
+    );
+
+    if (!matched) {
       throw new BadRequestException(
-        `${controlType} action must be 'open' or 'close'`,
+        `Unsupported topic. Allowed topics: ${MQTT_DEVICE_TOPICS.join(', ')}`,
       );
     }
+
+    return matched;
   }
 
   private sleep(ms: number) {
