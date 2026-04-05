@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -21,10 +22,9 @@ describe('IoTService', () => {
 
   const mqttService = {
     getGatewayStatus: jest.fn(),
-    triggerLight: jest.fn(),
-    triggerAlarm: jest.fn(),
-    triggerDoor: jest.fn(),
-    triggerCurtain: jest.fn(),
+    getTelemetry: jest.fn(),
+    checkOnline: jest.fn(),
+    controlDevice: jest.fn(),
     sendDoorPassword: jest.fn(),
     runTestSequence: jest.fn(),
   };
@@ -52,8 +52,9 @@ describe('IoTService', () => {
       mqtt: {
         espId: 'ESP_A101',
         boardName: 'A101 Main Board',
-        controlType: 'door',
-        channelId: 1,
+        topic: 'door',
+        deviceId: 1,
+        state: 'CLOSED',
       },
     },
     accessLogsEnabled: true,
@@ -87,6 +88,7 @@ describe('IoTService', () => {
 
   const mockBoardSourceDevice = (overrides = {}) => ({
     id: 'device-123',
+    apartmentId: 'apt-123',
     deviceName: 'Front Door Lock',
     deviceType: 'smart_lock',
     status: IoTStatus.active,
@@ -98,8 +100,9 @@ describe('IoTService', () => {
       mqtt: {
         espId: 'ESP_A101',
         boardName: 'A101 Main Board',
-        controlType: 'door',
-        channelId: 1,
+        topic: 'door',
+        deviceId: 1,
+        state: 'CLOSED',
       },
     },
     apartment: {
@@ -125,7 +128,7 @@ describe('IoTService', () => {
     jest.clearAllMocks();
   });
 
-  describe('getGatewayStatus', () => {
+  describe('gateway helpers', () => {
     it('should proxy MQTT gateway status', () => {
       mqttService.getGatewayStatus.mockReturnValue({
         success: true,
@@ -135,6 +138,32 @@ describe('IoTService', () => {
       expect(service.getGatewayStatus()).toEqual({
         success: true,
         mqttConnected: true,
+      });
+    });
+
+    it('should request telemetry and health checks through MQTT service', () => {
+      mqttService.getTelemetry.mockReturnValue({
+        brokerUrl: 'mqtt://broker.hivemq.com:1883',
+        topic: 'ESP_A101/get/telemetry',
+        payload: 'GET_TELEMETRY',
+        espId: 'ESP_A101',
+        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+      });
+      mqttService.checkOnline.mockReturnValue({
+        brokerUrl: 'mqtt://broker.hivemq.com:1883',
+        topic: 'HOMEIQ/ESP_A101/status',
+        payload: 'ARE_YOU_OK',
+        espId: 'ESP_A101',
+        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+      });
+
+      expect(service.requestTelemetry('ESP_A101')).toMatchObject({
+        success: true,
+        message: 'Telemetry request sent',
+      });
+      expect(service.checkHealth('ESP_A101')).toMatchObject({
+        success: true,
+        message: 'Health check signal sent',
       });
     });
   });
@@ -151,8 +180,9 @@ describe('IoTService', () => {
             mqtt: {
               espId: 'ESP_A101',
               boardName: 'A101 Main Board',
-              controlType: 'light',
-              channelId: 2,
+              topic: 'light',
+              deviceId: 2,
+              state: 'OFF',
             },
           },
         }),
@@ -170,13 +200,15 @@ describe('IoTService', () => {
         expect.arrayContaining([
           expect.objectContaining({
             id: 'device-123',
-            mqttControlType: 'door',
-            mqttChannelId: 1,
+            mqttTopic: 'door',
+            mqttDeviceId: 1,
+            mqttState: 'CLOSED',
           }),
           expect.objectContaining({
             id: 'device-456',
-            mqttControlType: 'light',
-            mqttChannelId: 2,
+            mqttTopic: 'light',
+            mqttDeviceId: 2,
+            mqttState: 'OFF',
           }),
         ]),
       );
@@ -196,8 +228,8 @@ describe('IoTService', () => {
               mqtt: {
                 espId: 'ESP_A101',
                 boardName: 'A101 Main Board',
-                controlType: 'light',
-                channelId: 2,
+                topic: 'light',
+                deviceId: 2,
               },
             },
           }),
@@ -215,14 +247,14 @@ describe('IoTService', () => {
           {
             deviceName: 'Front Door Lock',
             deviceType: 'smart_lock' as any,
-            mqttControlType: 'door',
-            mqttChannelId: 1,
+            mqttTopic: 'door',
+            mqttDeviceId: 1,
           },
           {
             deviceName: 'Living Room Light',
             deviceType: 'light' as any,
-            mqttControlType: 'light',
-            mqttChannelId: 2,
+            mqttTopic: 'light',
+            mqttDeviceId: 2,
           },
         ],
       });
@@ -237,8 +269,8 @@ describe('IoTService', () => {
               mqtt: expect.objectContaining({
                 espId: 'ESP_A101',
                 boardName: 'A101 Main Board',
-                controlType: 'door',
-                channelId: 1,
+                topic: 'door',
+                deviceId: 1,
               }),
             }),
           }),
@@ -253,7 +285,7 @@ describe('IoTService', () => {
 
     it('should reject duplicate board assignments on the same board', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
-      prisma.ioTDevice.findMany.mockResolvedValue([]);
+      prisma.ioTDevice.findMany.mockResolvedValue([] as any);
 
       await expect(
         service.createBoard({
@@ -264,14 +296,14 @@ describe('IoTService', () => {
             {
               deviceName: 'Light 1',
               deviceType: 'light' as any,
-              mqttControlType: 'light',
-              mqttChannelId: 1,
+              mqttTopic: 'light',
+              mqttDeviceId: 1,
             },
             {
               deviceName: 'Light 2',
               deviceType: 'light' as any,
-              mqttControlType: 'light',
-              mqttChannelId: 1,
+              mqttTopic: 'light',
+              mqttDeviceId: 1,
             },
           ],
         }),
@@ -292,8 +324,9 @@ describe('IoTService', () => {
         configuration: { vendor: 'ESP32' },
         mqttEspId: 'ESP_A101',
         mqttBoardName: 'A101 Main Board',
-        mqttControlType: 'door',
-        mqttChannelId: 1,
+        mqttTopic: 'door',
+        mqttDeviceId: 1,
+        mqttState: 'CLOSED',
       });
 
       expect(prisma.ioTDevice.create).toHaveBeenCalledWith(
@@ -304,16 +337,17 @@ describe('IoTService', () => {
               mqtt: {
                 espId: 'ESP_A101',
                 boardName: 'A101 Main Board',
-                controlType: 'door',
-                channelId: 1,
+                topic: 'door',
+                deviceId: 1,
+                state: 'CLOSED',
               },
             }),
           }),
         }),
       );
       expect(result.mqttEspId).toBe('ESP_A101');
-      expect(result.mqttBoardName).toBe('A101 Main Board');
-      expect(result.mqttControlType).toBe('door');
+      expect(result.mqttTopic).toBe('door');
+      expect(result.mqttDeviceId).toBe(1);
     });
 
     it('should reject partial MQTT metadata', async () => {
@@ -337,7 +371,10 @@ describe('IoTService', () => {
         apartmentId: 'apt-123',
         configuration: {
           vendor: 'ESP32',
-          mqtt: { espId: 'OLD', channelId: 1 },
+          mqtt: { espId: 'OLD', topic: 'door', deviceId: 1 },
+        },
+        apartment: {
+          rentalContracts: [],
         },
       } as any);
       prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
@@ -347,8 +384,9 @@ describe('IoTService', () => {
             vendor: 'ESP32',
             mqtt: {
               espId: 'ESP_A101',
-              controlType: 'door',
-              channelId: 2,
+              topic: 'door',
+              deviceId: 2,
+              state: 'OPEN',
             },
           },
         }) as any,
@@ -356,8 +394,8 @@ describe('IoTService', () => {
 
       const result = await service.updateDevice('device-123', {
         mqttEspId: 'ESP_A101',
-        mqttControlType: 'door',
-        mqttChannelId: 2,
+        mqttDeviceId: 2,
+        mqttState: 'OPEN',
       });
 
       expect(prisma.ioTDevice.update).toHaveBeenCalledWith(
@@ -365,16 +403,68 @@ describe('IoTService', () => {
           data: expect.objectContaining({
             configuration: expect.objectContaining({
               vendor: 'ESP32',
-              mqtt: {
+              mqtt: expect.objectContaining({
                 espId: 'ESP_A101',
-                channelId: 2,
-                controlType: 'door',
-              },
+                topic: 'door',
+                deviceId: 2,
+                state: 'OPEN',
+              }),
             }),
           }),
         }),
       );
-      expect(result.mqttChannelId).toBe(2);
+      expect(result.mqttDeviceId).toBe(2);
+      expect(result.mqttState).toBe('OPEN');
+    });
+
+    it('should allow tenants to rename a device only', async () => {
+      const user = mockUserJwtPayload();
+      prisma.ioTDevice.findUnique.mockResolvedValueOnce({
+        id: 'device-123',
+        apartmentId: 'apt-123',
+        configuration: {
+          mqtt: { espId: 'ESP_A101', topic: 'door', deviceId: 1 },
+        },
+        apartment: {
+          rentalContracts: [{ members: [{ userId: user.sub }] }],
+        },
+      } as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.ioTDevice.findUnique.mockResolvedValueOnce(
+        mockDeviceDetail({
+          deviceName: 'Tên mới',
+        }) as any,
+      );
+
+      const result = await service.updateDevice(
+        'device-123',
+        { deviceName: 'Tên mới' },
+        user,
+      );
+
+      expect(result.deviceName).toBe('Tên mới');
+    });
+
+    it('should reject tenant updates beyond device name', async () => {
+      const user = mockUserJwtPayload();
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'device-123',
+        apartmentId: 'apt-123',
+        configuration: {
+          mqtt: { espId: 'ESP_A101', topic: 'door', deviceId: 1 },
+        },
+        apartment: {
+          rentalContracts: [{ members: [{ userId: user.sub }] }],
+        },
+      } as any);
+
+      await expect(
+        service.updateDevice(
+          'device-123',
+          { deviceName: 'Tên mới', mqttState: 'OPEN' },
+          user,
+        ),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should throw NotFoundException when device does not exist', async () => {
@@ -387,38 +477,42 @@ describe('IoTService', () => {
   });
 
   describe('controlDevice', () => {
-    it('should map lock/unlock commands to MQTT door actions', async () => {
+    it('should map unlock command to ON for door topics', async () => {
       const user = mockUserJwtPayload();
       prisma.ioTDevice.findUnique.mockResolvedValue({
         id: 'device-123',
         deviceType: 'smart_lock',
         status: IoTStatus.active,
         isControllableByTenant: true,
-        configuration: { mqtt: { espId: 'ESP_A101', channelId: 2 } },
+        configuration: {
+          mqtt: { espId: 'ESP_A101', topic: 'door', deviceId: 2 },
+        },
         apartment: {
           rentalContracts: [
             { id: 'contract-1', members: [{ userId: user.sub }] },
           ],
         },
       } as any);
-      mqttService.triggerDoor.mockReturnValue({
+      mqttService.controlDevice.mockReturnValue({
         espId: 'ESP_A101',
-        controlType: 'door',
-        channelId: 2,
+        deviceTopic: 'door',
+        deviceId: 2,
         topic: 'ESP_A101/door',
-        payload: 'open_2',
+        payload: 'ON_2',
+        action: 'ON',
         publishedAt: new Date('2026-03-30T00:00:00.000Z'),
       });
 
       const result = await service.controlDevice('device-123', 'unlock', user);
 
-      expect(mqttService.triggerDoor).toHaveBeenCalledWith(
+      expect(mqttService.controlDevice).toHaveBeenCalledWith(
         'ESP_A101',
-        'open',
+        'ON',
         2,
+        'door',
       );
-      expect(result.mqttPayload).toBe('open_2');
-      expect(result.mqttControlType).toBe('door');
+      expect(result.mqttPayload).toBe('ON_2');
+      expect(result.mqttTopic).toBe('door');
     });
 
     it('should allow unauthenticated control for end-to-end device testing', async () => {
@@ -428,27 +522,29 @@ describe('IoTService', () => {
         status: IoTStatus.active,
         isControllableByTenant: false,
         configuration: {
-          mqtt: { espId: 'ESP_A101', controlType: 'light', channelId: 1 },
+          mqtt: { espId: 'ESP_A101', topic: 'light', deviceId: 1 },
         },
         apartment: { rentalContracts: [] },
       } as any);
-      mqttService.triggerLight.mockReturnValue({
+      mqttService.controlDevice.mockReturnValue({
         espId: 'ESP_A101',
-        controlType: 'light',
-        channelId: 1,
+        deviceTopic: 'light',
+        deviceId: 1,
         topic: 'ESP_A101/light',
-        payload: 'on_1',
+        payload: 'ON_1',
+        action: 'ON',
         publishedAt: new Date('2026-03-30T00:00:00.000Z'),
       });
 
       const result = await service.controlDevice('device-123', 'ON');
 
-      expect(mqttService.triggerLight).toHaveBeenCalledWith(
+      expect(mqttService.controlDevice).toHaveBeenCalledWith(
         'ESP_A101',
-        'on',
+        'ON',
         1,
+        'light',
       );
-      expect(result.mqttPayload).toBe('on_1');
+      expect(result.mqttPayload).toBe('ON_1');
     });
 
     it('should throw ForbiddenException when tenant cannot control the device', async () => {
@@ -458,13 +554,13 @@ describe('IoTService', () => {
         status: IoTStatus.active,
         isControllableByTenant: false,
         configuration: {
-          mqtt: { espId: 'ESP_A101', controlType: 'light', channelId: 1 },
+          mqtt: { espId: 'ESP_A101', topic: 'light', deviceId: 1 },
         },
         apartment: { rentalContracts: [] },
       } as any);
 
       await expect(
-        service.controlDevice('device-123', 'on', mockUserJwtPayload()),
+        service.controlDevice('device-123', 'ON', mockUserJwtPayload()),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -479,24 +575,30 @@ describe('IoTService', () => {
       } as any);
 
       await expect(
-        service.controlDevice('device-123', 'on', mockStaffJwtPayload()),
+        service.controlDevice('device-123', 'ON', mockStaffJwtPayload()),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('direct MQTT wrappers', () => {
-    it('should publish light command through MQTT service', () => {
-      mqttService.triggerLight.mockReturnValue({
+    it('should publish light command through generic MQTT service', () => {
+      mqttService.controlDevice.mockReturnValue({
         topic: 'ESP_A101/light',
-        payload: 'on_1',
+        payload: 'ON_1',
+        espId: 'ESP_A101',
+        deviceTopic: 'light',
+        deviceId: 1,
+        action: 'ON',
+        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
       });
 
       const result = service.triggerLight('ESP_A101', 1, 'ON');
 
-      expect(mqttService.triggerLight).toHaveBeenCalledWith(
+      expect(mqttService.controlDevice).toHaveBeenCalledWith(
         'ESP_A101',
-        'on',
+        'ON',
         1,
+        'light',
       );
       expect(result.success).toBe(true);
     });
@@ -571,53 +673,90 @@ describe('IoTService', () => {
         ),
       ).rejects.toThrow(NotFoundException);
     });
+  });
 
-    it('should allow unauthenticated reading creation without readByStaff', async () => {
-      prisma.utilityMeter.findUnique.mockResolvedValue(mockMeter() as any);
-      prisma.utilityReading.create.mockResolvedValue({
-        id: 'reading-2',
-        readingValue: 1200,
-        consumption: 200,
-      } as any);
-      prisma.utilityMeter.update.mockResolvedValue({} as any);
+  describe('mqtt event handlers', () => {
+    it('should update device runtime state on MQTT status events', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        {
+          id: 'device-123',
+          apartmentId: 'apt-123',
+          deviceType: 'smart_lock',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              topic: 'door',
+              deviceId: 1,
+              state: 'CLOSED',
+            },
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
 
-      await service.createReading({
-        utilityMeterId: 'meter-123',
-        readingValue: 1200,
-        readingDate: '2026-02-09',
-      } as any);
+      await service.onMqttStatusEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'DOOR_1_OPEN',
+        receivedAt: new Date('2026-04-01T00:00:00.000Z'),
+        type: 'device_state',
+        deviceTopic: 'door',
+        deviceId: 1,
+        state: 'OPEN',
+      });
 
-      expect(prisma.utilityReading.create).toHaveBeenCalledWith(
+      expect(prisma.ioTDevice.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            readByStaff: undefined,
+            lastOnlineAt: new Date('2026-04-01T00:00:00.000Z'),
+            configuration: expect.objectContaining({
+              mqtt: expect.objectContaining({
+                state: 'OPEN',
+                lastMessage: 'DOOR_1_OPEN',
+              }),
+            }),
           }),
         }),
       );
     });
-  });
 
-  describe('verifyReading', () => {
-    it('should allow unauthenticated verification without verifiedByStaff', async () => {
-      prisma.utilityReading.update.mockResolvedValue({
-        id: 'reading-1',
-        isVerified: true,
-        verifiedAt: new Date('2026-03-31T00:00:00.000Z'),
+    it('should sync telemetry into automatic utility readings', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        {
+          id: 'device-123',
+          apartmentId: 'apt-123',
+          deviceType: 'light',
+          configuration: {
+            mqtt: { espId: 'ESP_A101', topic: 'light', deviceId: 1 },
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.utilityMeter.findFirst.mockResolvedValue({
+        id: 'meter-123',
+        currentReading: 100,
       } as any);
+      prisma.utilityReading.create.mockResolvedValue({
+        id: 'reading-1',
+      } as any);
+      prisma.utilityMeter.update.mockResolvedValue({ id: 'meter-123' } as any);
 
-      await service.verifyReading('reading-1');
+      await service.onMqttTelemetryEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/telemetry',
+        message: '{"water_total":120.5}',
+        receivedAt: new Date('2026-04-01T00:00:00.000Z'),
+        waterTotal: 120.5,
+      });
 
-      expect(prisma.utilityReading.update).toHaveBeenCalledWith(
+      expect(prisma.utilityReading.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'reading-1' },
           data: expect.objectContaining({
-            isVerified: true,
+            readingType: 'automatic',
+            readingValue: 120.5,
           }),
         }),
       );
-      expect(
-        prisma.utilityReading.update.mock.calls[0][0].data.verifiedByStaff,
-      ).toBeUndefined();
     });
   });
 });

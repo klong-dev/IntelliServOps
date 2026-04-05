@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/unbound-method */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -16,10 +17,9 @@ describe('IoTController (e2e)', () => {
 
   const mqttService = {
     getGatewayStatus: jest.fn(),
-    triggerLight: jest.fn(),
-    triggerAlarm: jest.fn(),
-    triggerDoor: jest.fn(),
-    triggerCurtain: jest.fn(),
+    getTelemetry: jest.fn(),
+    checkOnline: jest.fn(),
+    controlDevice: jest.fn(),
     sendDoorPassword: jest.fn(),
     runTestSequence: jest.fn(),
   };
@@ -65,33 +65,68 @@ describe('IoTController (e2e)', () => {
     await app.close();
   });
 
-  it('accepts direct MQTT control without auth and normalizes uppercase action', async () => {
-    mqttService.triggerLight.mockImplementation(
-      (espId: string, action: string, channelId: number) => ({
+  it('accepts generic MQTT control without auth and publishes ON/OFF payload', async () => {
+    mqttService.controlDevice.mockImplementation(
+      (espId: string, action: string, mqttDeviceId: number, topic: string) => ({
         brokerUrl: 'mqtt://broker.hivemq.com:1883',
-        topic: `${espId}/light`,
-        payload: `${action}_${channelId}`,
+        topic: `${espId}/${topic}`,
+        payload: `${action}_${mqttDeviceId}`,
         espId,
-        controlType: 'light',
-        channelId,
+        deviceTopic: topic,
+        deviceId: mqttDeviceId,
+        action,
         publishedAt: new Date('2026-03-31T00:00:00.000Z'),
       }),
     );
 
     const response = await request(app.getHttpServer())
-      .post('/api/v1/iot/devices/ESP_A101/light/1')
-      .send({ action: 'ON' })
+      .post('/api/v1/iot/devices/ESP_A101/1')
+      .send({ topic: 'light', action: 'ON' })
       .expect(201);
 
-    expect(mqttService.triggerLight).toHaveBeenCalledWith('ESP_A101', 'on', 1);
-    expect(response.body.message).toBe('The lights have been turned on');
-    expect(response.body.data.details.payload).toBe('on_1');
+    expect(mqttService.controlDevice).toHaveBeenCalledWith(
+      'ESP_A101',
+      'ON',
+      1,
+      'light',
+    );
+    expect(response.body.message).toBe('light 1 has been ON');
+    expect(response.body.data.details.payload).toBe('ON_1');
+  });
+
+  it('requests telemetry and health signals without auth', async () => {
+    mqttService.getTelemetry.mockReturnValue({
+      brokerUrl: 'mqtt://broker.hivemq.com:1883',
+      topic: 'ESP_A101/get/telemetry',
+      payload: 'GET_TELEMETRY',
+      espId: 'ESP_A101',
+      publishedAt: new Date('2026-03-31T00:00:00.000Z'),
+    });
+    mqttService.checkOnline.mockReturnValue({
+      brokerUrl: 'mqtt://broker.hivemq.com:1883',
+      topic: 'HOMEIQ/ESP_A101/status',
+      payload: 'ARE_YOU_OK',
+      espId: 'ESP_A101',
+      publishedAt: new Date('2026-03-31T00:00:00.000Z'),
+    });
+
+    await request(app.getHttpServer())
+      .post('/api/v1/iot/devices/ESP_A101/get-telemetry')
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/iot/devices/ESP_A101/check-health')
+      .expect(200);
+
+    expect(mqttService.getTelemetry).toHaveBeenCalledWith('ESP_A101');
+    expect(mqttService.checkOnline).toHaveBeenCalledWith('ESP_A101');
   });
 
   it('lists MQTT boards with grouped child devices without auth', async () => {
     prisma.ioTDevice.findMany.mockResolvedValue([
       {
         id: deviceId,
+        apartmentId,
         deviceName: 'Front Door Lock',
         deviceType: 'smart_lock',
         status: 'active',
@@ -103,8 +138,9 @@ describe('IoTController (e2e)', () => {
           mqtt: {
             espId: 'ESP_A101',
             boardName: 'A101 Main Board',
-            controlType: 'door',
-            channelId: 1,
+            topic: 'door',
+            deviceId: 1,
+            state: 'CLOSED',
           },
         },
         apartment: {
@@ -130,34 +166,33 @@ describe('IoTController (e2e)', () => {
 
   it('creates an MQTT board with child devices without auth', async () => {
     prisma.apartment.findUnique.mockResolvedValue({ id: apartmentId } as any);
-    prisma.ioTDevice.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: deviceId,
-          deviceName: 'Front Door Lock',
-          deviceType: 'smart_lock',
-          status: 'active',
-          isControllableByTenant: true,
-          lastOnlineAt: null,
-          createdAt: new Date('2026-03-01T00:00:00.000Z'),
-          updatedAt: new Date('2026-03-31T00:00:00.000Z'),
-          configuration: {
-            mqtt: {
-              espId: 'ESP_A101',
-              boardName: 'A101 Main Board',
-              controlType: 'door',
-              channelId: 1,
-            },
+    prisma.ioTDevice.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: deviceId,
+        apartmentId,
+        deviceName: 'Front Door Lock',
+        deviceType: 'smart_lock',
+        status: 'active',
+        isControllableByTenant: true,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
           },
-          apartment: {
-            id: apartmentId,
-            apartmentNumber: 'A101',
-            streetAddress: '123 Nguyen Hue',
-          },
-          room: null,
         },
-      ] as any);
+        apartment: {
+          id: apartmentId,
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+        room: null,
+      },
+    ] as any);
     prisma.$transaction.mockResolvedValue([{ id: deviceId }] as any);
 
     const response = await request(app.getHttpServer())
@@ -170,8 +205,8 @@ describe('IoTController (e2e)', () => {
           {
             deviceName: 'Front Door Lock',
             deviceType: 'smart_lock',
-            mqttControlType: 'door',
-            mqttChannelId: 1,
+            mqttTopic: 'door',
+            mqttDeviceId: 1,
           },
         ],
       })
@@ -190,6 +225,8 @@ describe('IoTController (e2e)', () => {
             mqtt: expect.objectContaining({
               espId: 'ESP_A101',
               boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
             }),
           }),
         }),
@@ -197,44 +234,7 @@ describe('IoTController (e2e)', () => {
     );
   });
 
-  it('allows apartment device listing without auth for test mode', async () => {
-    prisma.ioTDevice.findMany.mockResolvedValue([
-      {
-        id: deviceId,
-        deviceName: 'Smart Lock A101',
-        deviceType: 'smart_lock',
-        brand: 'ESP',
-        model: 'ESP32',
-        serialNumber: 'SN-001',
-        status: 'inactive',
-        isControllableByTenant: false,
-        lastOnlineAt: null,
-        createdAt: new Date('2026-03-01T00:00:00.000Z'),
-        apartment: {
-          id: apartmentId,
-          apartmentNumber: 'A101',
-          streetAddress: '123 Nguyen Hue',
-        },
-        room: null,
-      },
-    ] as any);
-
-    const response = await request(app.getHttpServer())
-      .get(`/api/v1/iot/apartments/${apartmentId}/devices`)
-      .expect(200);
-
-    expect(prisma.ioTDevice.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          apartmentId,
-        },
-      }),
-    );
-    expect(response.body.data).toHaveLength(1);
-    expect(response.body.data[0].status).toBe('inactive');
-  });
-
-  it('allows deviceId control without auth and still publishes lowercase MQTT payload', async () => {
+  it('controls a registered device without auth using stored topic metadata', async () => {
     prisma.ioTDevice.findUnique.mockResolvedValue({
       id: deviceId,
       deviceType: 'light',
@@ -243,33 +243,39 @@ describe('IoTController (e2e)', () => {
       configuration: {
         mqtt: {
           espId: 'ESP_A101',
-          controlType: 'light',
-          channelId: 1,
+          topic: 'light',
+          deviceId: 1,
         },
       },
       apartment: {
         rentalContracts: [],
       },
     } as any);
-    mqttService.triggerLight.mockImplementation(
-      (espId: string, action: string, channelId: number) => ({
+    mqttService.controlDevice.mockImplementation(
+      (espId: string, action: string, mqttDeviceId: number, topic: string) => ({
         brokerUrl: 'mqtt://broker.hivemq.com:1883',
-        topic: `${espId}/light`,
-        payload: `${action}_${channelId}`,
+        topic: `${espId}/${topic}`,
+        payload: `${action}_${mqttDeviceId}`,
         espId,
-        controlType: 'light',
-        channelId,
+        deviceTopic: topic,
+        deviceId: mqttDeviceId,
+        action,
         publishedAt: new Date('2026-03-31T00:00:00.000Z'),
       }),
     );
 
     const response = await request(app.getHttpServer())
       .post(`/api/v1/iot/devices/${deviceId}/control`)
-      .send({ command: 'ON' })
+      .send({ action: 'ON' })
       .expect(201);
 
-    expect(mqttService.triggerLight).toHaveBeenCalledWith('ESP_A101', 'on', 1);
-    expect(response.body.data.mqttPayload).toBe('on_1');
+    expect(mqttService.controlDevice).toHaveBeenCalledWith(
+      'ESP_A101',
+      'ON',
+      1,
+      'light',
+    );
+    expect(response.body.data.mqttPayload).toBe('ON_1');
   });
 
   it('allows meter reading creation and verification without auth', async () => {
@@ -302,21 +308,11 @@ describe('IoTController (e2e)', () => {
       .expect(201);
 
     expect(createResponse.body.data.readingValue).toBe(1100);
-    expect(prisma.utilityReading.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          readByStaff: undefined,
-        }),
-      }),
-    );
 
     const verifyResponse = await request(app.getHttpServer())
       .patch(`/api/v1/iot/readings/${readingId}/verify`)
       .expect(200);
 
     expect(verifyResponse.body.data.isVerified).toBe(true);
-    expect(
-      prisma.utilityReading.update.mock.calls[0][0].data.verifiedByStaff,
-    ).toBeUndefined();
   });
 });

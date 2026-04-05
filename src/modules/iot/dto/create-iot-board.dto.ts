@@ -9,9 +9,27 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, OmitType } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { CreateIoTDeviceDto } from './create-iot-device.dto';
-import { MQTT_CONTROL_TYPES } from '../iot-mqtt.types';
+import { MQTT_DEVICE_TOPICS } from '../iot-mqtt.types';
+
+const readObjectValue = (obj: unknown, key: string) =>
+  obj && typeof obj === 'object'
+    ? (obj as Record<string, unknown>)[key]
+    : undefined;
+
+const toOptionalNumber = (value: unknown) => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    return value;
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(value.trim());
+  return Number.isFinite(parsed) ? parsed : value;
+};
 
 export class CreateIoTBoardDeviceDto extends OmitType(CreateIoTDeviceDto, [
   'apartmentId',
@@ -19,21 +37,32 @@ export class CreateIoTBoardDeviceDto extends OmitType(CreateIoTDeviceDto, [
   'mqttBoardName',
 ] as const) {
   @ApiProperty({
-    enum: MQTT_CONTROL_TYPES,
+    enum: MQTT_DEVICE_TOPICS,
     example: 'door',
-    description: 'MQTT control topic for this child device',
+    description:
+      "MQTT topic configured on the ESP board for this child device. Legacy field 'mqttControlType' is also accepted.",
   })
-  @IsIn(MQTT_CONTROL_TYPES)
-  mqttControlType: (typeof MQTT_CONTROL_TYPES)[number];
+  @Transform(({ value, obj }) => {
+    const rawValue: unknown = value ?? readObjectValue(obj, 'mqttControlType');
+
+    return typeof rawValue === 'string'
+      ? rawValue.trim().toLowerCase()
+      : rawValue;
+  })
+  @IsIn(MQTT_DEVICE_TOPICS)
+  mqttTopic: (typeof MQTT_DEVICE_TOPICS)[number];
 
   @ApiProperty({
     example: 1,
-    description: 'MQTT relay/channel index for this child device',
+    description:
+      "Logical device id used in MQTT payloads. Legacy field 'mqttChannelId' is also accepted.",
   })
-  @Type(() => Number)
+  @Transform(({ value, obj }) =>
+    toOptionalNumber(value ?? readObjectValue(obj, 'mqttChannelId')),
+  )
   @IsInt()
   @Min(1)
-  mqttChannelId: number;
+  mqttDeviceId: number;
 }
 
 export class CreateIoTBoardDto {
