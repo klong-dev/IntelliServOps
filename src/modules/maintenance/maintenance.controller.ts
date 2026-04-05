@@ -20,6 +20,8 @@ import {
   CreateMaintenanceDto,
   UpdateMaintenanceDto,
   MaintenanceListItemDto,
+  MaintenanceHistoryItemDto,
+  MaintenanceHistoryQueryDto,
   MaintenanceDetailDto,
   MaintenanceCreatedDto,
   MaintenanceUpdatedDto,
@@ -49,6 +51,21 @@ export class MaintenanceController {
     @Query('status') status?: MaintenanceStatus,
   ) {
     return this.maintenanceService.findAll(currentUser, status);
+  }
+
+  @Get('history')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'Get maintenance request history' })
+  @ApiJsonResponse(MaintenanceHistoryItemDto, {
+    isArray: true,
+    isPaginated: true,
+    description: 'Paginated maintenance request history',
+  })
+  async findHistory(
+    @CurrentUser() currentUser: JwtPayload,
+    @Query() query: MaintenanceHistoryQueryDto,
+  ) {
+    return this.maintenanceService.findHistory(currentUser, query);
   }
 
   @Get(':id')

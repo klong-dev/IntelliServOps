@@ -289,10 +289,10 @@ export class ContractsService {
       await this.notifySafely({
         recipientType: ActorType.user,
         recipientId: userId,
-        title: 'Hoa don tien nha moi',
-        message: `Hoa don ${createdInvoice.invoiceNumber} da duoc tao. Han thanh toan: ${this.formatDate(createdInvoice.dueDate)}.`,
+        title: 'Hóa đơn tiền nhà mới',
+        message: `Hóa đơn ${createdInvoice.invoiceNumber} đã được tạo. Hạn thanh toán: ${this.formatDate(createdInvoice.dueDate)}.`,
         actionUrl: `/invoices/${createdInvoice.id}`,
-        actionLabel: 'Thanh toan ngay',
+        actionLabel: 'Thanh toán ngay',
         relatedEntityType: 'Invoice',
         relatedEntityId: createdInvoice.id,
       });
@@ -1188,10 +1188,10 @@ export class ContractsService {
       await this.notifySafely({
         recipientType: ActorType.operator,
         recipientId: contract.approvedByOperatorId,
-        title: 'Partner da ky hop dong hop tac',
-        message: `Partner da ky va upload hop dong cho can ho ${updated.updatedApartment.apartmentNumber}.`,
+        title: 'Partner đã ký hợp đồng hợp tác',
+        message: `Partner đã ký và tải lên hợp đồng cho căn hộ ${updated.updatedApartment.apartmentNumber}.`,
         actionUrl: `/apartments/${updated.updatedApartment.id}/cooperation-contract`,
-        actionLabel: 'Xem hop dong',
+        actionLabel: 'Xem hợp đồng',
         relatedEntityType: 'Apartment',
         relatedEntityId: updated.updatedApartment.id,
       });
@@ -1292,10 +1292,10 @@ export class ContractsService {
       await this.notifySafely({
         recipientType: ActorType.operator,
         recipientId: contract.approvedByOperatorId,
-        title: 'Partner da huy hop dong hop tac',
-        message: `Partner da huy hop dong hop tac cua can ho ${updated.updatedApartment.apartmentNumber}.`,
+        title: 'Partner đã hủy hợp đồng hợp tác',
+        message: `Partner đã hủy hợp đồng hợp tác của căn hộ ${updated.updatedApartment.apartmentNumber}.`,
         actionUrl: `/apartments/${updated.updatedApartment.id}/cooperation-contract`,
-        actionLabel: 'Xem hop dong',
+        actionLabel: 'Xem hợp đồng',
         relatedEntityType: 'Apartment',
         relatedEntityId: updated.updatedApartment.id,
       });

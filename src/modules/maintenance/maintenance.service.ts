@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateMaintenanceDto, UpdateMaintenanceDto } from './dto';
+import {
+  CreateMaintenanceDto,
+  UpdateMaintenanceDto,
+  MaintenanceHistoryQueryDto,
+} from './dto';
 import { MaintenanceStatus, Urgency, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 
@@ -39,6 +43,73 @@ export class MaintenanceService {
       },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'desc' }],
     });
+  }
+
+  async findHistory(
+    currentUser: JwtPayload,
+    query: MaintenanceHistoryQueryDto,
+  ) {
+    const { status, fromDate, toDate, page = 1, limit = 20 } = query;
+    const safeLimit = Math.min(limit, 100);
+
+    const where: Prisma.MaintenanceRequestWhereInput = {};
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (fromDate || toDate) {
+      where.createdAt = {
+        ...(fromDate ? { gte: new Date(fromDate) } : {}),
+        ...(toDate ? { lte: new Date(toDate) } : {}),
+      };
+    }
+
+    if (currentUser.actorType === 'user') {
+      where.userId = currentUser.sub;
+    }
+
+    const skip = (page - 1) * safeLimit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.maintenanceRequest.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          category: true,
+          urgency: true,
+          status: true,
+          createdAt: true,
+          completedAt: true,
+          updatedAt: true,
+          apartment: {
+            select: {
+              apartmentNumber: true,
+              wardCode: true,
+            },
+          },
+          room: {
+            select: {
+              roomNumber: true,
+              roomType: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: safeLimit,
+      }),
+      this.prisma.maintenanceRequest.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    };
   }
 
   async findOne(id: string) {

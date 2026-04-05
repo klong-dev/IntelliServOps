@@ -88,10 +88,10 @@ export class NotificationsController {
 
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Send notification (admin/operator only)' })
+  @ApiOperation({ summary: 'Gửi thông báo (chỉ admin/operator)' })
   @ApiJsonResponse(NotificationResponseDto, {
     status: 201,
-    description: 'Notification sent + FCM push',
+    description: 'Đã gửi thông báo và đẩy FCM',
   })
   async create(@Body() createDto: CreateNotificationDto) {
     return this.notificationsService.create(createDto);

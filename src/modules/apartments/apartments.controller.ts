@@ -686,9 +686,9 @@ export class ApartmentsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.OPERATOR)
   @ApiOperation({
-    summary: 'Operator reject partner cooperation apartment',
+    summary: 'Operator từ chối căn hộ hợp tác của partner',
     description:
-      'Operator rejects partner cooperation apartment, sets apartment status to inactive, and sends notification to partner with reject reason.',
+      'Operator từ chối căn hộ hợp tác của partner, chuyển trạng thái căn hộ sang inactive và gửi thông báo kèm lý do từ chối cho partner.',
   })
   @ApiJsonResponse(RejectPartnerCooperationResultDto, {
     description: 'Partner cooperation apartment rejected',
