@@ -6,3 +6,4 @@ export * from './search-user.dto';
 export * from './search-user-by-national-id.dto';
 export * from './search-user-by-national-id-response.dto';
 export * from './partner-request.dto';
+export * from './staff-operator.dto';

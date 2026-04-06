@@ -842,13 +842,57 @@ export class PaymentsService {
       };
     }
 
+    const members = rentalContract.members ?? [];
+
+    const buildUserApartmentUpserts = (
+      status: UserApartmentStatus,
+      apartmentDoorPassword: string | null,
+    ): Prisma.PrismaPromise<any>[] =>
+      members.map((member) =>
+        this.prisma.userApartment.upsert({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: member.userId,
+              apartmentId: rentalContract.apartmentId,
+              rentalContractId: rentalContract.id,
+            },
+          },
+          create: {
+            user: { connect: { id: member.userId } },
+            apartment: {
+              connect: { id: rentalContract.apartmentId },
+            },
+            rentalContract: {
+              connect: { id: rentalContract.id },
+            },
+            moveInDate: rentalContract.startDate,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status,
+          },
+          update: {
+            moveInDate: rentalContract.startDate,
+            moveOutDate: null,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status,
+          },
+        }),
+      );
+
     const todayStart = this.getUtcDayStart();
 
     if (rentalContract.startDate > todayStart) {
+      txOperations.push(
+        ...buildUserApartmentUpserts(UserApartmentStatus.inactive, null),
+      );
+
       return {
         activated: false,
         apartmentDoorPassword: null,
-        memberUserIds: [],
+        memberUserIds: members.map((member) => member.userId),
       };
     }
 
@@ -883,40 +927,10 @@ export class PaymentsService {
       }),
     );
 
-    const members = rentalContract.members ?? [];
     txOperations.push(
-      ...members.map((member) =>
-        this.prisma.userApartment.upsert({
-          where: {
-            userId_apartmentId_rentalContractId: {
-              userId: member.userId,
-              apartmentId: rentalContract.apartmentId,
-              rentalContractId: rentalContract.id,
-            },
-          },
-          create: {
-            user: { connect: { id: member.userId } },
-            apartment: {
-              connect: { id: rentalContract.apartmentId },
-            },
-            rentalContract: {
-              connect: { id: rentalContract.id },
-            },
-            moveInDate: rentalContract.startDate,
-            apartmentDoorPassword,
-            isPrimaryTenant:
-              member.memberType === 'primary' || member.isPrimaryContact,
-            status: UserApartmentStatus.active,
-          },
-          update: {
-            moveInDate: rentalContract.startDate,
-            moveOutDate: null,
-            apartmentDoorPassword,
-            isPrimaryTenant:
-              member.memberType === 'primary' || member.isPrimaryContact,
-            status: UserApartmentStatus.active,
-          },
-        }),
+      ...buildUserApartmentUpserts(
+        UserApartmentStatus.active,
+        apartmentDoorPassword,
       ),
     );
 
