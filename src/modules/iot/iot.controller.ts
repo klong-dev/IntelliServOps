@@ -28,7 +28,7 @@ import {
   UpdateIoTBoardDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
-import { Public, Roles } from '../../common/decorators';
+import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import { IoTStatus } from '@prisma/client';
 

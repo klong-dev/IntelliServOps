@@ -248,4 +248,42 @@ describe('IoTController (e2e)', () => {
 
     expect(response.body.data.details.payload).toBe('ON_1');
   });
+
+  it('allows meter reading creation and verification', async () => {
+    prisma.utilityMeter.findUnique.mockResolvedValue({
+      id: meterId,
+      currentReading: 1000,
+    } as any);
+    prisma.utilityReading.create.mockResolvedValue({
+      id: readingId,
+      readingDate: new Date('2026-03-31T00:00:00.000Z'),
+      readingValue: 1100,
+      previousReadingValue: 1000,
+      consumption: 100,
+      readingType: 'manual',
+    } as any);
+    prisma.utilityMeter.update.mockResolvedValue({ id: meterId } as any);
+    prisma.utilityReading.update.mockResolvedValue({
+      id: readingId,
+      isVerified: true,
+      verifiedAt: new Date('2026-03-31T01:00:00.000Z'),
+    } as any);
+
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/iot/readings')
+      .send({
+        utilityMeterId: meterId,
+        readingDate: '2026-03-31',
+        readingValue: 1100,
+      })
+      .expect(201);
+
+    expect(createResponse.body.data.readingValue).toBe(1100);
+
+    const verifyResponse = await request(app.getHttpServer())
+      .patch(`/api/v1/iot/readings/${readingId}/verify`)
+      .expect(200);
+
+    expect(verifyResponse.body.data.isVerified).toBe(true);
+  });
 });
