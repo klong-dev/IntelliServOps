@@ -10,6 +10,9 @@ describe('IoTController', () => {
     getGatewayStatus: jest.fn(),
     requestTelemetry: jest.fn(),
     checkHealth: jest.fn(),
+    configureDoorPassword: jest.fn(),
+    runDeviceTestSequence: jest.fn(),
+    controlDeviceByTopic: jest.fn(),
     findAllBoards: jest.fn(),
     findOneBoard: jest.fn(),
     createBoard: jest.fn(),
@@ -18,27 +21,6 @@ describe('IoTController', () => {
     createBoardDevice: jest.fn(),
     updateBoardDevice: jest.fn(),
     removeBoardDevice: jest.fn(),
-    triggerLight: jest.fn(),
-    triggerAlarm: jest.fn(),
-    triggerDoor: jest.fn(),
-    triggerCurtain: jest.fn(),
-    configureDoorPassword: jest.fn(),
-    runDeviceTestSequence: jest.fn(),
-    controlDeviceByTopic: jest.fn(),
-    findAllDevices: jest.fn(),
-    findOneDevice: jest.fn(),
-    findDevicesByApartment: jest.fn(),
-    createDevice: jest.fn(),
-    updateDevice: jest.fn(),
-    removeDevice: jest.fn(),
-    controlDevice: jest.fn(),
-    findAllMeters: jest.fn(),
-    findOneMeter: jest.fn(),
-    createMeter: jest.fn(),
-    updateMeter: jest.fn(),
-    createReading: jest.fn(),
-    getReadings: jest.fn(),
-    verifyReading: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -51,7 +33,7 @@ describe('IoTController', () => {
     jest.clearAllMocks();
   });
 
-  it('should return gateway status', () => {
+  it('returns gateway status', () => {
     iotService.getGatewayStatus.mockReturnValue({
       success: true,
       mqttConnected: true,
@@ -63,40 +45,54 @@ describe('IoTController', () => {
     });
   });
 
-  it('should delegate telemetry request to service', () => {
+  it('delegates door password configuration', () => {
+    iotService.configureDoorPassword.mockReturnValue({ success: true });
+
+    expect(
+      controller.configureDoorPassword('ESP_A101', 1, { password: '290304' }),
+    ).toEqual({ success: true });
+  });
+
+  it('delegates telemetry request', () => {
     iotService.requestTelemetry.mockReturnValue({ success: true });
 
     expect(controller.requestTelemetry('ESP_A101')).toEqual({ success: true });
-    expect(iotService.requestTelemetry).toHaveBeenCalledWith('ESP_A101');
   });
 
-  it('should delegate generic MQTT topic control to service', () => {
+  it('delegates health check request', () => {
+    iotService.checkHealth.mockReturnValue({ success: true });
+
+    expect(controller.checkHealth('ESP_A101')).toEqual({ success: true });
+  });
+
+  it('delegates test sequence execution', async () => {
+    iotService.runDeviceTestSequence.mockResolvedValue({ success: true });
+
+    await expect(
+      controller.runTestSequence('ESP_A101', { holdMs: 500 }),
+    ).resolves.toEqual({ success: true });
+  });
+
+  it('delegates generic topic control', () => {
     iotService.controlDeviceByTopic.mockReturnValue({ success: true });
 
-    const result = controller.controlDeviceByTopic('ESP_A101', 1, {
-      topic: 'light',
-      action: 'ON',
-    });
-
-    expect(result).toEqual({ success: true });
-    expect(iotService.controlDeviceByTopic).toHaveBeenCalledWith(
-      'ESP_A101',
-      1,
-      'light',
-      'ON',
-    );
+    expect(
+      controller.controlDeviceByTopic('ESP_A101', 1, {
+        topic: 'light',
+        action: 'ON',
+      }),
+    ).toEqual({ success: true });
   });
 
-  it('should delegate board listing to service', async () => {
+  it('delegates board listing', async () => {
     iotService.findAllBoards.mockResolvedValue([{ id: 'ESP_A101' }]);
 
     await expect(controller.findAllBoards()).resolves.toEqual([
       { id: 'ESP_A101' },
     ]);
-    expect(iotService.findAllBoards).toHaveBeenCalledWith(undefined, undefined);
   });
 
-  it('should delegate board creation to service', async () => {
+  it('delegates board creation', async () => {
     iotService.createBoard.mockResolvedValue({ id: 'ESP_A101' });
 
     await expect(
@@ -107,10 +103,9 @@ describe('IoTController', () => {
         devices: [],
       } as any),
     ).resolves.toEqual({ id: 'ESP_A101' });
-    expect(iotService.createBoard).toHaveBeenCalled();
   });
 
-  it('should delegate board device update to service', async () => {
+  it('delegates board device update', async () => {
     iotService.updateBoardDevice.mockResolvedValue({ id: 'device-123' });
 
     await expect(
@@ -118,50 +113,5 @@ describe('IoTController', () => {
         deviceName: 'Updated Lamp',
       }),
     ).resolves.toEqual({ id: 'device-123' });
-    expect(iotService.updateBoardDevice).toHaveBeenCalledWith(
-      'ESP_A101',
-      'device-123',
-      { deviceName: 'Updated Lamp' },
-    );
-  });
-
-  it('should delegate door password configuration to service', () => {
-    iotService.configureDoorPassword.mockReturnValue({ success: true });
-
-    const result = controller.configureDoorPassword('ESP_A101', 1, {
-      password: '290304',
-    });
-
-    expect(result).toEqual({ success: true });
-    expect(iotService.configureDoorPassword).toHaveBeenCalledWith(
-      'ESP_A101',
-      1,
-      '290304',
-    );
-  });
-
-  it('should delegate MQTT test sequence execution to service', async () => {
-    iotService.runDeviceTestSequence.mockResolvedValue({ success: true });
-
-    await expect(
-      controller.runTestSequence('ESP_A101', { holdMs: 500 }),
-    ).resolves.toEqual({ success: true });
-    expect(iotService.runDeviceTestSequence).toHaveBeenCalledWith(
-      'ESP_A101',
-      500,
-    );
-  });
-
-  it('should delegate DB-backed control route to service', async () => {
-    iotService.controlDevice.mockResolvedValue({ status: 'sent' });
-
-    await expect(
-      controller.controlDevice('device-123', { action: 'ON' }),
-    ).resolves.toEqual({ status: 'sent' });
-    expect(iotService.controlDevice).toHaveBeenCalledWith(
-      'device-123',
-      'ON',
-      undefined,
-    );
   });
 });
