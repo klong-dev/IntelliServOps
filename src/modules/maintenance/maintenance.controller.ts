@@ -196,13 +196,13 @@ export class MaintenanceController {
   })
   async create(
     @Body() createDto: CreateMaintenanceDto,
-    @UploadedFiles() files: { images?: unknown[] },
     @CurrentUser() currentUser: JwtPayload,
+    @UploadedFiles() files?: { images?: unknown[] },
   ) {
     const uploadedImageUrls = await this.uploadMaintenanceImages(
       createDto.apartmentId,
       'issue',
-      files.images,
+      files?.images,
     );
 
     return this.maintenanceService.create(
@@ -244,13 +244,13 @@ export class MaintenanceController {
   async reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: RejectMaintenanceDto,
-    @UploadedFiles() files: { images?: unknown[] },
     @CurrentUser() currentUser: JwtPayload,
+    @UploadedFiles() files?: { images?: unknown[] },
   ) {
     const uploadedImageUrls = await this.uploadMaintenanceImages(
       id,
       'rejection',
-      files.images,
+      files?.images,
     );
 
     return this.maintenanceService.reject(
@@ -290,13 +290,13 @@ export class MaintenanceController {
   async complete(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: CompleteMaintenanceDto,
-    @UploadedFiles() files: { completionImages?: unknown[] },
     @CurrentUser() currentUser: JwtPayload,
+    @UploadedFiles() files?: { completionImages?: unknown[] },
   ) {
     const uploadedImageUrls = await this.uploadMaintenanceImages(
       id,
       'completion',
-      files.completionImages,
+      files?.completionImages,
     );
 
     return this.maintenanceService.complete(
