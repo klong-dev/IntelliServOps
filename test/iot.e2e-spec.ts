@@ -26,6 +26,8 @@ describe('IoTController (e2e)', () => {
 
   const apartmentId = '11111111-1111-4111-8111-111111111111';
   const deviceId = '22222222-2222-4222-8222-222222222222';
+  const meterId = '33333333-3333-4333-8333-333333333333';
+  const readingId = '44444444-4444-4444-8444-444444444444';
 
   beforeEach(async () => {
     prisma = createPrismaMock();
@@ -247,5 +249,43 @@ describe('IoTController (e2e)', () => {
       .expect(201);
 
     expect(response.body.data.details.payload).toBe('ON_1');
+  });
+
+  it('allows meter reading creation and verification', async () => {
+    prisma.utilityMeter.findUnique.mockResolvedValue({
+      id: meterId,
+      currentReading: 1000,
+    } as any);
+    prisma.utilityReading.create.mockResolvedValue({
+      id: readingId,
+      readingDate: new Date('2026-03-31T00:00:00.000Z'),
+      readingValue: 1100,
+      previousReadingValue: 1000,
+      consumption: 100,
+      readingType: 'manual',
+    } as any);
+    prisma.utilityMeter.update.mockResolvedValue({ id: meterId } as any);
+    prisma.utilityReading.update.mockResolvedValue({
+      id: readingId,
+      isVerified: true,
+      verifiedAt: new Date('2026-03-31T01:00:00.000Z'),
+    } as any);
+
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/iot/readings')
+      .send({
+        utilityMeterId: meterId,
+        readingDate: '2026-03-31',
+        readingValue: 1100,
+      })
+      .expect(201);
+
+    expect(createResponse.body.data.readingValue).toBe(1100);
+
+    const verifyResponse = await request(app.getHttpServer())
+      .patch(`/api/v1/iot/readings/${readingId}/verify`)
+      .expect(200);
+
+    expect(verifyResponse.body.data.isVerified).toBe(true);
   });
 });

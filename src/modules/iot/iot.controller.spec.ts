@@ -21,6 +21,13 @@ describe('IoTController', () => {
     createBoardDevice: jest.fn(),
     updateBoardDevice: jest.fn(),
     removeBoardDevice: jest.fn(),
+    findAllMeters: jest.fn(),
+    findOneMeter: jest.fn(),
+    createMeter: jest.fn(),
+    updateMeter: jest.fn(),
+    createReading: jest.fn(),
+    getReadings: jest.fn(),
+    verifyReading: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -51,18 +58,25 @@ describe('IoTController', () => {
     expect(
       controller.configureDoorPassword('ESP_A101', 1, { password: '290304' }),
     ).toEqual({ success: true });
+    expect(iotService.configureDoorPassword).toHaveBeenCalledWith(
+      'ESP_A101',
+      1,
+      '290304',
+    );
   });
 
   it('delegates telemetry request', () => {
     iotService.requestTelemetry.mockReturnValue({ success: true });
 
     expect(controller.requestTelemetry('ESP_A101')).toEqual({ success: true });
+    expect(iotService.requestTelemetry).toHaveBeenCalledWith('ESP_A101');
   });
 
   it('delegates health check request', () => {
     iotService.checkHealth.mockReturnValue({ success: true });
 
     expect(controller.checkHealth('ESP_A101')).toEqual({ success: true });
+    expect(iotService.checkHealth).toHaveBeenCalledWith('ESP_A101');
   });
 
   it('delegates test sequence execution', async () => {
@@ -71,6 +85,10 @@ describe('IoTController', () => {
     await expect(
       controller.runTestSequence('ESP_A101', { holdMs: 500 }),
     ).resolves.toEqual({ success: true });
+    expect(iotService.runDeviceTestSequence).toHaveBeenCalledWith(
+      'ESP_A101',
+      500,
+    );
   });
 
   it('delegates generic topic control', () => {
@@ -82,6 +100,12 @@ describe('IoTController', () => {
         action: 'ON',
       }),
     ).toEqual({ success: true });
+    expect(iotService.controlDeviceByTopic).toHaveBeenCalledWith(
+      'ESP_A101',
+      1,
+      'light',
+      'ON',
+    );
   });
 
   it('delegates board listing', async () => {
@@ -90,6 +114,7 @@ describe('IoTController', () => {
     await expect(controller.findAllBoards()).resolves.toEqual([
       { id: 'ESP_A101' },
     ]);
+    expect(iotService.findAllBoards).toHaveBeenCalledWith(undefined, undefined);
   });
 
   it('delegates board creation', async () => {
@@ -103,6 +128,7 @@ describe('IoTController', () => {
         devices: [],
       } as any),
     ).resolves.toEqual({ id: 'ESP_A101' });
+    expect(iotService.createBoard).toHaveBeenCalled();
   });
 
   it('delegates board device update', async () => {
@@ -113,5 +139,31 @@ describe('IoTController', () => {
         deviceName: 'Updated Lamp',
       }),
     ).resolves.toEqual({ id: 'device-123' });
+    expect(iotService.updateBoardDevice).toHaveBeenCalledWith(
+      'ESP_A101',
+      'device-123',
+      { deviceName: 'Updated Lamp' },
+    );
+  });
+
+  it('delegates meter listing', async () => {
+    iotService.findAllMeters.mockResolvedValue([{ id: 'meter-123' }]);
+
+    await expect(controller.findAllMeters()).resolves.toEqual([
+      { id: 'meter-123' },
+    ]);
+    expect(iotService.findAllMeters).toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it('delegates reading verification', async () => {
+    iotService.verifyReading.mockResolvedValue({ id: 'reading-123' });
+
+    await expect(controller.verifyReading('reading-123')).resolves.toEqual({
+      id: 'reading-123',
+    });
+    expect(iotService.verifyReading).toHaveBeenCalledWith(
+      'reading-123',
+      undefined,
+    );
   });
 });

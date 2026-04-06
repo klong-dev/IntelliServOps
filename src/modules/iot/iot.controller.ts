@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -14,6 +15,8 @@ import { IoTService } from './iot.service';
 import {
   CreateIoTBoardDeviceDto,
   CreateIoTBoardDto,
+  CreateUtilityMeterDto,
+  CreateUtilityReadingDto,
   DirectMqttControlDto,
   IoTBoardDeleteResultDto,
   IoTBoardDetailDto,
@@ -26,11 +29,16 @@ import {
   TestSequenceDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
+  UpdateUtilityMeterDto,
+  UtilityMeterDetailDto,
+  UtilityMeterListItemDto,
+  UtilityReadingDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
-import { Public, Roles } from '../../common/decorators';
+import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
-import { IoTStatus } from '@prisma/client';
+import type { JwtPayload } from '../auth/auth.service';
+import { IoTStatus, MeterStatus } from '@prisma/client';
 
 @ApiTags('IoT')
 @Controller('iot')
@@ -229,5 +237,100 @@ export class IoTController {
     @Param('deviceId') deviceId: string,
   ) {
     return this.iotService.removeBoardDevice(boardId, deviceId);
+  }
+
+  @Get('meters')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'List all utility meters' })
+  @ApiQuery({ name: 'apartmentId', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
+  @ApiJsonResponse(UtilityMeterListItemDto, {
+    isArray: true,
+    description: 'List of utility meters',
+  })
+  async findAllMeters(
+    @Query('apartmentId') apartmentId?: string,
+    @Query('status') status?: MeterStatus,
+  ) {
+    return this.iotService.findAllMeters(apartmentId, status);
+  }
+
+  @Get('meters/:id')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Get utility meter details with readings history' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    description: 'Meter details with readings',
+  })
+  async findOneMeter(@Param('id', ParseUUIDPipe) id: string) {
+    return this.iotService.findOneMeter(id);
+  }
+
+  @Post('meters')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Register new utility meter' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    status: 201,
+    description: 'Meter registered',
+  })
+  async createMeter(@Body() createDto: CreateUtilityMeterDto) {
+    return this.iotService.createMeter(createDto);
+  }
+
+  @Patch('meters/:id')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Update utility meter' })
+  @ApiJsonResponse(UtilityMeterDetailDto, { description: 'Meter updated' })
+  async updateMeter(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateDto: UpdateUtilityMeterDto,
+  ) {
+    return this.iotService.updateMeter(id, updateDto);
+  }
+
+  @Post('readings')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Record utility reading' })
+  @ApiJsonResponse(UtilityReadingDto, {
+    status: 201,
+    description: 'Reading recorded',
+  })
+  async createReading(
+    @Body() createDto: CreateUtilityReadingDto,
+    @CurrentUser() currentUser?: JwtPayload,
+  ) {
+    return this.iotService.createReading(createDto, currentUser);
+  }
+
+  @Get('meters/:meterId/readings')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'Get meter reading history' })
+  @ApiQuery({ name: 'limit', required: false, example: 12 })
+  @ApiJsonResponse(UtilityReadingDto, {
+    isArray: true,
+    description: 'Reading history',
+  })
+  async getReadings(
+    @Param('meterId', ParseUUIDPipe) meterId: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.iotService.getReadings(meterId, limit);
+  }
+
+  @Patch('readings/:id/verify')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Verify utility reading' })
+  @ApiJsonResponse(UtilityReadingDto, { description: 'Reading verified' })
+  async verifyReading(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser?: JwtPayload,
+  ) {
+    return this.iotService.verifyReading(id, currentUser?.sub);
   }
 }
