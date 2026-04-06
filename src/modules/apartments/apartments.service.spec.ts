@@ -4,12 +4,17 @@ import { ApartmentsService } from './apartments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractPdfService } from '../contracts/contract-pdf.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import axios from 'axios';
 import {
   createPrismaMock,
   mockAdminJwtPayload,
   mockUserJwtPayload,
 } from '../../test-utils';
 import { ApartmentStatus, FurnishingStatus } from '@prisma/client';
+
+jest.mock('axios');
+
+const mockedAxios = jest.mocked(axios, true);
 
 describe('ApartmentsService', () => {
   let service: ApartmentsService;
@@ -57,6 +62,16 @@ describe('ApartmentsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        name: 'Phường Bến Nghé',
+        district_code: 760,
+        district_name: 'Quận 1',
+        province_code: 79,
+        province_name: 'Thành phố Hồ Chí Minh',
+      },
+    } as any);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

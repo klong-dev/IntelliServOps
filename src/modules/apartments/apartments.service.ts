@@ -31,9 +31,28 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import * as crypto from 'crypto';
 
+type WardLookupResponse = {
+  name?: string;
+  district_code?: number;
+  district_name?: string;
+  province_code?: number;
+  province_name?: string;
+};
+
+type WardAddressInfo = {
+  wardCode: number;
+  wardName: string | null;
+  districtCode: number | null;
+  districtName: string | null;
+  provinceCode: number | null;
+  provinceName: string | null;
+  fullAddress: string | null;
+};
+
 @Injectable()
 export class ApartmentsService {
   private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
+  private readonly wardAddressCache = new Map<number, WardAddressInfo | null>();
   private readonly pdfTokenSecret =
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly pdfTokenExpiry = 5 * 60 * 1000;
@@ -374,16 +393,149 @@ export class ApartmentsService {
   private async resolveProvinceCodeFromWard(
     wardCode: number,
   ): Promise<number | undefined> {
+    const cached = this.wardAddressCache.get(wardCode);
+    if (cached) {
+      return cached.provinceCode ?? undefined;
+    }
+
     try {
-      const response = await axios.get(
+      const response = await axios.get<WardLookupResponse>(
         `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
         { timeout: 15000 },
       );
-      return response.data?.province_code ?? undefined;
+      return response.data.province_code;
     } catch {
       // If lookup fails, don't block the operation
       return undefined;
     }
+  }
+
+  private normalizeWardName(value: string | undefined): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async resolveWardAddressFromWardCode(
+    wardCode: number,
+  ): Promise<WardAddressInfo | null> {
+    if (this.wardAddressCache.has(wardCode)) {
+      return this.wardAddressCache.get(wardCode) ?? null;
+    }
+
+    try {
+      const response = await axios.get<WardLookupResponse>(
+        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
+        { timeout: 15000 },
+      );
+
+      const data = response.data;
+      const wardName = this.normalizeWardName(data.name);
+      const districtName = this.normalizeWardName(data.district_name);
+      const provinceName = this.normalizeWardName(data.province_name);
+
+      const fullAddressParts = [wardName, districtName, provinceName].filter(
+        (part): part is string => typeof part === 'string',
+      );
+
+      const address: WardAddressInfo = {
+        wardCode,
+        wardName,
+        districtCode:
+          typeof data.district_code === 'number' ? data.district_code : null,
+        districtName,
+        provinceCode:
+          typeof data.province_code === 'number' ? data.province_code : null,
+        provinceName,
+        fullAddress:
+          fullAddressParts.length > 0 ? fullAddressParts.join(', ') : null,
+      };
+
+      this.wardAddressCache.set(wardCode, address);
+      return address;
+    } catch {
+      this.wardAddressCache.set(wardCode, null);
+      return null;
+    }
+  }
+
+  private async enrichApartmentsWithWardAddress<
+    T extends { wardCode?: number | null; provinceCode?: number | null },
+  >(
+    apartments: T[],
+  ): Promise<
+    Array<
+      T & {
+        wardName: string | null;
+        districtCode: number | null;
+        districtName: string | null;
+        provinceName: string | null;
+        fullAddress: string | null;
+      }
+    >
+  > {
+    if (!apartments.length) {
+      return apartments.map((apartment) => ({
+        ...apartment,
+        wardName: null,
+        districtCode: null,
+        districtName: null,
+        provinceName: null,
+        fullAddress: null,
+      }));
+    }
+
+    const uniqueWardCodes = Array.from(
+      new Set(
+        apartments
+          .map((apartment) => apartment.wardCode)
+          .filter((code): code is number => typeof code === 'number'),
+      ),
+    );
+
+    if (uniqueWardCodes.length === 0) {
+      return apartments.map((apartment) => ({
+        ...apartment,
+        wardName: null,
+        districtCode: null,
+        districtName: null,
+        provinceName: null,
+        fullAddress: null,
+      }));
+    }
+
+    const resolvedEntries = await Promise.all(
+      uniqueWardCodes.map(async (wardCode) => {
+        return [
+          wardCode,
+          await this.resolveWardAddressFromWardCode(wardCode),
+        ] as const;
+      }),
+    );
+
+    const wardAddressMap = new Map<
+      number,
+      Awaited<ReturnType<typeof this.resolveWardAddressFromWardCode>>
+    >(resolvedEntries);
+
+    return apartments.map((apartment) => {
+      const wardAddress =
+        typeof apartment.wardCode === 'number'
+          ? wardAddressMap.get(apartment.wardCode)
+          : null;
+
+      return {
+        ...apartment,
+        wardName: wardAddress?.wardName ?? null,
+        districtCode: wardAddress?.districtCode ?? null,
+        districtName: wardAddress?.districtName ?? null,
+        provinceName: wardAddress?.provinceName ?? null,
+        fullAddress: wardAddress?.fullAddress ?? null,
+      };
+    });
   }
 
   /**
@@ -478,7 +630,7 @@ export class ApartmentsService {
 
     const skip = (page - 1) * limit;
 
-    const apartmentSelect: Prisma.ApartmentSelect = {
+    const apartmentSelect = Prisma.validator<Prisma.ApartmentSelect>()({
       id: true,
       buildingName: true,
       apartmentNumber: true,
@@ -509,7 +661,7 @@ export class ApartmentsService {
           },
         },
       },
-    };
+    });
 
     const [apartments, total] = await Promise.all([
       this.prisma.apartment.findMany({
@@ -544,14 +696,16 @@ export class ApartmentsService {
       ]),
     );
 
-    const items = apartments.map((apartment: any) => ({
+    const items = apartments.map((apartment) => ({
       ...apartment,
       amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       rating: ratingMap.get(apartment.id) ?? null,
     }));
 
+    const enrichedItems = await this.enrichApartmentsWithWardAddress(items);
+
     return {
-      items,
+      items: enrichedItems,
       total,
       page,
       limit,
@@ -724,6 +878,10 @@ export class ApartmentsService {
       }
     }
 
+    const [enrichedApartment] = await this.enrichApartmentsWithWardAddress([
+      apartment,
+    ]);
+
     return {
       ...apartment,
       amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
@@ -732,6 +890,11 @@ export class ApartmentsService {
       canRateApartment,
       hasRatedApartment,
       ratingEligibilityReason,
+      wardName: enrichedApartment.wardName,
+      districtCode: enrichedApartment.districtCode,
+      districtName: enrichedApartment.districtName,
+      provinceName: enrichedApartment.provinceName,
+      fullAddress: enrichedApartment.fullAddress,
     };
   }
 
@@ -1420,7 +1583,7 @@ export class ApartmentsService {
       ]),
     );
 
-    return apartments.map((apartment) => {
+    const apartmentWithRating = apartments.map((apartment) => {
       const cooperationContracts = (apartment.cooperationContracts ?? []).map(
         (contract) => {
           const contractToken = contract.contractPdfData
@@ -1454,6 +1617,8 @@ export class ApartmentsService {
         rating: ratingMap.get(apartment.id) ?? null,
       };
     });
+
+    return this.enrichApartmentsWithWardAddress(apartmentWithRating);
   }
 
   /**
