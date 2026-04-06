@@ -74,6 +74,19 @@ describe('ContractsService', () => {
   });
 
   describe('findAll', () => {
+    it('should auto-activate eligible contracts before listing', async () => {
+      const admin = mockAdminJwtPayload();
+      prisma.rentalContract.findMany.mockResolvedValue([] as any);
+
+      const autoActivateSpy = jest
+        .spyOn(service, 'autoActivateContractsWhenDepositPaid')
+        .mockResolvedValue();
+
+      await service.findAll(admin);
+
+      expect(autoActivateSpy).toHaveBeenCalled();
+    });
+
     it('should return all contracts for admin', async () => {
       const admin = mockAdminJwtPayload();
       const contracts = [
@@ -184,6 +197,53 @@ describe('ContractsService', () => {
       await expect(service.findOne('non-existent', admin)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('should auto-activate eligible signed contract when reading detail', async () => {
+      const admin = mockAdminJwtPayload();
+      const baseContract = {
+        ...mockContract({
+          status: ContractStatus.signed,
+          startDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          endDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A-101',
+          wardCode: null,
+          provinceCode: null,
+          buildingName: null,
+          streetAddress: null,
+          numberOfBedrooms: 2,
+          numberOfBathrooms: 1,
+          totalArea: 75,
+          usableArea: 70,
+        },
+        members: [],
+        createdByStaff: null,
+        invoices: [],
+        renewalContracts: [],
+        contractPdfData: null,
+        landlordSignature: null,
+        tenantSignature: null,
+      };
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce(baseContract as any)
+        .mockResolvedValueOnce({
+          ...baseContract,
+          status: ContractStatus.active,
+        } as any);
+      prisma.invoice.findFirst.mockResolvedValue({ paidAt: new Date() } as any);
+
+      const activateSpy = jest
+        .spyOn(service, 'activateWhenDepositPaid')
+        .mockResolvedValue([] as any);
+
+      const result = await service.findOne('contract-123', admin);
+
+      expect(activateSpy).toHaveBeenCalledWith('contract-123');
+      expect(result.status).toBe(ContractStatus.active);
     });
   });
 
@@ -427,6 +487,52 @@ describe('ContractsService', () => {
         data: { status: ContractStatus.expired },
       });
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should upsert userApartment records for active members on activation', async () => {
+      const contract = mockContract({
+        status: ContractStatus.pending,
+        apartmentId: 'apt-123',
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+        members: [
+          {
+            userId: 'user-1',
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
+      } as any);
+      prisma.$transaction.mockResolvedValue([
+        { ...contract, status: ContractStatus.active },
+        {},
+        {},
+      ] as any);
+
+      await service.activate('contract-123');
+
+      expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: 'user-1',
+              apartmentId: 'apt-123',
+              rentalContractId: 'contract-123',
+            },
+          },
+          create: expect.objectContaining({
+            status: 'active',
+            isPrimaryTenant: true,
+          }),
+          update: expect.objectContaining({
+            status: 'active',
+            moveOutDate: null,
+          }),
+        }),
+      );
     });
   });
 
@@ -866,6 +972,112 @@ describe('ContractsService', () => {
         service.activateWhenDepositPaid('contract-123'),
       ).rejects.toThrow(ConflictException);
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should upsert userApartment records when activating after deposit paid', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+        members: [
+          {
+            userId: 'user-2',
+            memberType: 'co_tenant',
+            isPrimaryContact: false,
+          },
+        ],
+      } as any);
+      prisma.invoice.findFirst.mockResolvedValue({ id: 'inv-1' } as any);
+      prisma.$transaction.mockResolvedValue([
+        { ...contract, status: ContractStatus.active },
+        {},
+        {},
+      ] as any);
+
+      await service.activateWhenDepositPaid('contract-123');
+
+      expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: 'user-2',
+              apartmentId: 'apt-123',
+              rentalContractId: 'contract-123',
+            },
+          },
+          create: expect.objectContaining({
+            status: 'active',
+            isPrimaryTenant: false,
+          }),
+          update: expect.objectContaining({
+            status: 'active',
+            moveOutDate: null,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('autoActivateContractsWhenDepositPaid', () => {
+    it('should auto-activate eligible contracts', async () => {
+      prisma.rentalContract.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.rentalContract.findMany.mockResolvedValue([
+        { id: 'contract-1' },
+        { id: 'contract-2' },
+      ] as any);
+
+      const activateSpy = jest
+        .spyOn(service, 'activateWhenDepositPaid')
+        .mockResolvedValue([] as any);
+
+      await service.autoActivateContractsWhenDepositPaid();
+
+      expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: {
+              in: [ContractStatus.pending, ContractStatus.signed],
+            },
+            invoices: {
+              some: {
+                invoiceType: 'contractDeposit',
+                status: 'paid',
+              },
+            },
+          }),
+        }),
+      );
+
+      expect(activateSpy).toHaveBeenCalledTimes(2);
+      expect(activateSpy).toHaveBeenNthCalledWith(1, 'contract-1');
+      expect(activateSpy).toHaveBeenNthCalledWith(2, 'contract-2');
+    });
+
+    it('should continue processing when one activation fails', async () => {
+      prisma.rentalContract.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.rentalContract.findMany.mockResolvedValue([
+        { id: 'contract-1' },
+        { id: 'contract-2' },
+      ] as any);
+
+      const loggerErrorSpy = jest.spyOn((service as any).logger, 'error');
+      const activateSpy = jest
+        .spyOn(service, 'activateWhenDepositPaid')
+        .mockRejectedValueOnce(new Error('activation failed'))
+        .mockResolvedValueOnce([] as any);
+
+      await service.autoActivateContractsWhenDepositPaid();
+
+      expect(activateSpy).toHaveBeenCalledTimes(2);
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('contract-1'),
+        expect.any(String),
+      );
     });
   });
 });

@@ -1,4 +1,5 @@
 import {
+  Allow,
   IsString,
   IsOptional,
   IsEnum,
@@ -6,7 +7,7 @@ import {
   MaxLength,
   IsArray,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { MaintenanceCategory, Urgency } from '@prisma/client';
 
 export class CreateMaintenanceDto {
@@ -42,8 +43,23 @@ export class CreateMaintenanceDto {
   @IsOptional()
   priority?: Urgency;
 
-  @ApiPropertyOptional({ description: 'Image URLs of the issue' })
+  @ApiPropertyOptional({
+    description: 'Stored image URLs of the issue (generated after upload)',
+  })
   @IsArray()
   @IsOptional()
   images?: string[];
+}
+
+export class CreateMaintenanceRequestDto extends OmitType(
+  CreateMaintenanceDto,
+  ['images'] as const,
+) {
+  @ApiPropertyOptional({
+    type: 'array',
+    items: { type: 'string', format: 'binary' },
+    description: 'Issue images (JPEG, PNG, WebP), max 10 files',
+  })
+  @Allow()
+  images?: any[];
 }

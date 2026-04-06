@@ -124,6 +124,59 @@ export class ContractsService {
     );
   }
 
+  private generateSixDigitPassword(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private buildUserApartmentActivationOperations(contract: {
+    id: string;
+    apartmentId: string;
+    startDate: Date;
+    members?: Array<{
+      userId: string;
+      memberType: MemberType;
+      isPrimaryContact: boolean;
+    }>;
+  }): Prisma.PrismaPromise<any>[] {
+    const members = contract.members ?? [];
+
+    if (!members.length) {
+      return [];
+    }
+
+    const apartmentDoorPassword = this.generateSixDigitPassword();
+
+    return members.map((member) =>
+      this.prisma.userApartment.upsert({
+        where: {
+          userId_apartmentId_rentalContractId: {
+            userId: member.userId,
+            apartmentId: contract.apartmentId,
+            rentalContractId: contract.id,
+          },
+        },
+        create: {
+          user: { connect: { id: member.userId } },
+          apartment: { connect: { id: contract.apartmentId } },
+          rentalContract: { connect: { id: contract.id } },
+          moveInDate: contract.startDate,
+          apartmentDoorPassword,
+          isPrimaryTenant:
+            member.memberType === MemberType.primary || member.isPrimaryContact,
+          status: UserApartmentStatus.active,
+        },
+        update: {
+          moveInDate: contract.startDate,
+          moveOutDate: null,
+          apartmentDoorPassword,
+          isPrimaryTenant:
+            member.memberType === MemberType.primary || member.isPrimaryContact,
+          status: UserApartmentStatus.active,
+        },
+      }),
+    );
+  }
+
   private async syncExpiredContractsByDate(): Promise<void> {
     const todayStart = this.getUtcDayStart();
 
@@ -375,6 +428,40 @@ export class ContractsService {
       } catch (error) {
         this.logger.error(
           `Failed to generate monthly rent invoice for contract ${contract.id}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
+  }
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async autoActivateContractsWhenDepositPaid(): Promise<void> {
+    await this.syncExpiredContractsByDate();
+
+    const today = this.getUtcDayStart();
+    const contracts = await this.prisma.rentalContract.findMany({
+      where: {
+        status: { in: [ContractStatus.pending, ContractStatus.signed] },
+        startDate: { lte: today },
+        endDate: { gte: today },
+        invoices: {
+          some: {
+            invoiceType: InvoiceType.contractDeposit,
+            status: InvoiceStatus.paid,
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    for (const contract of contracts) {
+      try {
+        await this.activateWhenDepositPaid(contract.id);
+      } catch (error) {
+        this.logger.error(
+          `Failed to auto-activate contract ${contract.id}`,
           error instanceof Error ? error.stack : undefined,
         );
       }
@@ -736,7 +823,7 @@ export class ContractsService {
    * Admin/Operator see all, Staff see assigned, User see own
    */
   async findAll(currentUser: JwtPayload, status?: ContractStatus) {
-    await this.syncExpiredContractsByDate();
+    await this.autoActivateContractsWhenDepositPaid();
 
     const where: Prisma.RentalContractWhereInput = {
       ...(status && { status }),
@@ -840,66 +927,70 @@ export class ContractsService {
   async findOne(id: string, currentUser: JwtPayload) {
     await this.syncExpiredContractsByDate();
 
-    const contract = await this.prisma.rentalContract.findUnique({
-      where: { id },
-      include: {
-        apartment: {
-          select: {
-            id: true,
-            apartmentNumber: true,
-            wardCode: true,
-            provinceCode: true,
-            buildingName: true,
-            streetAddress: true,
-            numberOfBedrooms: true,
-            numberOfBathrooms: true,
-            totalArea: true,
-            usableArea: true,
+    const findOneArgs = Prisma.validator<Prisma.RentalContractFindUniqueArgs>()(
+      {
+        where: { id },
+        include: {
+          apartment: {
+            select: {
+              id: true,
+              apartmentNumber: true,
+              wardCode: true,
+              provinceCode: true,
+              buildingName: true,
+              streetAddress: true,
+              numberOfBedrooms: true,
+              numberOfBathrooms: true,
+              totalArea: true,
+              usableArea: true,
+            },
           },
-        },
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-                phone: true,
-                identity: {
-                  select: {
-                    nationalId: true,
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                  phone: true,
+                  identity: {
+                    select: {
+                      nationalId: true,
+                    },
                   },
                 },
               },
             },
           },
-        },
-        createdByStaff: {
-          select: {
-            id: true,
-            fullName: true,
+          createdByStaff: {
+            select: {
+              id: true,
+              fullName: true,
+            },
           },
-        },
-        invoices: {
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            invoiceNumber: true,
-            totalAmount: true,
-            status: true,
-            dueDate: true,
+          invoices: {
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              invoiceNumber: true,
+              totalAmount: true,
+              status: true,
+              dueDate: true,
+            },
           },
-        },
-        renewalContracts: {
-          select: {
-            id: true,
+          renewalContracts: {
+            select: {
+              id: true,
+            },
+            take: 1,
+            orderBy: { createdAt: 'desc' },
           },
-          take: 1,
-          orderBy: { createdAt: 'desc' },
         },
       },
-    });
+    );
+
+    let contract = await this.prisma.rentalContract.findUnique(findOneArgs);
 
     if (!contract) {
       throw new NotFoundException('Contract not found');
@@ -915,6 +1006,13 @@ export class ContractsService {
       }
     }
 
+    const todayStart = this.getUtcDayStart();
+    const canAutoActivateOnRead =
+      (contract.status === ContractStatus.pending ||
+        contract.status === ContractStatus.signed) &&
+      contract.startDate <= todayStart &&
+      contract.endDate >= todayStart;
+
     const paidDepositInvoice = await this.prisma.invoice.findFirst({
       where: {
         rentalContractId: id,
@@ -926,6 +1024,22 @@ export class ContractsService {
       },
       orderBy: { paidAt: 'desc' },
     });
+
+    if (canAutoActivateOnRead && paidDepositInvoice) {
+      try {
+        await this.activateWhenDepositPaid(id);
+        const refreshedContract =
+          await this.prisma.rentalContract.findUnique(findOneArgs);
+        if (refreshedContract) {
+          contract = refreshedContract;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Auto-activation on contract read failed for ${id}`,
+          error instanceof Error ? error.message : undefined,
+        );
+      }
+    }
 
     // Convert binary PDF to base64 for JSON response
     const { contractPdfData, landlordSignature, tenantSignature, ...rest } =
@@ -1588,7 +1702,17 @@ export class ContractsService {
 
     const contract = await this.prisma.rentalContract.findUnique({
       where: { id },
-      include: { apartment: true },
+      include: {
+        apartment: true,
+        members: {
+          where: { status: MemberStatus.active },
+          select: {
+            userId: true,
+            memberType: true,
+            isPrimaryContact: true,
+          },
+        },
+      },
     });
 
     if (!contract) {
@@ -1619,6 +1743,13 @@ export class ContractsService {
       throw new ConflictException('Contract already expired');
     }
 
+    const userApartmentOps = this.buildUserApartmentActivationOperations({
+      id: contract.id,
+      apartmentId: contract.apartmentId,
+      startDate: contract.startDate,
+      members: contract.members,
+    });
+
     const result = await this.prisma.$transaction([
       this.prisma.rentalContract.update({
         where: { id },
@@ -1631,6 +1762,7 @@ export class ContractsService {
         where: { id: contract.apartmentId },
         data: { status: ApartmentStatus.occupied },
       }),
+      ...userApartmentOps,
     ]);
 
     const invoiceGenerationDate =
@@ -1793,7 +1925,17 @@ export class ContractsService {
 
     const contract = await this.prisma.rentalContract.findUnique({
       where: { id },
-      include: { apartment: true },
+      include: {
+        apartment: true,
+        members: {
+          where: { status: MemberStatus.active },
+          select: {
+            userId: true,
+            memberType: true,
+            isPrimaryContact: true,
+          },
+        },
+      },
     });
 
     if (!contract) {
@@ -1833,6 +1975,13 @@ export class ContractsService {
       );
     }
 
+    const userApartmentOps = this.buildUserApartmentActivationOperations({
+      id: contract.id,
+      apartmentId: contract.apartmentId,
+      startDate: contract.startDate,
+      members: contract.members,
+    });
+
     const result = await this.prisma.$transaction([
       this.prisma.rentalContract.update({
         where: { id },
@@ -1845,6 +1994,7 @@ export class ContractsService {
         where: { id: contract.apartmentId },
         data: { status: ApartmentStatus.occupied },
       }),
+      ...userApartmentOps,
     ]);
 
     const invoiceGenerationDate =

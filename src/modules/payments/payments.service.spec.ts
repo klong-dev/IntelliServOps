@@ -13,6 +13,7 @@ import {
   InvoiceStatus,
   ContractStatus,
   InvoiceType,
+  UserApartmentStatus,
 } from '@prisma/client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -345,7 +346,7 @@ describe('PaymentsService', () => {
         expect.objectContaining({
           recipientType: 'user',
           recipientId: 'user-123',
-          message: expect.stringMatching(/Mat khau cua nha: \d{6}/),
+          message: expect.stringMatching(/Mật khẩu cửa nhà: \d{6}/),
         }),
       );
     });
@@ -400,7 +401,19 @@ describe('PaymentsService', () => {
         }),
       );
       expect(prisma.apartment.update).not.toHaveBeenCalled();
-      expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
+      expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            status: UserApartmentStatus.inactive,
+            apartmentDoorPassword: null,
+          }),
+          update: expect.objectContaining({
+            status: UserApartmentStatus.inactive,
+            apartmentDoorPassword: null,
+          }),
+        }),
+      );
+      expect(notificationsService.createAndPush).not.toHaveBeenCalled();
     });
   });
 
