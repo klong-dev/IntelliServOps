@@ -4,12 +4,17 @@ import { ApartmentsService } from './apartments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractPdfService } from '../contracts/contract-pdf.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import axios from 'axios';
 import {
   createPrismaMock,
   mockAdminJwtPayload,
   mockUserJwtPayload,
 } from '../../test-utils';
 import { ApartmentStatus, FurnishingStatus } from '@prisma/client';
+
+jest.mock('axios');
+
+const mockedAxios = jest.mocked(axios, true);
 
 describe('ApartmentsService', () => {
   let service: ApartmentsService;
@@ -57,6 +62,16 @@ describe('ApartmentsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        name: 'Phường Bến Nghé',
+        district_code: 760,
+        district_name: 'Quận 1',
+        province_code: 79,
+        province_name: 'Thành phố Hồ Chí Minh',
+      },
+    } as any);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -116,6 +131,60 @@ describe('ApartmentsService', () => {
 
     expect(result.id).toBe('apt-123');
     expect(result.rating).toBe(4.67);
+    expect(result.canRateApartment).toBe(false);
+    expect(result.hasRatedApartment).toBe(false);
+    expect(result.ratingEligibilityReason).toBe('not_authenticated');
+  });
+
+  it('should mark canRateApartment=true for user with active contract and no previous rating', async () => {
+    const user = mockUserJwtPayload();
+
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.2 },
+    } as any);
+    prisma.userContractMember.findFirst.mockResolvedValue({ id: 'm-1' } as any);
+    prisma.apartmentRating.findUnique.mockResolvedValue(null);
+
+    const result = await service.findOne('apt-123', user);
+
+    expect(result.canRateApartment).toBe(true);
+    expect(result.hasRatedApartment).toBe(false);
+    expect(result.ratingEligibilityReason).toBeNull();
+  });
+
+  it('should mark canRateApartment=false when user already rated apartment', async () => {
+    const user = mockUserJwtPayload();
+
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.2 },
+    } as any);
+    prisma.userContractMember.findFirst.mockResolvedValue({ id: 'm-1' } as any);
+    prisma.apartmentRating.findUnique.mockResolvedValue({ id: 'r-1' } as any);
+
+    const result = await service.findOne('apt-123', user);
+
+    expect(result.canRateApartment).toBe(false);
+    expect(result.hasRatedApartment).toBe(true);
+    expect(result.ratingEligibilityReason).toBe('already_rated');
+  });
+
+  it('should mark reason=no_active_contract when user has no active membership', async () => {
+    const user = mockUserJwtPayload();
+
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.2 },
+    } as any);
+    prisma.userContractMember.findFirst.mockResolvedValue(null);
+    prisma.apartmentRating.findUnique.mockResolvedValue(null);
+
+    const result = await service.findOne('apt-123', user);
+
+    expect(result.canRateApartment).toBe(false);
+    expect(result.hasRatedApartment).toBe(false);
+    expect(result.ratingEligibilityReason).toBe('no_active_contract');
   });
 
   it('should throw NotFoundException when apartment detail is missing', async () => {
@@ -212,6 +281,9 @@ describe('ApartmentsService', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as any);
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback(prisma as any),
+    );
 
     const result = await service.update(
       'apt-123',

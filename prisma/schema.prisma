@@ -110,6 +110,11 @@ enum ContractStatus {
   renewed
 }
 
+enum RentalContractCategory {
+  normal
+  renewal
+}
+
 enum PartnerCooperationContractStatus {
   draft
   pending
@@ -510,6 +515,7 @@ model User {
   apartments            Apartment[]
   partnerRequests       PartnerRequest[]
   cooperationContracts  PartnerCooperationContract[] @relation("PartnerCooperationContractByPartner")
+  partnerPayoutTransfers PartnerPayoutTransfer[]     @relation("PartnerPayoutTransferByPartner")
 
   @@index([phone])
   @@index([supabaseId])
@@ -581,6 +587,7 @@ model Staff {
   verifiedReadings           UtilityReading[]           @relation("ReadingVerifiedByStaff")
   pendingGuestRegistrations  PendingGuestRegistration[] @relation("PendingRegistrationByStaff")
   staffNotes                 StaffNote[]
+  confirmedPartnerPayoutTransfers PartnerPayoutTransfer[] @relation("PartnerPayoutTransferConfirmedByStaff")
 
   @@index([role])
   @@index([isActive])
@@ -658,7 +665,7 @@ model Apartment {
   numberOfBedrooms      Int              @default(0)
   numberOfBathrooms     Int              @default(0)
   furnishingStatus      FurnishingStatus @default(unfurnished)
-  amenities             Json?
+  amenities             Json?            // Legacy column, replaced by apartmentAmenities relation
   baseRentPrice         Decimal          @db.Decimal(12, 2)
   depositAmount         Decimal?         @db.Decimal(12, 2)
   status                ApartmentStatus  @default(available)
@@ -685,6 +692,7 @@ model Apartment {
   maintenanceReqs   MaintenanceRequest[]
   tasks             Task[]
   apartmentPolicies ApartmentPolicy[]
+  apartmentAmenities ApartmentAmenity[]
   reservations      Reservation[]
   userApartments    UserApartment[]
   ratings           ApartmentRating[]
@@ -697,6 +705,36 @@ model Apartment {
   @@index([baseRentPrice])
   @@index([numberOfBedrooms])
   @@map("apartments")
+}
+
+model Amenity {
+  id          String            @id @default(uuid())
+  code        String            @unique
+  name        String
+  description String?
+  icon        String?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  apartmentAmenities ApartmentAmenity[]
+
+  @@index([isActive])
+  @@index([name])
+  @@map("amenities")
+}
+
+model ApartmentAmenity {
+  apartmentId String
+  amenityId   String
+  createdAt   DateTime @default(now())
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  amenity   Amenity   @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([apartmentId, amenityId])
+  @@index([amenityId])
+  @@map("apartment_amenities")
 }
 
 model PartnerCooperationContract {
@@ -727,6 +765,49 @@ model PartnerCooperationContract {
   @@index([startDate])
   @@index([endDate])
   @@map("partner_cooperation_contracts")
+}
+
+model PartnerPayoutTransfer {
+  id                          String    @id @default(uuid())
+  partnerId                   String
+  periodMonth                 String
+  periodStart                 DateTime
+  periodEnd                   DateTime
+  totalGrossAmount            Decimal   @db.Decimal(14, 2)
+  totalSystemCommissionAmount Decimal   @db.Decimal(14, 2)
+  totalNetPayoutAmount        Decimal   @db.Decimal(14, 2)
+  transferProofImageUrl       String
+  transferNote                String?
+  confirmedByStaffId          String
+  confirmedAt                 DateTime
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  partner                     User      @relation("PartnerPayoutTransferByPartner", fields: [partnerId], references: [id])
+  confirmedByStaff            Staff     @relation("PartnerPayoutTransferConfirmedByStaff", fields: [confirmedByStaffId], references: [id])
+
+  @@unique([partnerId, periodMonth])
+  @@index([periodMonth])
+  @@index([confirmedByStaffId])
+  @@map("partner_payout_transfers")
+}
+
+model CooperationCommissionPhase {
+  id             String    @id @default(uuid())
+  phaseName      String
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  commissionRate Decimal   @db.Decimal(5, 2)
+  isActive       Boolean   @default(true)
+  createdByAdminId String?
+  updatedByAdminId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([effectiveFrom])
+  @@index([effectiveTo])
+  @@map("cooperation_commission_phases")
 }
 
 model ApartmentRating {
@@ -798,7 +879,15 @@ model RentalContract {
   utilitiesCharges    Json?
   contractTerms       String?
   specialConditions   String?
+  landlordName        String?
+  landlordIdNumber    String?
+  landlordIdIssueDate String?
+  landlordIdIssuePlace String?
+  landlordAddress     String?
+  landlordPhone       String?
   status              ContractStatus @default(draft)
+  category            RentalContractCategory @default(normal)
+  renewedFromContractId String?
   signedDate          DateTime?
   contractDocumentUrl String?
   contractPdfData     Bytes?              // Generated PDF document
@@ -814,6 +903,8 @@ model RentalContract {
   // Relations
   apartment           Apartment            @relation(fields: [apartmentId], references: [id])
   createdByStaff      Staff?               @relation("ContractCreatedByStaff", fields: [createdByStaffId], references: [id])
+  renewedFromContract RentalContract?      @relation("RentalContractRenewals", fields: [renewedFromContractId], references: [id])
+  renewalContracts    RentalContract[]     @relation("RentalContractRenewals")
   reservation         Reservation?
   members             UserContractMember[]
   invoices            Invoice[]
@@ -826,6 +917,8 @@ model RentalContract {
 
   @@index([apartmentId])
   @@index([status])
+  @@index([category])
+  @@index([renewedFromContractId])
   @@index([startDate])
   @@index([endDate])
   @@map("rental_contracts")

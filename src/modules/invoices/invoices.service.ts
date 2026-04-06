@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
 import { InvoiceStatus, InvoiceType, Prisma } from '@prisma/client';
@@ -7,6 +8,11 @@ import type { JwtPayload } from '../auth/auth.service';
 @Injectable()
 export class InvoicesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async autoMarkOverdueInvoices(): Promise<void> {
+    await this.markOverdue();
+  }
 
   private readonly invoiceContractSelect = {
     id: true,
@@ -56,6 +62,8 @@ export class InvoicesService {
   } as const;
 
   async findAll(currentUser: JwtPayload, status?: InvoiceStatus) {
+    await this.markOverdue();
+
     const where: Prisma.InvoiceWhereInput = {};
 
     if (status) {
@@ -95,6 +103,8 @@ export class InvoicesService {
   }
 
   async findOne(id: string, currentUser: JwtPayload) {
+    await this.markOverdue();
+
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
@@ -220,7 +230,12 @@ export class InvoicesService {
     return this.prisma.invoice.updateMany({
       where: {
         status: {
-          in: [InvoiceStatus.draft, InvoiceStatus.issued, InvoiceStatus.sent],
+          in: [
+            InvoiceStatus.draft,
+            InvoiceStatus.issued,
+            InvoiceStatus.sent,
+            InvoiceStatus.partially_paid,
+          ],
         },
         dueDate: { lt: now },
       },

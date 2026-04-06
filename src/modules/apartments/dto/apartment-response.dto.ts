@@ -158,7 +158,21 @@ class ApartmentUserApartmentDto {
   rentalContract: ApartmentUserApartmentContractDto;
 }
 
-class ApartmentCooperationContractDto {
+class ApartmentAmenityDto {
+  @ApiProperty({ example: '11111111-2222-3333-4444-555555555555' })
+  id: string;
+
+  @ApiProperty({ example: 'wifi' })
+  code: string;
+
+  @ApiProperty({ example: 'Wi-Fi' })
+  name: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'wifi-icon' })
+  icon: string | null;
+}
+
+export class ApartmentCooperationContractDto {
   @ApiProperty({ example: '3f5369be-815f-42cb-8a8b-971fbe4a3557' })
   id: string;
 
@@ -215,12 +229,52 @@ export class ApartmentListItemDto {
   wardCode?: number | null;
 
   @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé',
+    nullable: true,
+    description: 'Tên phường/xã (resolve từ wardCode)',
+  })
+  wardName?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 760,
+    nullable: true,
+    description: 'Mã quận/huyện (resolve từ wardCode)',
+  })
+  districtCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Quận 1',
+    nullable: true,
+    description: 'Tên quận/huyện (resolve từ wardCode)',
+  })
+  districtName?: string | null;
+
+  @ApiPropertyOptional({
     type: Number,
     example: 79,
     nullable: true,
     description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
   })
   provinceCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Tên tỉnh/thành (resolve từ wardCode)',
+  })
+  provinceName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé, Quận 1, Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Địa chỉ hành chính đầy đủ (resolve từ wardCode)',
+  })
+  fullAddress?: string | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -269,6 +323,20 @@ export class ApartmentListItemDto {
   videoTourUrl: string | null;
 
   @ApiPropertyOptional({
+    type: [ApartmentAmenityDto],
+    nullable: true,
+    example: [
+      {
+        id: '11111111-2222-3333-4444-555555555555',
+        code: 'wifi',
+        name: 'Wi-Fi',
+        icon: 'wifi-icon',
+      },
+    ],
+  })
+  amenities?: ApartmentAmenityDto[] | null;
+
+  @ApiPropertyOptional({
     type: [ApartmentCooperationContractDto],
     nullable: true,
     description:
@@ -276,7 +344,17 @@ export class ApartmentListItemDto {
     example: [
       {
         id: '3f5369be-815f-42cb-8a8b-971fbe4a3557',
+        contractNumber: 'COOP-2026-00001',
         status: 'pending',
+        startDate: '2026-03-01T00:00:00.000Z',
+        endDate: '2027-03-01T00:00:00.000Z',
+        signedDate: '2026-03-01T10:20:30.000Z',
+        contractDocumentUrl:
+          'https://storage.example.com/cooperation/COOP-2026-00001.pdf',
+        cooperationContractPdfUrl:
+          '/apartments/cooperation-contracts/3f5369be-815f-42cb-8a8b-971fbe4a3557/pdf',
+        cooperationContractPublicPdfUrl:
+          '/apartments/cooperation-contracts/pdf/view?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
       },
     ],
   })
@@ -328,12 +406,52 @@ export class ApartmentDetailDto {
   wardCode?: number | null;
 
   @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé',
+    nullable: true,
+    description: 'Tên phường/xã (resolve từ wardCode)',
+  })
+  wardName?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 760,
+    nullable: true,
+    description: 'Mã quận/huyện (resolve từ wardCode)',
+  })
+  districtCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Quận 1',
+    nullable: true,
+    description: 'Tên quận/huyện (resolve từ wardCode)',
+  })
+  districtName?: string | null;
+
+  @ApiPropertyOptional({
     type: Number,
     example: 79,
     nullable: true,
     description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
   })
   provinceCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Tên tỉnh/thành (resolve từ wardCode)',
+  })
+  provinceName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé, Quận 1, Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Địa chỉ hành chính đầy đủ (resolve từ wardCode)',
+  })
+  fullAddress?: string | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -365,11 +483,24 @@ export class ApartmentDetailDto {
   furnishingStatus: string;
 
   @ApiPropertyOptional({
-    type: [String],
-    example: ['Hồ bơi', 'Gym'],
+    type: [ApartmentAmenityDto],
     nullable: true,
+    example: [
+      {
+        id: '11111111-2222-3333-4444-555555555555',
+        code: 'wifi',
+        name: 'Wi-Fi',
+        icon: 'wifi-icon',
+      },
+      {
+        id: '66666666-7777-8888-9999-000000000000',
+        code: 'parking',
+        name: 'Parking',
+        icon: null,
+      },
+    ],
   })
-  amenities: string[] | null;
+  amenities: ApartmentAmenityDto[] | null;
 
   @ApiProperty({ example: '12000000' })
   baseRentPrice: string;
@@ -399,6 +530,38 @@ export class ApartmentDetailDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true })
   yearBuilt: number | null;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'Cho biet user hien tai co du dieu kien danh gia apartment hay khong',
+  })
+  canRateApartment: boolean;
+
+  @ApiProperty({
+    example: false,
+    description: 'Cho biet user hien tai da danh gia apartment nay chua',
+  })
+  hasRatedApartment: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    enum: [
+      'not_authenticated',
+      'not_user_role',
+      'no_active_contract',
+      'already_rated',
+    ],
+    description: 'Ly do user hien tai khong the danh gia apartment',
+    example: 'no_active_contract',
+  })
+  ratingEligibilityReason:
+    | 'not_authenticated'
+    | 'not_user_role'
+    | 'no_active_contract'
+    | 'already_rated'
+    | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   ownerId: string | null;

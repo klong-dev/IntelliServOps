@@ -57,6 +57,38 @@ export class MaintenanceListItemDto {
   apartment: MaintenanceApartmentDto;
 }
 
+export class MaintenanceHistoryItemDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Broken AC in bedroom' })
+  title: string;
+
+  @ApiProperty({ example: 'hvac' })
+  category: string;
+
+  @ApiProperty({ example: 'high' })
+  urgency: string;
+
+  @ApiProperty({ example: 'completed' })
+  status: string;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  completedAt: Date | null;
+
+  @ApiProperty()
+  updatedAt: Date;
+
+  @ApiProperty({ type: MaintenanceApartmentDto })
+  apartment: MaintenanceApartmentDto;
+
+  @ApiPropertyOptional({ type: MaintenanceRoomDto, nullable: true })
+  room: MaintenanceRoomDto | null;
+}
+
 // ─── Maintenance Detail DTO (findOne) ───────────────────────────────
 
 export class MaintenanceDetailDto {

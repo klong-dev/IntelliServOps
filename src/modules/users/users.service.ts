@@ -21,6 +21,12 @@ import {
   UpdateUserDto,
   SearchUserDto,
   SearchUserByNationalIdDto,
+  SearchStaffDto,
+  SearchOperatorDto,
+  CreateStaffDto,
+  UpdateStaffDto,
+  CreateOperatorDto,
+  UpdateOperatorDto,
   CreatePartnerRequestDto,
   UpdatePartnerRequestDto,
   ReviewPartnerRequestDto,
@@ -397,6 +403,366 @@ export class UsersService {
       createdAt: admin.createdAt,
       updatedAt: admin.updatedAt,
     };
+  }
+
+  async findAllStaff(query: SearchStaffDto) {
+    const { search, page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.StaffWhereInput = search
+      ? {
+          OR: [
+            { email: { contains: search, mode: 'insensitive' } },
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search } },
+            { employeeCode: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+      : {};
+
+    const [items, total] = await Promise.all([
+      this.prisma.staff.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.staff.count({ where }),
+    ]);
+
+    return {
+      items: items.map((item) => this.toUnifiedStaffDetail(item)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async findOneStaff(id: string) {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id },
+    });
+
+    if (!staff) {
+      throw new NotFoundException('Staff not found');
+    }
+
+    return this.toUnifiedStaffDetail(staff);
+  }
+
+  async createStaff(createStaffDto: CreateStaffDto) {
+    const existingEmail = await this.prisma.staff.findUnique({
+      where: { email: createStaffDto.email },
+      select: { id: true },
+    });
+
+    if (existingEmail) {
+      throw new ConflictException('Staff email already exists');
+    }
+
+    const existingEmployeeCode = await this.prisma.staff.findUnique({
+      where: { employeeCode: createStaffDto.employeeCode },
+      select: { id: true },
+    });
+
+    if (existingEmployeeCode) {
+      throw new ConflictException('Staff employeeCode already exists');
+    }
+
+    const passwordHash = await this.authService.hashPassword(
+      createStaffDto.password,
+    );
+
+    const created = await this.prisma.staff.create({
+      data: {
+        email: createStaffDto.email,
+        phone: createStaffDto.phone,
+        fullName: createStaffDto.fullName,
+        employeeCode: createStaffDto.employeeCode,
+        role: createStaffDto.role,
+        department: createStaffDto.department,
+        workingCity: createStaffDto.workingCity,
+        workingDistrict: createStaffDto.workingDistrict,
+        latitude: createStaffDto.latitude,
+        longitude: createStaffDto.longitude,
+        hireDate: new Date(createStaffDto.hireDate),
+        passwordHash,
+        isActive: createStaffDto.isActive ?? true,
+      },
+    });
+
+    return this.toUnifiedStaffDetail(created);
+  }
+
+  async updateStaff(id: string, updateStaffDto: UpdateStaffDto) {
+    const existing = await this.prisma.staff.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Staff not found');
+    }
+
+    if (updateStaffDto.email && updateStaffDto.email !== existing.email) {
+      const emailExists = await this.prisma.staff.findUnique({
+        where: { email: updateStaffDto.email },
+        select: { id: true },
+      });
+      if (emailExists) {
+        throw new ConflictException('Staff email already exists');
+      }
+    }
+
+    if (
+      updateStaffDto.employeeCode &&
+      updateStaffDto.employeeCode !== existing.employeeCode
+    ) {
+      const employeeCodeExists = await this.prisma.staff.findUnique({
+        where: { employeeCode: updateStaffDto.employeeCode },
+        select: { id: true },
+      });
+      if (employeeCodeExists) {
+        throw new ConflictException('Staff employeeCode already exists');
+      }
+    }
+
+    const updateData: Prisma.StaffUpdateInput = {
+      ...(updateStaffDto.email !== undefined && {
+        email: updateStaffDto.email,
+      }),
+      ...(updateStaffDto.phone !== undefined && {
+        phone: updateStaffDto.phone,
+      }),
+      ...(updateStaffDto.fullName !== undefined && {
+        fullName: updateStaffDto.fullName,
+      }),
+      ...(updateStaffDto.employeeCode !== undefined && {
+        employeeCode: updateStaffDto.employeeCode,
+      }),
+      ...(updateStaffDto.role !== undefined && { role: updateStaffDto.role }),
+      ...(updateStaffDto.department !== undefined && {
+        department: updateStaffDto.department,
+      }),
+      ...(updateStaffDto.workingCity !== undefined && {
+        workingCity: updateStaffDto.workingCity,
+      }),
+      ...(updateStaffDto.workingDistrict !== undefined && {
+        workingDistrict: updateStaffDto.workingDistrict,
+      }),
+      ...(updateStaffDto.latitude !== undefined && {
+        latitude: updateStaffDto.latitude,
+      }),
+      ...(updateStaffDto.longitude !== undefined && {
+        longitude: updateStaffDto.longitude,
+      }),
+      ...(updateStaffDto.hireDate !== undefined && {
+        hireDate: new Date(updateStaffDto.hireDate),
+      }),
+      ...(updateStaffDto.isActive !== undefined && {
+        isActive: updateStaffDto.isActive,
+      }),
+    };
+
+    if (updateStaffDto.password) {
+      updateData.passwordHash = await this.authService.hashPassword(
+        updateStaffDto.password,
+      );
+    }
+
+    const updated = await this.prisma.staff.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return this.toUnifiedStaffDetail(updated);
+  }
+
+  async removeStaff(id: string) {
+    const existing = await this.prisma.staff.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Staff not found');
+    }
+
+    const updated = await this.prisma.staff.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    return this.toUnifiedStaffDetail(updated);
+  }
+
+  async findAllOperators(query: SearchOperatorDto) {
+    const { search, page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.OperatorWhereInput = search
+      ? {
+          OR: [
+            { email: { contains: search, mode: 'insensitive' } },
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search } },
+            { employeeCode: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+      : {};
+
+    const [items, total] = await Promise.all([
+      this.prisma.operator.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.operator.count({ where }),
+    ]);
+
+    return {
+      items: items.map((item) => this.toUnifiedOperatorDetail(item)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async findOneOperator(id: string) {
+    const operator = await this.prisma.operator.findUnique({
+      where: { id },
+    });
+
+    if (!operator) {
+      throw new NotFoundException('Operator not found');
+    }
+
+    return this.toUnifiedOperatorDetail(operator);
+  }
+
+  async createOperator(createOperatorDto: CreateOperatorDto) {
+    const existingEmail = await this.prisma.operator.findUnique({
+      where: { email: createOperatorDto.email },
+      select: { id: true },
+    });
+
+    if (existingEmail) {
+      throw new ConflictException('Operator email already exists');
+    }
+
+    const existingEmployeeCode = await this.prisma.operator.findUnique({
+      where: { employeeCode: createOperatorDto.employeeCode },
+      select: { id: true },
+    });
+
+    if (existingEmployeeCode) {
+      throw new ConflictException('Operator employeeCode already exists');
+    }
+
+    const passwordHash = await this.authService.hashPassword(
+      createOperatorDto.password,
+    );
+
+    const created = await this.prisma.operator.create({
+      data: {
+        email: createOperatorDto.email,
+        phone: createOperatorDto.phone,
+        fullName: createOperatorDto.fullName,
+        employeeCode: createOperatorDto.employeeCode,
+        shift: createOperatorDto.shift,
+        passwordHash,
+        isActive: createOperatorDto.isActive ?? true,
+      },
+    });
+
+    return this.toUnifiedOperatorDetail(created);
+  }
+
+  async updateOperator(id: string, updateOperatorDto: UpdateOperatorDto) {
+    const existing = await this.prisma.operator.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Operator not found');
+    }
+
+    if (updateOperatorDto.email && updateOperatorDto.email !== existing.email) {
+      const emailExists = await this.prisma.operator.findUnique({
+        where: { email: updateOperatorDto.email },
+        select: { id: true },
+      });
+      if (emailExists) {
+        throw new ConflictException('Operator email already exists');
+      }
+    }
+
+    if (
+      updateOperatorDto.employeeCode &&
+      updateOperatorDto.employeeCode !== existing.employeeCode
+    ) {
+      const employeeCodeExists = await this.prisma.operator.findUnique({
+        where: { employeeCode: updateOperatorDto.employeeCode },
+        select: { id: true },
+      });
+      if (employeeCodeExists) {
+        throw new ConflictException('Operator employeeCode already exists');
+      }
+    }
+
+    const updateData: Prisma.OperatorUpdateInput = {
+      ...(updateOperatorDto.email !== undefined && {
+        email: updateOperatorDto.email,
+      }),
+      ...(updateOperatorDto.phone !== undefined && {
+        phone: updateOperatorDto.phone,
+      }),
+      ...(updateOperatorDto.fullName !== undefined && {
+        fullName: updateOperatorDto.fullName,
+      }),
+      ...(updateOperatorDto.employeeCode !== undefined && {
+        employeeCode: updateOperatorDto.employeeCode,
+      }),
+      ...(updateOperatorDto.shift !== undefined && {
+        shift: updateOperatorDto.shift,
+      }),
+      ...(updateOperatorDto.isActive !== undefined && {
+        isActive: updateOperatorDto.isActive,
+      }),
+    };
+
+    if (updateOperatorDto.password) {
+      updateData.passwordHash = await this.authService.hashPassword(
+        updateOperatorDto.password,
+      );
+    }
+
+    const updated = await this.prisma.operator.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return this.toUnifiedOperatorDetail(updated);
+  }
+
+  async removeOperator(id: string) {
+    const existing = await this.prisma.operator.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Operator not found');
+    }
+
+    const updated = await this.prisma.operator.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    return this.toUnifiedOperatorDetail(updated);
   }
 
   /**

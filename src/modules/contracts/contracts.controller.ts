@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Patch,
   Param,
@@ -37,10 +38,14 @@ import {
   AddContractMemberDto,
   RenewContractDto,
   RenewContractResponseDto,
+  RenewalOption,
+  UpdateContractPdfContentDto,
   SignCooperationContractDto,
   SignCooperationContractResultDto,
   CancelCooperationContractDto,
   CancelCooperationContractResultDto,
+  SetGlobalCooperationCommissionPhasesDto,
+  SetGlobalCooperationCommissionPhasesResultDto,
 } from './dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
@@ -226,6 +231,31 @@ export class ContractsController {
     );
   }
 
+  @Put('cooperation/commission-phases')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Admin setup global cooperation commission phases',
+    description:
+      'Replace all active global commission phases for partner cooperation contracts. New cooperation contracts use phase matched by contract start date.',
+  })
+  @ApiBody({ type: SetGlobalCooperationCommissionPhasesDto })
+  @ApiJsonResponse(SetGlobalCooperationCommissionPhasesResultDto, {
+    description: 'Global cooperation commission phases updated',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid phase dates or overlapping phase ranges',
+  })
+  async setGlobalCooperationCommissionPhases(
+    @Body() body: SetGlobalCooperationCommissionPhasesDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.setGlobalCooperationCommissionPhases(
+      body,
+      currentUser.sub,
+    );
+  }
+
   @Patch('cooperation/:id/cancel')
   @Roles(Role.USER)
   @ApiOperation({
@@ -310,34 +340,23 @@ export class ContractsController {
   @ApiOperation({
     summary: 'Renew rental contract',
     description:
-      'Create a new draft (unsigned) renewal contract from an existing contract. Request may update important fields, append new members by CCCD, or only provide extensionMonths for automatic new date calculation.',
+      'Create a new draft (unsigned) renewal contract from an existing contract with 2 options: keep_current (keep old duration and members) or customize (provide extensionMonths and new members by CCCD).',
   })
   @ApiBody({
     type: RenewContractDto,
     examples: {
-      renewByMonthsOnly: {
-        summary: 'Renew by months only',
+      keepEverythingAsOldContract: {
+        summary: 'Keep current months and members',
         value: {
-          extensionMonths: 12,
+          renewalOption: RenewalOption.KEEP_CURRENT,
         },
       },
-      renewWithUpdatedTermsAndMembers: {
-        summary: 'Renew with updated terms and extra member',
+      customizeMonthsAndMembers: {
+        summary: 'Customize months and replace members by CCCD',
         value: {
-          extensionMonths: 18,
-          monthlyRent: 17000000,
-          depositAmount: 34000000,
-          paymentDueDay: 7,
-          paymentMethod: 'bank_transfer',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          additionalMembers: [
-            {
-              nationalId: '079203009999',
-              memberType: 'co_tenant',
-              isPrimaryContact: false,
-              sharePercentage: 25,
-            },
-          ],
+          renewalOption: RenewalOption.CUSTOMIZE,
+          extensionMonths: 12,
+          memberNationalIds: ['079203009999', '079203008888'],
         },
       },
     },
@@ -360,6 +379,58 @@ export class ContractsController {
     return this.contractsService.renewContract(id, renewDto, currentUser);
   }
 
+  @Patch(':id/pdf-content')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Update editable PDF content of contract',
+    description:
+      'Update fields that are rendered in contract PDF and regenerate PDF immediately.',
+  })
+  @ApiBody({
+    type: UpdateContractPdfContentDto,
+    examples: {
+      updateRentAndDates: {
+        summary: 'Update rental terms and regenerate PDF',
+        value: {
+          landlordName: 'Cong ty TNHH IntelliServOps',
+          landlordIdNumber: '0312345678',
+          landlordIdIssueDate: '01/01/2020',
+          landlordIdIssuePlace: 'So KH&DT TP. Ho Chi Minh',
+          landlordAddress: 'TP. Ho Chi Minh, Viet Nam',
+          landlordPhone: '1900 0000',
+          startDate: '2026-04-01',
+          endDate: '2027-03-31',
+          monthlyRent: 16500000,
+          depositAmount: 33000000,
+          paymentDueDay: 7,
+          paymentMethod: 'bank_transfer',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        },
+      },
+    },
+  })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Contract PDF content updated and PDF regenerated',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid update data' })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Contract does not allow PDF content editing',
+  })
+  async updatePdfContent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateContractPdfContentDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.updateContractPdfContent(
+      id,
+      body,
+      currentUser,
+    );
+  }
+
   @Patch(':id')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update contract' })
@@ -379,6 +450,26 @@ export class ContractsController {
   @ApiResponse({ status: 404, description: 'Contract not found' })
   async activate(@Param('id', ParseUUIDPipe) id: string) {
     return this.contractsService.activate(id);
+  }
+
+  @Patch(':id/activate-paid')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({
+    summary: 'Activate contract after deposit paid',
+    description:
+      'Activate pending/signed contract when deposit invoice is paid and contract is not expired.',
+  })
+  @ApiJsonResponse(ContractDetailDto, {
+    description: 'Contract activated after deposit payment validation',
+  })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Contract cannot be activated because it is expired, invalid status, or deposit not paid',
+  })
+  async activatePaid(@Param('id', ParseUUIDPipe) id: string) {
+    return this.contractsService.activateWhenDepositPaid(id);
   }
 
   @Patch(':id/terminate')

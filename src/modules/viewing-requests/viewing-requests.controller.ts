@@ -164,9 +164,9 @@ export class ViewingRequestsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.STAFF)
   @ApiOperation({
-    summary: 'Assigned staff accepts viewing request',
+    summary: 'Nhân viên được phân công chấp nhận yêu cầu xem nhà',
     description:
-      'Assigned staff accepts a viewing request by appointmentId. System sets status to confirmed and notifies user.',
+      'Nhân viên được phân công chấp nhận yêu cầu xem nhà theo appointmentId. Hệ thống chuyển trạng thái sang confirmed và gửi thông báo cho người dùng.',
   })
   @ApiBody({ type: StaffAcceptViewingRequestDto })
   @ApiJsonResponse(AppointmentResponseDto, {
@@ -189,9 +189,9 @@ export class ViewingRequestsController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.STAFF)
   @ApiOperation({
-    summary: 'Assigned staff denies viewing request',
+    summary: 'Nhân viên được phân công từ chối yêu cầu xem nhà',
     description:
-      'Assigned staff denies a viewing request by appointmentId. System sets status to cancelled and notifies user.',
+      'Nhân viên được phân công từ chối yêu cầu xem nhà theo appointmentId. Hệ thống chuyển trạng thái sang cancelled và gửi thông báo cho người dùng.',
   })
   @ApiBody({ type: StaffDenyViewingRequestDto })
   @ApiJsonResponse(AppointmentResponseDto, {

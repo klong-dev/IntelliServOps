@@ -295,6 +295,7 @@ export class PaymentsService {
                 status: true,
                 apartmentId: true,
                 startDate: true,
+                endDate: true,
                 members: {
                   select: {
                     userId: true,
@@ -370,6 +371,7 @@ export class PaymentsService {
             status: true,
             apartmentId: true,
             startDate: true,
+            endDate: true,
             members: {
               select: {
                 userId: true,
@@ -660,6 +662,7 @@ export class PaymentsService {
                 status: true,
                 apartmentId: true,
                 startDate: true,
+                endDate: true,
                 members: {
                   select: {
                     userId: true,
@@ -801,6 +804,12 @@ export class PaymentsService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
+  private getUtcDayStart(date = new Date()): Date {
+    return new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+  }
+
   private appendContractActivationOperations(
     txOperations: Prisma.PrismaPromise<any>[],
     invoiceType: InvoiceType,
@@ -810,6 +819,7 @@ export class PaymentsService {
       status: ContractStatus;
       apartmentId: string;
       startDate: Date;
+      endDate: Date;
       members: Array<{
         userId: string;
         memberType: string;
@@ -825,6 +835,75 @@ export class PaymentsService {
       rentalContract.status !== ContractStatus.signed ||
       !this.isDepositInvoiceType(invoiceType)
     ) {
+      return {
+        activated: false,
+        apartmentDoorPassword: null,
+        memberUserIds: [],
+      };
+    }
+
+    const members = rentalContract.members ?? [];
+
+    const buildUserApartmentUpserts = (
+      status: UserApartmentStatus,
+      apartmentDoorPassword: string | null,
+    ): Prisma.PrismaPromise<any>[] =>
+      members.map((member) =>
+        this.prisma.userApartment.upsert({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: member.userId,
+              apartmentId: rentalContract.apartmentId,
+              rentalContractId: rentalContract.id,
+            },
+          },
+          create: {
+            user: { connect: { id: member.userId } },
+            apartment: {
+              connect: { id: rentalContract.apartmentId },
+            },
+            rentalContract: {
+              connect: { id: rentalContract.id },
+            },
+            moveInDate: rentalContract.startDate,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status,
+          },
+          update: {
+            moveInDate: rentalContract.startDate,
+            moveOutDate: null,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status,
+          },
+        }),
+      );
+
+    const todayStart = this.getUtcDayStart();
+
+    if (rentalContract.startDate > todayStart) {
+      txOperations.push(
+        ...buildUserApartmentUpserts(UserApartmentStatus.inactive, null),
+      );
+
+      return {
+        activated: false,
+        apartmentDoorPassword: null,
+        memberUserIds: members.map((member) => member.userId),
+      };
+    }
+
+    if (rentalContract.endDate < todayStart) {
+      txOperations.push(
+        this.prisma.rentalContract.update({
+          where: { id: rentalContract.id },
+          data: { status: ContractStatus.expired },
+        }),
+      );
+
       return {
         activated: false,
         apartmentDoorPassword: null,
@@ -848,40 +927,10 @@ export class PaymentsService {
       }),
     );
 
-    const members = rentalContract.members ?? [];
     txOperations.push(
-      ...members.map((member) =>
-        this.prisma.userApartment.upsert({
-          where: {
-            userId_apartmentId_rentalContractId: {
-              userId: member.userId,
-              apartmentId: rentalContract.apartmentId,
-              rentalContractId: rentalContract.id,
-            },
-          },
-          create: {
-            user: { connect: { id: member.userId } },
-            apartment: {
-              connect: { id: rentalContract.apartmentId },
-            },
-            rentalContract: {
-              connect: { id: rentalContract.id },
-            },
-            moveInDate: rentalContract.startDate,
-            apartmentDoorPassword,
-            isPrimaryTenant:
-              member.memberType === 'primary' || member.isPrimaryContact,
-            status: UserApartmentStatus.active,
-          },
-          update: {
-            moveInDate: rentalContract.startDate,
-            moveOutDate: null,
-            apartmentDoorPassword,
-            isPrimaryTenant:
-              member.memberType === 'primary' || member.isPrimaryContact,
-            status: UserApartmentStatus.active,
-          },
-        }),
+      ...buildUserApartmentUpserts(
+        UserApartmentStatus.active,
+        apartmentDoorPassword,
       ),
     );
 
@@ -905,10 +954,10 @@ export class PaymentsService {
           recipientId: memberUserId,
           notificationType: 'info',
           channel: 'in_app',
-          title: 'Kich hoat hop dong thanh cong',
-          message: `Hoa don dat coc ${invoiceNumber} da thanh toan thanh cong. Mat khau cua nha: ${apartmentDoorPassword}`,
+          title: 'Kích hoạt hợp đồng thành công',
+          message: `Hóa đơn đặt cọc ${invoiceNumber} đã thanh toán thành công. Mật khẩu cửa nhà: ${apartmentDoorPassword}`,
           actionUrl: `/contracts/${rentalContractId}`,
-          actionLabel: 'Xem hop dong',
+          actionLabel: 'Xem hợp đồng',
           priority: 'high',
           relatedEntityType: 'RentalContract',
           relatedEntityId: rentalContractId,

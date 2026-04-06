@@ -39,6 +39,12 @@ import {
   UserDeletedDto,
   UserIdentityDetailDto,
   UserIdentityCardDto,
+  CreateStaffDto,
+  UpdateStaffDto,
+  SearchStaffDto,
+  CreateOperatorDto,
+  UpdateOperatorDto,
+  SearchOperatorDto,
   CreatePartnerRequestDto,
   UpdatePartnerRequestDto,
   ReviewPartnerRequestDto,
@@ -97,7 +103,7 @@ export class UsersController {
   }
 
   @Get('search/by-national-id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary: 'Search user by national ID',
     description: 'Search one user by CCCD/CMND number from identity data.',
@@ -191,6 +197,82 @@ export class UsersController {
       files.identityCardFront[0],
       files.identityCardBack[0],
     );
+  }
+
+  @Get('staff')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'List staff accounts' })
+  findAllStaff(@Query() query: SearchStaffDto) {
+    return this.usersService.findAllStaff(query);
+  }
+
+  @Get('staff/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'Get staff account by ID' })
+  findOneStaff(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.findOneStaff(id);
+  }
+
+  @Post('staff')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'Create staff account' })
+  createStaff(@Body() createStaffDto: CreateStaffDto) {
+    return this.usersService.createStaff(createStaffDto);
+  }
+
+  @Patch('staff/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'Update staff account' })
+  updateStaff(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateStaffDto: UpdateStaffDto,
+  ) {
+    return this.usersService.updateStaff(id, updateStaffDto);
+  }
+
+  @Delete('staff/:id')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: 'Deactivate staff account' })
+  removeStaff(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.removeStaff(id);
+  }
+
+  @Get('operators')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'List operator accounts' })
+  findAllOperators(@Query() query: SearchOperatorDto) {
+    return this.usersService.findAllOperators(query);
+  }
+
+  @Get('operators/:id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Get operator account by ID' })
+  findOneOperator(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.findOneOperator(id);
+  }
+
+  @Post('operators')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Create operator account' })
+  createOperator(@Body() createOperatorDto: CreateOperatorDto) {
+    return this.usersService.createOperator(createOperatorDto);
+  }
+
+  @Patch('operators/:id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Update operator account' })
+  updateOperator(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateOperatorDto: UpdateOperatorDto,
+  ) {
+    return this.usersService.updateOperator(id, updateOperatorDto);
+  }
+
+  @Delete('operators/:id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Deactivate operator account' })
+  removeOperator(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.removeOperator(id);
   }
 
   @Get(':id')

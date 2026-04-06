@@ -9,6 +9,13 @@ class ContractApartmentDto {
   @ApiProperty({ example: 'A101' })
   apartmentNumber: string;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Toa nha IntelliServOps Tower',
+  })
+  buildingName?: string | null;
+
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
   wardCode: number | null;
 
@@ -21,41 +28,18 @@ class ContractApartmentDto {
     example: '12 Nguyễn Huệ, Phường Bến Nghé',
   })
   streetAddress: string | null;
-}
 
-class WardAddressDto {
-  @ApiProperty({ example: 26728 })
-  wardCode: number;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 2 })
+  numberOfBedrooms?: number | null;
 
-  @ApiPropertyOptional({ type: String, example: 'Xa Chau Pha', nullable: true })
-  wardName: string | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  numberOfBathrooms?: number | null;
 
-  @ApiPropertyOptional({ type: Number, example: 754, nullable: true })
-  districtCode: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 55.5 })
+  totalArea?: number | null;
 
-  @ApiPropertyOptional({
-    type: String,
-    example: 'Thi xa Phu My',
-    nullable: true,
-  })
-  districtName: string | null;
-
-  @ApiPropertyOptional({ type: Number, example: 79, nullable: true })
-  provinceCode: number | null;
-
-  @ApiPropertyOptional({
-    type: String,
-    example: 'Thanh pho Ho Chi Minh',
-    nullable: true,
-  })
-  provinceName: string | null;
-
-  @ApiPropertyOptional({
-    type: String,
-    example: 'Xa Chau Pha, Thanh pho Ho Chi Minh',
-    nullable: true,
-  })
-  fullAddress: string | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 50.2 })
+  usableArea?: number | null;
 }
 
 class ContractMemberUserDto {
@@ -83,6 +67,12 @@ class ContractMemberDto {
   @ApiProperty()
   id: string;
 
+  @ApiProperty()
+  userId: string;
+
+  @ApiProperty()
+  rentalContractId: string;
+
   @ApiProperty({ example: 'primary' })
   memberType: string;
 
@@ -97,6 +87,25 @@ class ContractMemberDto {
 
   @ApiProperty({ example: 'active' })
   status: string;
+
+  @ApiProperty({ example: true })
+  notificationEnabled: boolean;
+
+  @ApiProperty({ example: 'full' })
+  accessLevel: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '50.00',
+  })
+  sharePercentage: string | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
 
   @ApiProperty({ type: ContractMemberUserDto })
   user: ContractMemberUserDto;
@@ -124,6 +133,31 @@ class ContractListMemberDto {
   isPrimaryContact: boolean;
 }
 
+class ContractCreatorDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'Le Van B' })
+  fullName: string;
+}
+
+class ContractInvoiceDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'INV-202604-00001' })
+  invoiceNumber: string;
+
+  @ApiProperty({ example: '35000000.00' })
+  totalAmount: string;
+
+  @ApiProperty({ example: 'pending' })
+  status: string;
+
+  @ApiProperty()
+  dueDate: Date;
+}
+
 // ─── Contract List Item DTO (findAll) ───────────────────────────────
 
 export class ContractListItemDto {
@@ -136,6 +170,9 @@ export class ContractListItemDto {
   @ApiProperty({ example: 'active' })
   status: string;
 
+  @ApiProperty({ example: 'renewal' })
+  category: string;
+
   @ApiProperty()
   startDate: Date;
 
@@ -145,11 +182,29 @@ export class ContractListItemDto {
   @ApiProperty({ example: '15000000.00' })
   monthlyRent: string;
 
+  @ApiProperty({ example: '30000000.00' })
+  depositAmount: string;
+
   @ApiProperty()
   createdAt: Date;
 
   @ApiProperty({ example: true })
   hasPdf: boolean;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  terminationReason: string | null;
+
+  @ApiProperty({ example: false })
+  isDepositPaid: boolean;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  depositPaidAt: Date | null;
+
+  @ApiProperty({ example: false })
+  isRenewed: boolean;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  latestRenewalContractId: string | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -170,6 +225,9 @@ export class ContractListItemDto {
 export class ContractDetailDto {
   @ApiProperty()
   id: string;
+
+  @ApiProperty()
+  apartmentId: string;
 
   @ApiProperty({ example: 'CTR-202601-00001' })
   contractNumber: string;
@@ -204,8 +262,56 @@ export class ContractDetailDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   specialConditions: string | null;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Cong ty TNHH IntelliServOps',
+  })
+  landlordName: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '0312345678',
+  })
+  landlordIdNumber: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '01/01/2020',
+  })
+  landlordIdIssueDate: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'So KH&DT TP. Ho Chi Minh',
+  })
+  landlordIdIssuePlace: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'TP. Ho Chi Minh, Viet Nam',
+  })
+  landlordAddress: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '1900 0000',
+  })
+  landlordPhone: string | null;
+
   @ApiProperty({ example: 'active' })
   status: string;
+
+  @ApiProperty({ example: 'normal' })
+  category: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  renewedFromContractId: string | null;
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   signedDate: Date | null;
@@ -234,6 +340,38 @@ export class ContractDetailDto {
   @ApiProperty({ example: false })
   hasTenantSignature: boolean;
 
+  @ApiProperty({ example: false })
+  isDepositPaid: boolean;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  depositPaidAt: Date | null;
+
+  @ApiProperty({ example: false })
+  isRenewed: boolean;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  latestRenewalContractId: string | null;
+
+  @ApiProperty({
+    example: 1,
+    description:
+      'Maximum number of additional members that can still be added to this contract based on apartment bedrooms',
+  })
+  maxAddableMembers: number;
+
+  @ApiProperty({
+    example: 2,
+    description:
+      'Maximum occupants allowed for this contract (from apartment bedrooms)',
+  })
+  maxOccupants: number;
+
+  @ApiProperty({
+    example: 1,
+    description: 'Current active occupants in this contract',
+  })
+  currentOccupants: number;
+
   @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;
 
@@ -243,6 +381,9 @@ export class ContractDetailDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   earlyTerminationFee: string | null;
 
+  @ApiPropertyOptional({ type: String, nullable: true })
+  createdByStaffId: string | null;
+
   @ApiProperty()
   createdAt: Date;
 
@@ -251,6 +392,12 @@ export class ContractDetailDto {
 
   @ApiProperty({ type: ContractApartmentDto })
   apartment: ContractApartmentDto;
+
+  @ApiPropertyOptional({ type: ContractCreatorDto, nullable: true })
+  createdByStaff?: ContractCreatorDto | null;
+
+  @ApiProperty({ type: [ContractInvoiceDto] })
+  invoices: ContractInvoiceDto[];
 
   @ApiProperty({ type: [ContractMemberDto] })
   members: ContractMemberDto[];
