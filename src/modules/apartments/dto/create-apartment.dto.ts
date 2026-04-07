@@ -112,6 +112,15 @@ export class CreateApartmentDto {
   @IsOptional()
   usableArea?: number;
 
+  @ApiProperty({
+    example: 4,
+    description: 'Maximum number of occupants allowed in this apartment',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  maxOccupants: number;
+
   @ApiProperty({ example: 2 })
   @IsInt()
   @Min(0)

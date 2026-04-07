@@ -964,6 +964,7 @@ export class ContractsService {
             provinceCode: true,
             buildingName: true,
             streetAddress: true,
+            maxOccupants: true,
             numberOfBedrooms: true,
           },
         },
@@ -1059,6 +1060,7 @@ export class ContractsService {
               provinceCode: true,
               buildingName: true,
               streetAddress: true,
+              maxOccupants: true,
               numberOfBedrooms: true,
               numberOfBathrooms: true,
               totalArea: true,
@@ -1176,12 +1178,12 @@ export class ContractsService {
         nationalId: member.user.identity?.nationalId ?? null,
       },
     }));
-    const bedroomLimit = rest.apartment?.numberOfBedrooms ?? 0;
-    const maxOccupants = bedroomLimit > 0 ? bedroomLimit : 0;
+    const occupancyLimit = rest.apartment?.maxOccupants ?? 0;
+    const maxOccupants = occupancyLimit > 0 ? occupancyLimit : 0;
     const currentOccupants = membersWithNationalId.length;
     const maxAddableMembers = Math.max(
       0,
-      bedroomLimit > 0 ? bedroomLimit - membersWithNationalId.length : 0,
+      occupancyLimit > 0 ? occupancyLimit - membersWithNationalId.length : 0,
     );
 
     const wardAddress =
@@ -2152,7 +2154,7 @@ export class ContractsService {
         status: true,
         apartment: {
           select: {
-            numberOfBedrooms: true,
+            maxOccupants: true,
           },
         },
         members: {
@@ -2190,14 +2192,14 @@ export class ContractsService {
       }
     }
 
-    const bedroomLimit = contract.apartment?.numberOfBedrooms;
+    const occupancyLimit = contract.apartment?.maxOccupants;
     if (
-      typeof bedroomLimit === 'number' &&
-      bedroomLimit > 0 &&
-      contract.members.length >= bedroomLimit
+      typeof occupancyLimit === 'number' &&
+      occupancyLimit > 0 &&
+      contract.members.length >= occupancyLimit
     ) {
       throw new BadRequestException(
-        `Contract can have at most ${bedroomLimit} members based on apartment bedrooms`,
+        `Contract can have at most ${occupancyLimit} members based on apartment max occupants`,
       );
     }
 
@@ -2299,7 +2301,7 @@ export class ContractsService {
         apartment: {
           select: {
             id: true,
-            numberOfBedrooms: true,
+            maxOccupants: true,
           },
         },
         members: {
@@ -2347,10 +2349,13 @@ export class ContractsService {
       throw new NotFoundException('Apartment not found for source contract');
     }
 
-    const bedroomLimit = sourceContract.apartment.numberOfBedrooms ?? 0;
-    if (bedroomLimit > 0 && sourceContract.members.length > bedroomLimit) {
+    const occupancyLimit = sourceContract.apartment.maxOccupants ?? 0;
+    if (
+      occupancyLimit > 0 &&
+      sourceContract.members.length > occupancyLimit
+    ) {
       throw new BadRequestException(
-        `Source contract exceeds max occupants (${bedroomLimit}) based on apartment bedrooms`,
+        `Source contract exceeds max occupants (${occupancyLimit}) based on apartment max occupants`,
       );
     }
 
@@ -2472,9 +2477,9 @@ export class ContractsService {
       throw new BadRequestException('endDate must be after startDate');
     }
 
-    if (bedroomLimit > 0 && normalizedMembers.length > bedroomLimit) {
+    if (occupancyLimit > 0 && normalizedMembers.length > occupancyLimit) {
       throw new BadRequestException(
-        `Renewed contract can have at most ${bedroomLimit} members based on apartment bedrooms`,
+        `Renewed contract can have at most ${occupancyLimit} members based on apartment max occupants`,
       );
     }
 

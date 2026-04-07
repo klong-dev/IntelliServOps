@@ -153,11 +153,21 @@ export class ReservationsService {
       );
     }
 
-    const bedroomLimit = fullApartment?.numberOfBedrooms ?? 0;
+    const occupancyLimit = fullApartment?.maxOccupants ?? 0;
     const totalContractMembers = 1 + additionalMemberUserIds.length;
-    if (bedroomLimit > 0 && totalContractMembers > bedroomLimit) {
+    if (occupancyLimit > 0 && totalContractMembers > occupancyLimit) {
       throw new BadRequestException(
-        `Reservation contract can have at most ${bedroomLimit} members based on apartment bedrooms`,
+        `Reservation contract can have at most ${occupancyLimit} members based on apartment max occupants`,
+      );
+    }
+
+    if (
+      occupancyLimit > 0 &&
+      typeof createReservationDto.numberOfOccupants === 'number' &&
+      createReservationDto.numberOfOccupants > occupancyLimit
+    ) {
+      throw new BadRequestException(
+        `numberOfOccupants cannot exceed apartment max occupants (${occupancyLimit})`,
       );
     }
 

@@ -46,6 +46,9 @@ class ContractApartmentDto {
   @ApiPropertyOptional({ type: Number, nullable: true, example: 2 })
   numberOfBedrooms?: number | null;
 
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 4 })
+  maxOccupants?: number | null;
+
   @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
   numberOfBathrooms?: number | null;
 
@@ -386,14 +389,13 @@ export class ContractDetailDto {
   @ApiProperty({
     example: 1,
     description:
-      'Maximum number of additional members that can still be added to this contract based on apartment bedrooms',
+      'Maximum number of additional members that can still be added to this contract based on apartment max occupants',
   })
   maxAddableMembers: number;
 
   @ApiProperty({
     example: 2,
-    description:
-      'Maximum occupants allowed for this contract (from apartment bedrooms)',
+    description: 'Maximum occupants allowed for this contract',
   })
   maxOccupants: number;
 

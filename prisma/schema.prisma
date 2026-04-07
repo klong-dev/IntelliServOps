@@ -662,6 +662,7 @@ model Apartment {
   longitude             Decimal?         @db.Decimal(11, 8)
   totalArea             Decimal          @db.Decimal(10, 2)
   usableArea            Decimal?         @db.Decimal(10, 2)
+  maxOccupants          Int              @default(1)
   numberOfBedrooms      Int              @default(0)
   numberOfBathrooms     Int              @default(0)
   furnishingStatus      FurnishingStatus @default(unfurnished)
@@ -703,6 +704,7 @@ model Apartment {
   @@index([provinceCode])
   @@index([ownerId])
   @@index([baseRentPrice])
+  @@index([maxOccupants])
   @@index([numberOfBedrooms])
   @@map("apartments")
 }
