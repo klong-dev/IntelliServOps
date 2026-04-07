@@ -153,6 +153,14 @@ export class ReservationsService {
       );
     }
 
+    const bedroomLimit = fullApartment?.numberOfBedrooms ?? 0;
+    const totalContractMembers = 1 + additionalMemberUserIds.length;
+    if (bedroomLimit > 0 && totalContractMembers > bedroomLimit) {
+      throw new BadRequestException(
+        `Reservation contract can have at most ${bedroomLimit} members based on apartment bedrooms`,
+      );
+    }
+
     // 7. Generate contract number
     const contractNumber = await this.generateContractNumber();
 
@@ -255,8 +263,10 @@ export class ReservationsService {
         `Draft contract ${contractNumber} created with PDF for reservation ${reservation.id}`,
       );
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(
-        `Failed to generate contract PDF for reservation ${reservation.id}: ${error.message}`,
+        `Failed to generate contract PDF for reservation ${reservation.id}: ${errorMessage}`,
       );
       // Don't fail the reservation if PDF generation fails
     }
