@@ -75,12 +75,24 @@ describe('InvoicesService', () => {
         },
       ];
       prisma.invoice.findMany.mockResolvedValue(invoices as any);
+      prisma.invoice.count.mockResolvedValue(1 as any);
 
       const result = await service.findAll(admin);
 
-      expect(result[0]).toMatchObject({
-        rentalContract: invoices[0].rentalContract,
-        contract: invoices[0].rentalContract,
+      expect(result.items).toHaveLength(1);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.totalPages).toBe(1);
+      expect(result.items[0]).toMatchObject({
+        rentalContract: expect.objectContaining({
+          id: invoices[0].rentalContract.id,
+          contractNumber: invoices[0].rentalContract.contractNumber,
+        }),
+        contract: expect.objectContaining({
+          id: invoices[0].rentalContract.id,
+          contractNumber: invoices[0].rentalContract.contractNumber,
+        }),
       });
     });
 
@@ -88,6 +100,7 @@ describe('InvoicesService', () => {
       const user = mockUserJwtPayload();
       prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
       prisma.invoice.findMany.mockResolvedValue([]);
+      prisma.invoice.count.mockResolvedValue(0 as any);
 
       await service.findAll(user);
 
@@ -104,8 +117,9 @@ describe('InvoicesService', () => {
       const admin = mockAdminJwtPayload();
       prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
       prisma.invoice.findMany.mockResolvedValue([]);
+      prisma.invoice.count.mockResolvedValue(0 as any);
 
-      await service.findAll(admin, InvoiceStatus.paid);
+      await service.findAll(admin, { status: InvoiceStatus.paid });
 
       expect(prisma.invoice.findMany).toHaveBeenCalledWith(
         expect.objectContaining({

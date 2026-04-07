@@ -4,10 +4,134 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
 import { InvoiceStatus, InvoiceType, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+import axios from 'axios';
+
+type WardLookupResponse = {
+  name?: string;
+  province_name?: string;
+};
+
+type WardAddressInfo = {
+  wardName: string | null;
+  provinceName: string | null;
+};
 
 @Injectable()
 export class InvoicesService {
+  private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
+  private readonly wardAddressCache = new Map<number, WardAddressInfo | null>();
+
   constructor(private readonly prisma: PrismaService) {}
+
+  private normalizeWardName(value: string | undefined): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async resolveWardAddressFromWardCode(
+    wardCode: number,
+  ): Promise<WardAddressInfo | null> {
+    if (this.wardAddressCache.has(wardCode)) {
+      return this.wardAddressCache.get(wardCode) ?? null;
+    }
+
+    try {
+      const response = await axios.get<WardLookupResponse>(
+        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
+        { timeout: 15000 },
+      );
+
+      const address: WardAddressInfo = {
+        wardName: this.normalizeWardName(response.data.name),
+        provinceName: this.normalizeWardName(response.data.province_name),
+      };
+
+      this.wardAddressCache.set(wardCode, address);
+      return address;
+    } catch {
+      this.wardAddressCache.set(wardCode, null);
+      return null;
+    }
+  }
+
+  private async enrichContractsWithWardAddress<
+    T extends {
+      rentalContract?: {
+        apartment?: {
+          wardCode?: number | null;
+        } | null;
+      };
+      contract?: {
+        apartment?: {
+          wardCode?: number | null;
+        } | null;
+      };
+    },
+  >(items: T[]): Promise<T[]> {
+    const wardCodes = items
+      .map((item) => item.rentalContract?.apartment?.wardCode)
+      .concat(items.map((item) => item.contract?.apartment?.wardCode));
+
+    const uniqueWardCodes = Array.from(
+      new Set(
+        wardCodes.filter((code): code is number => typeof code === 'number'),
+      ),
+    );
+
+    const resolvedEntries = await Promise.all(
+      uniqueWardCodes.map(async (wardCode) => {
+        return [
+          wardCode,
+          await this.resolveWardAddressFromWardCode(wardCode),
+        ] as const;
+      }),
+    );
+
+    const wardAddressMap = new Map<number, WardAddressInfo | null>(
+      resolvedEntries,
+    );
+
+    const enrichApartment = <
+      A extends { wardCode?: number | null } | null | undefined,
+    >(
+      apartment: A,
+    ) => {
+      if (!apartment) {
+        return apartment;
+      }
+
+      const wardAddress =
+        typeof apartment.wardCode === 'number'
+          ? (wardAddressMap.get(apartment.wardCode) ?? null)
+          : null;
+
+      return {
+        ...apartment,
+        wardName: wardAddress?.wardName ?? null,
+        provinceName: wardAddress?.provinceName ?? null,
+      };
+    };
+
+    return items.map((item) => ({
+      ...item,
+      rentalContract: item.rentalContract
+        ? {
+            ...item.rentalContract,
+            apartment: enrichApartment(item.rentalContract.apartment),
+          }
+        : item.rentalContract,
+      contract: item.contract
+        ? {
+            ...item.contract,
+            apartment: enrichApartment(item.contract.apartment),
+          }
+        : item.contract,
+    }));
+  }
 
   @Cron(CronExpression.EVERY_HOUR)
   async autoMarkOverdueInvoices(): Promise<void> {
@@ -61,8 +185,15 @@ export class InvoicesService {
     },
   } as const;
 
-  async findAll(currentUser: JwtPayload, status?: InvoiceStatus) {
+  async findAll(
+    currentUser: JwtPayload,
+    query?: { status?: InvoiceStatus; page?: number; limit?: number },
+  ) {
     await this.markOverdue();
+
+    const { status, page = 1, limit = 20 } = query ?? {};
+    const safeLimit = Math.min(limit, 100);
+    const skip = (page - 1) * safeLimit;
 
     const where: Prisma.InvoiceWhereInput = {};
 
@@ -77,29 +208,44 @@ export class InvoicesService {
       };
     }
 
-    const invoices = await this.prisma.invoice.findMany({
-      where,
-      select: {
-        id: true,
-        invoiceNumber: true,
-        invoiceType: true,
-        totalAmount: true,
-        status: true,
-        dueDate: true,
-        billingPeriodStart: true,
-        billingPeriodEnd: true,
-        createdAt: true,
-        rentalContract: {
-          select: this.invoiceContractSelect,
+    const [invoices, total] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where,
+        select: {
+          id: true,
+          invoiceNumber: true,
+          invoiceType: true,
+          totalAmount: true,
+          status: true,
+          dueDate: true,
+          billingPeriodStart: true,
+          billingPeriodEnd: true,
+          createdAt: true,
+          rentalContract: {
+            select: this.invoiceContractSelect,
+          },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: safeLimit,
+      }),
+      this.prisma.invoice.count({ where }),
+    ]);
 
-    return invoices.map((invoice) => ({
+    const mappedItems = invoices.map((invoice) => ({
       ...invoice,
       contract: invoice.rentalContract,
     }));
+
+    const items = await this.enrichContractsWithWardAddress(mappedItems);
+
+    return {
+      items,
+      total,
+      page,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    };
   }
 
   async findOne(id: string, currentUser: JwtPayload) {

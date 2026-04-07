@@ -23,13 +23,113 @@ import {
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import axios from 'axios';
+
+type WardLookupResponse = {
+  name?: string;
+  district_name?: string;
+  province_name?: string;
+};
+
+type WardAddressInfo = {
+  wardName: string | null;
+  provinceName: string | null;
+  fullAddress: string | null;
+};
 
 @Injectable()
 export class MaintenanceService {
+  private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
+  private readonly wardAddressCache = new Map<number, WardAddressInfo | null>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  private normalizeWardName(value: string | undefined): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async resolveWardAddressFromWardCode(
+    wardCode: number,
+  ): Promise<WardAddressInfo | null> {
+    if (this.wardAddressCache.has(wardCode)) {
+      return this.wardAddressCache.get(wardCode) ?? null;
+    }
+
+    try {
+      const response = await axios.get<WardLookupResponse>(
+        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
+        { timeout: 15000 },
+      );
+
+      const data = response.data;
+      const wardName = this.normalizeWardName(data.name);
+      const districtName = this.normalizeWardName(data.district_name);
+      const provinceName = this.normalizeWardName(data.province_name);
+
+      const fullAddressParts = [wardName, districtName, provinceName].filter(
+        (part): part is string => typeof part === 'string',
+      );
+
+      const address: WardAddressInfo = {
+        wardName,
+        provinceName,
+        fullAddress:
+          fullAddressParts.length > 0 ? fullAddressParts.join(', ') : null,
+      };
+
+      this.wardAddressCache.set(wardCode, address);
+      return address;
+    } catch {
+      this.wardAddressCache.set(wardCode, null);
+      return null;
+    }
+  }
+
+  private async resolveWardAddressMap(
+    wardCodes: Array<number | null | undefined>,
+  ): Promise<Map<number, WardAddressInfo | null>> {
+    const uniqueWardCodes = Array.from(
+      new Set(
+        wardCodes.filter((code): code is number => typeof code === 'number'),
+      ),
+    );
+
+    const resolvedEntries = await Promise.all(
+      uniqueWardCodes.map(async (wardCode) => {
+        return [
+          wardCode,
+          await this.resolveWardAddressFromWardCode(wardCode),
+        ] as const;
+      }),
+    );
+
+    return new Map<number, WardAddressInfo | null>(resolvedEntries);
+  }
+
+  private mapMaintenanceApartmentWithAddress(
+    apartment: {
+      apartmentNumber: string;
+      wardCode: number | null;
+      streetAddress: string | null;
+    },
+    wardAddress: WardAddressInfo | null,
+  ) {
+    return {
+      ...apartment,
+      wardName: wardAddress?.wardName ?? null,
+      provinceName: wardAddress?.provinceName ?? null,
+      fullAddress: wardAddress?.fullAddress ?? null,
+      address: apartment.streetAddress ?? wardAddress?.fullAddress ?? null,
+    };
+  }
 
   private mapUrgencyToTaskPriority(urgency: Urgency): Priority {
     switch (urgency) {
@@ -128,7 +228,7 @@ export class MaintenanceService {
       };
     }
 
-    return this.prisma.maintenanceRequest.findMany({
+    const items = await this.prisma.maintenanceRequest.findMany({
       where,
       select: {
         id: true,
@@ -136,12 +236,14 @@ export class MaintenanceService {
         category: true,
         urgency: true,
         status: true,
+        tenantRating: true,
         createdAt: true,
         preferredDate: true,
         apartment: {
           select: {
             apartmentNumber: true,
             wardCode: true,
+            streetAddress: true,
           },
         },
         assignedTask: {
@@ -153,6 +255,27 @@ export class MaintenanceService {
         },
       },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const wardAddressMap = await this.resolveWardAddressMap(
+      items.map((item) => item.apartment.wardCode),
+    );
+
+    return items.map((item) => {
+      const wardAddress =
+        typeof item.apartment.wardCode === 'number'
+          ? (wardAddressMap.get(item.apartment.wardCode) ?? null)
+          : null;
+
+      const { tenantRating, ...rest } = item;
+      return {
+        ...rest,
+        isRated: tenantRating !== null,
+        apartment: this.mapMaintenanceApartmentWithAddress(
+          item.apartment,
+          wardAddress,
+        ),
+      };
     });
   }
 
@@ -197,6 +320,7 @@ export class MaintenanceService {
           category: true,
           urgency: true,
           status: true,
+          tenantRating: true,
           createdAt: true,
           completedAt: true,
           updatedAt: true,
@@ -204,6 +328,7 @@ export class MaintenanceService {
             select: {
               apartmentNumber: true,
               wardCode: true,
+              streetAddress: true,
             },
           },
           room: {
@@ -227,8 +352,29 @@ export class MaintenanceService {
       this.prisma.maintenanceRequest.count({ where }),
     ]);
 
+    const wardAddressMap = await this.resolveWardAddressMap(
+      items.map((item) => item.apartment.wardCode),
+    );
+
+    const enrichedItems = items.map((item) => {
+      const wardAddress =
+        typeof item.apartment.wardCode === 'number'
+          ? (wardAddressMap.get(item.apartment.wardCode) ?? null)
+          : null;
+
+      const { tenantRating, ...rest } = item;
+      return {
+        ...rest,
+        isRated: tenantRating !== null,
+        apartment: this.mapMaintenanceApartmentWithAddress(
+          item.apartment,
+          wardAddress,
+        ),
+      };
+    });
+
     return {
-      items,
+      items: enrichedItems,
       total,
       page,
       limit: safeLimit,
@@ -244,6 +390,7 @@ export class MaintenanceService {
           select: {
             apartmentNumber: true,
             wardCode: true,
+            streetAddress: true,
           },
         },
         room: {
@@ -291,7 +438,19 @@ export class MaintenanceService {
       throw new NotFoundException('Maintenance request not found');
     }
 
-    return request;
+    const wardAddress =
+      typeof request.apartment.wardCode === 'number'
+        ? await this.resolveWardAddressFromWardCode(request.apartment.wardCode)
+        : null;
+
+    return {
+      ...request,
+      isRated: request.tenantRating !== null,
+      apartment: this.mapMaintenanceApartmentWithAddress(
+        request.apartment,
+        wardAddress,
+      ),
+    };
   }
 
   async create(createDto: CreateMaintenanceDto, currentUser: JwtPayload) {

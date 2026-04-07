@@ -6,8 +6,39 @@ class MaintenanceApartmentDto {
   @ApiProperty({ example: 'A101' })
   apartmentNumber: string;
 
-  @ApiProperty({ example: '123 Nguyen Hue, Q1' })
-  address: string;
+  @ApiPropertyOptional({ type: Number, example: 26728, nullable: true })
+  wardCode: number | null;
+
+  @ApiPropertyOptional({ type: String, example: 'Xa Chau Pha', nullable: true })
+  wardName: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Tinh Ba Ria - Vung Tau',
+    nullable: true,
+  })
+  provinceName: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Xa Chau Pha, Thi xa Phu My, Tinh Ba Ria - Vung Tau',
+    nullable: true,
+  })
+  fullAddress: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: '123 Nguyen Hue',
+    nullable: true,
+  })
+  streetAddress: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: '123 Nguyen Hue',
+    nullable: true,
+  })
+  address: string | null;
 }
 
 class MaintenanceRoomDto {
@@ -53,6 +84,9 @@ export class MaintenanceListItemDto {
   @ApiPropertyOptional({ type: Date, nullable: true })
   preferredDate: Date | null;
 
+  @ApiProperty({ example: false })
+  isRated: boolean;
+
   @ApiProperty({ type: MaintenanceApartmentDto })
   apartment: MaintenanceApartmentDto;
 }
@@ -81,6 +115,9 @@ export class MaintenanceHistoryItemDto {
 
   @ApiProperty()
   updatedAt: Date;
+
+  @ApiProperty({ example: true })
+  isRated: boolean;
 
   @ApiProperty({ type: MaintenanceApartmentDto })
   apartment: MaintenanceApartmentDto;
@@ -145,6 +182,9 @@ export class MaintenanceDetailDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true })
   tenantRating: number | null;
+
+  @ApiProperty({ example: false })
+  isRated: boolean;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   tenantFeedback: string | null;

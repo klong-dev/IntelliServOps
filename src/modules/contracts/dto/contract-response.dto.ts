@@ -25,6 +25,20 @@ class ContractApartmentDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
+    example: 'Phuong Ben Nghe',
+  })
+  wardName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Thanh pho Ho Chi Minh',
+  })
+  provinceName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
     example: '12 Nguyễn Huệ, Phường Bến Nghé',
   })
   streetAddress: string | null;
@@ -218,6 +232,23 @@ export class ContractListItemDto {
 
   @ApiProperty({ type: [ContractListMemberDto] })
   members: ContractListMemberDto[];
+}
+
+export class ContractListPaginatedDto {
+  @ApiProperty({ type: [ContractListItemDto] })
+  items: ContractListItemDto[];
+
+  @ApiProperty({ example: 120 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ example: 6 })
+  totalPages: number;
 }
 
 // ─── Contract Detail DTO (findOne) ──────────────────────────────────
