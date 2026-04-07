@@ -339,6 +339,14 @@ export class ContractsService {
     return dueDate;
   }
 
+  private resolveDepositInvoiceDueDate(startDate: Date, now: Date): Date {
+    const tomorrowStart = this.getUtcDayStart(now);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+    const contractStart = this.getUtcDayStart(startDate);
+    return contractStart > tomorrowStart ? contractStart : tomorrowStart;
+  }
+
   private async generateRentInvoiceNumber(refDate: Date): Promise<string> {
     const year = refDate.getFullYear();
     const month = String(refDate.getMonth() + 1).padStart(2, '0');
@@ -2148,6 +2156,7 @@ export class ContractsService {
           },
         },
         members: {
+          where: { status: MemberStatus.active },
           select: {
             userId: true,
             memberType: true,
@@ -2623,6 +2632,7 @@ export class ContractsService {
 
     const invoiceNumber = await this.generateDepositInvoiceNumber();
     const now = new Date();
+    const dueDate = this.resolveDepositInvoiceDueDate(contract.startDate, now);
     const depositCharge: Prisma.InputJsonArray = [
       {
         description: `Deposit for contract ${contract.contractNumber}`,
@@ -2646,7 +2656,7 @@ export class ContractsService {
         billingPeriodStart: contract.startDate,
         billingPeriodEnd: contract.startDate,
         issueDate: now,
-        dueDate: now,
+        dueDate,
         baseRent: 0,
         additionalCharges: depositCharge,
         totalAmount: depositAmount,
