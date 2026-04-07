@@ -26,6 +26,8 @@ describe('IoTController (e2e)', () => {
 
   const apartmentId = '11111111-1111-4111-8111-111111111111';
   const deviceId = '22222222-2222-4222-8222-222222222222';
+  const meterId = '33333333-3333-4333-8333-333333333333';
+  const readingId = '44444444-4444-4444-8444-444444444444';
 
   beforeEach(async () => {
     prisma = createPrismaMock();
@@ -150,15 +152,15 @@ describe('IoTController (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/iot/boards')
       .send({
-        boardId: 'ESP_A101',
-        boardName: 'A101 Main Board',
+        id: 'ESP_A101',
         apartmentId,
         devices: [
           {
+            id: deviceId,
             deviceName: 'Front Door Lock',
-            deviceType: 'smart_lock',
-            mqttTopic: 'door',
-            mqttDeviceId: 1,
+            deviceId: 1,
+            topic: 'door',
+            state: 'CLOSED',
           },
         ],
       })

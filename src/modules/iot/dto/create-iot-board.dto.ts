@@ -3,20 +3,24 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { ApiProperty, OmitType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { CreateIoTDeviceDto } from './create-iot-device.dto';
 import { MQTT_DEVICE_TOPICS } from '../iot-mqtt.types';
 
 const readObjectValue = (obj: unknown, key: string) =>
   obj && typeof obj === 'object'
     ? (obj as Record<string, unknown>)[key]
     : undefined;
+
+const toTrimmedString = (value: unknown) =>
+  typeof value === 'string' ? value.trim() : value;
 
 const toOptionalNumber = (value: unknown) => {
   if (value === undefined || value === null || value === '') {
@@ -31,60 +35,93 @@ const toOptionalNumber = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : value;
 };
 
-export class CreateIoTBoardDeviceDto extends OmitType(CreateIoTDeviceDto, [
-  'apartmentId',
-  'mqttEspId',
-  'mqttBoardName',
-] as const) {
+export class CreateIoTBoardDeviceDto {
+  @ApiProperty({
+    example: 'device-door-1',
+    description: 'Stable device identifier managed by the backend',
+  })
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @MaxLength(255)
+  id: string;
+
+  @ApiProperty({
+    example: 'Front Door Lock',
+    description: 'Editable display name for this board device',
+  })
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @MaxLength(255)
+  deviceName: string;
+
+  @ApiProperty({
+    example: 1,
+    description:
+      "Logical device id used in MQTT payloads. Legacy field 'mqttDeviceId' is also accepted.",
+  })
+  @Transform(({ value, obj }) =>
+    toOptionalNumber(value ?? readObjectValue(obj, 'mqttDeviceId')),
+  )
+  @IsInt()
+  @Min(1)
+  deviceId: number;
+
+  @ApiPropertyOptional({
+    example: 'door-lock',
+    description: 'Optional icon key used by the client UI',
+  })
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  icon?: string;
+
   @ApiProperty({
     enum: MQTT_DEVICE_TOPICS,
     example: 'door',
     description:
-      "MQTT topic configured on the ESP board for this child device. Legacy field 'mqttControlType' is also accepted.",
+      "MQTT topic configured on the ESP board for this child device. Legacy field 'mqttTopic' is also accepted.",
   })
   @Transform(({ value, obj }) => {
-    const rawValue: unknown = value ?? readObjectValue(obj, 'mqttControlType');
+    const rawValue: unknown = value ?? readObjectValue(obj, 'mqttTopic');
 
     return typeof rawValue === 'string'
       ? rawValue.trim().toLowerCase()
       : rawValue;
   })
   @IsIn(MQTT_DEVICE_TOPICS)
-  mqttTopic: (typeof MQTT_DEVICE_TOPICS)[number];
+  topic: (typeof MQTT_DEVICE_TOPICS)[number];
 
-  @ApiProperty({
-    example: 1,
+  @ApiPropertyOptional({
+    example: 'CLOSED',
     description:
-      "Logical device id used in MQTT payloads. Legacy field 'mqttChannelId' is also accepted.",
+      "Latest known device state reported back from the IoT board. Legacy field 'mqttState' is also accepted.",
   })
   @Transform(({ value, obj }) =>
-    toOptionalNumber(value ?? readObjectValue(obj, 'mqttChannelId')),
+    toTrimmedString(value ?? readObjectValue(obj, 'mqttState')),
   )
-  @IsInt()
-  @Min(1)
-  mqttDeviceId: number;
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  state?: string;
 }
 
 export class CreateIoTBoardDto {
   @ApiProperty({
     example: 'ESP_A101',
-    description: 'Physical board identifier used by MQTT topics',
+    description: "Physical board identifier used by MQTT topics. Legacy field 'boardId' is also accepted.",
   })
+  @Transform(({ value, obj }) => toTrimmedString(value ?? readObjectValue(obj, 'boardId')))
   @IsString()
-  boardId: string;
+  @MaxLength(255)
+  id: string;
 
-  @ApiProperty({
-    example: 'A101 Main Board',
-    description: 'Human-readable board name',
-  })
-  @IsString()
-  boardName: string;
-
-  @ApiProperty({
-    description: 'Apartment owning this board and its child devices',
+  @ApiPropertyOptional({
+    description: 'Optional apartment owning this board and its child devices',
   })
   @IsUUID()
-  apartmentId: string;
+  @IsOptional()
+  apartmentId?: string;
 
   @ApiProperty({
     type: [CreateIoTBoardDeviceDto],

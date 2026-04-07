@@ -27,7 +27,7 @@ import {
   type MqttBinaryAction,
   type MqttDeviceTopic,
 } from './iot-mqtt.types';
-import { IoTStatus, MeterStatus, Prisma } from '@prisma/client';
+import { IoTDeviceType, IoTStatus, MeterStatus, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 
 @Injectable()
@@ -89,27 +89,26 @@ export class IoTService {
   }
 
   async createBoard(createDto: CreateIoTBoardDto) {
+    const boardId = this.normalizeBoardId(createDto);
+    const boardName = this.readString((createDto as { boardName?: string }).boardName);
+    const devices = createDto.devices.map((device) =>
+      this.normalizeBoardDeviceCreatePayload(device),
+    );
+
     await this.ensureApartmentExists(createDto.apartmentId);
-    await this.ensureBoardDoesNotExist(createDto.boardId);
+    await this.ensureBoardDoesNotExist(boardId);
 
-    this.assertUniqueBoardAssignments(createDto.devices);
-
-    for (const device of createDto.devices) {
-      await this.ensureRoomBelongsToApartment(
-        device.roomId,
-        createDto.apartmentId,
-      );
-    }
+    this.assertUniqueBoardAssignments(devices);
 
     const createdDevices = await this.prisma.$transaction(
-      createDto.devices.map((device) =>
+      devices.map((device) =>
         this.prisma.ioTDevice.create({
-          data: this.buildCreateDeviceData({
-            ...device,
-            apartmentId: createDto.apartmentId,
-            mqttEspId: createDto.boardId,
-            mqttBoardName: createDto.boardName,
-          }),
+          data: this.buildCreateBoardDeviceData(
+            boardId,
+            createDto.apartmentId,
+            device,
+            boardName,
+          ),
           select: { id: true },
         }),
       ),
@@ -121,7 +120,7 @@ export class IoTService {
       );
     }
 
-    return this.findOneBoard(createDto.boardId);
+    return this.findOneBoard(boardId);
   }
 
   async updateBoard(boardId: string, updateDto: UpdateIoTBoardDto) {
@@ -131,19 +130,45 @@ export class IoTService {
       await this.ensureApartmentExists(updateDto.apartmentId);
     }
 
-    const targetApartmentId = updateDto.apartmentId ?? board.apartment.id;
-    const targetBoardName = updateDto.boardName ?? board.name;
+    const targetApartmentId = updateDto.apartmentId ?? board.apartment?.id;
 
-    await Promise.all(
-      board.devices.map((device) =>
-        this.updateDevice(device.id, {
-          ...(updateDto.apartmentId && { apartmentId: updateDto.apartmentId }),
-          mqttEspId: boardId,
-          mqttBoardName: targetBoardName,
-          ...(targetApartmentId && { apartmentId: targetApartmentId }),
-        }),
-      ),
-    );
+    if (updateDto.apartmentId) {
+      await this.prisma.ioTDevice.updateMany({
+        where: {
+          id: { in: board.devices.map((device) => device.id) },
+        },
+        data: { apartmentId: updateDto.apartmentId },
+      });
+    }
+
+    if (updateDto.devices?.length) {
+      this.assertUniqueBoardAssignments(updateDto.devices);
+
+      const existingDeviceIds = new Set(board.devices.map((device) => device.id));
+
+      for (const device of updateDto.devices) {
+        if (existingDeviceIds.has(device.id)) {
+          await this.updateBoardDeviceRecord(
+            device.id,
+            boardId,
+            targetApartmentId,
+            device,
+          );
+          continue;
+        }
+
+        await this.prisma.ioTDevice.create({
+          data: this.buildCreateBoardDeviceData(
+            boardId,
+            targetApartmentId,
+            this.normalizeBoardDeviceCreatePayload(
+              device as CreateIoTBoardDeviceDto,
+            ),
+          ),
+          select: { id: true },
+        });
+      }
+    }
 
     return this.findOneBoard(boardId);
   }
@@ -171,23 +196,23 @@ export class IoTService {
 
   async createBoardDevice(boardId: string, createDto: CreateIoTBoardDeviceDto) {
     const board = await this.findOneBoard(boardId);
-    await this.ensureRoomBelongsToApartment(
-      createDto.roomId,
-      board.apartment.id,
-    );
 
     this.assertBoardAssignmentAvailable(
       board.devices,
-      createDto.mqttTopic,
-      createDto.mqttDeviceId,
+      createDto.topic,
+      createDto.deviceId,
     );
 
-    return this.createDevice({
-      ...createDto,
-      apartmentId: board.apartment.id,
-      mqttEspId: boardId,
-      mqttBoardName: board.name,
+    const created = await this.prisma.ioTDevice.create({
+      data: this.buildCreateBoardDeviceData(
+        boardId,
+        board.apartment?.id,
+        createDto,
+      ),
+      select: { id: true },
     });
+
+    return this.findOneDevice(created.id);
   }
 
   async updateBoardDevice(
@@ -202,17 +227,10 @@ export class IoTService {
       throw new NotFoundException('IoT board device not found');
     }
 
-    if (updateDto.roomId) {
-      await this.ensureRoomBelongsToApartment(
-        updateDto.roomId,
-        board.apartment.id,
-      );
-    }
-
     const targetTopic =
-      updateDto.mqttTopic ?? boardDevice.mqttTopic ?? undefined;
+      updateDto.topic ?? boardDevice.mqttTopic ?? undefined;
     const targetDeviceId =
-      updateDto.mqttDeviceId ?? boardDevice.mqttDeviceId ?? undefined;
+      updateDto.deviceId ?? boardDevice.mqttDeviceId ?? undefined;
 
     if (targetTopic && targetDeviceId) {
       this.assertBoardAssignmentAvailable(
@@ -223,12 +241,14 @@ export class IoTService {
       );
     }
 
-    return this.updateDevice(deviceId, {
-      ...updateDto,
-      mqttEspId: boardId,
-      mqttBoardName: board.name,
-      apartmentId: board.apartment.id,
-    });
+    await this.updateBoardDeviceRecord(
+      deviceId,
+      boardId,
+      board.apartment?.id,
+      updateDto,
+    );
+
+    return this.findOneDevice(deviceId);
   }
 
   async removeBoardDevice(boardId: string, deviceId: string) {
@@ -1168,7 +1188,11 @@ export class IoTService {
     });
   }
 
-  private async ensureApartmentExists(apartmentId: string) {
+  private async ensureApartmentExists(apartmentId?: string) {
+    if (!apartmentId) {
+      return;
+    }
+
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: apartmentId },
       select: { id: true },
@@ -1181,9 +1205,9 @@ export class IoTService {
 
   private async ensureRoomBelongsToApartment(
     roomId: string | undefined,
-    apartmentId: string,
+    apartmentId?: string,
   ) {
-    if (!roomId) {
+    if (!roomId || !apartmentId) {
       return;
     }
 
@@ -1250,7 +1274,7 @@ export class IoTService {
   private buildMergedConfiguration(
     existingConfiguration: unknown,
     incomingConfiguration?: Record<string, any>,
-    mqttConfig?: DeviceMqttControlConfig,
+    mqttConfig?: Partial<DeviceMqttControlConfig>,
     mqttBoardName?: string,
   ) {
     const merged = {
@@ -1341,7 +1365,11 @@ export class IoTService {
     id: string;
     apartmentNumber: string;
     streetAddress: string | null;
-  }) {
+  } | null) {
+    if (!apartment) {
+      return null;
+    }
+
     return {
       id: apartment.id,
       apartmentNumber: apartment.apartmentNumber,
@@ -1374,7 +1402,7 @@ export class IoTService {
       id: string;
       apartmentNumber: string;
       streetAddress: string | null;
-    };
+    } | null;
     room: { id: string; roomNumber: string; roomType: string } | null;
     [key: string]: any;
   }) {
@@ -1403,7 +1431,7 @@ export class IoTService {
       id: string;
       apartmentNumber: string;
       streetAddress: string | null;
-    };
+    } | null;
     room: { id: string; roomNumber: string; roomType: string } | null;
     [key: string]: any;
   }) {
@@ -1452,7 +1480,7 @@ export class IoTService {
       model: createDto.model,
       serialNumber: createDto.serialNumber,
       macAddress: createDto.macAddress,
-      apartmentId: createDto.apartmentId,
+      ...(createDto.apartmentId && { apartmentId: createDto.apartmentId }),
       roomId: createDto.roomId,
       locationDescription: createDto.locationDescription,
       firmwareVersion: createDto.firmwareVersion,
@@ -1468,6 +1496,91 @@ export class IoTService {
       }),
       notes: createDto.notes,
       status: IoTStatus.active,
+    } as Prisma.IoTDeviceUncheckedCreateInput;
+  }
+
+  private buildCreateBoardDeviceData(
+    boardId: string,
+    apartmentId: string | undefined,
+    device: CreateIoTBoardDeviceDto,
+    boardName?: string,
+  ): Prisma.IoTDeviceUncheckedCreateInput {
+    const configuration = this.buildMergedConfiguration(
+      undefined,
+      device.icon ? { icon: device.icon } : undefined,
+      {
+        espId: boardId,
+        topic: device.topic,
+        deviceId: device.deviceId,
+        ...(device.state !== undefined && { state: device.state }),
+      },
+      boardName,
+    );
+
+    return {
+      id: device.id,
+      deviceName: device.deviceName,
+      deviceType: this.mapTopicToDeviceType(device.topic),
+      ...(apartmentId && { apartmentId }),
+      isControllableByTenant: true,
+      ...(configuration && {
+        configuration: configuration as Prisma.InputJsonValue,
+      }),
+      status: IoTStatus.active,
+    } as Prisma.IoTDeviceUncheckedCreateInput;
+  }
+
+  private async updateBoardDeviceRecord(
+    deviceId: string,
+    boardId: string,
+    apartmentId: string | undefined,
+    updateDto: UpdateIoTBoardDeviceDto,
+  ) {
+    const existing = await this.prisma.ioTDevice.findUnique({
+      where: { id: deviceId },
+      select: { configuration: true },
+    });
+
+    return this.prisma.ioTDevice.update({
+      where: { id: deviceId },
+      data: this.buildUpdateBoardDeviceData(
+        existing?.configuration,
+        boardId,
+        apartmentId,
+        updateDto,
+      ),
+      select: { id: true },
+    });
+  }
+
+  private buildUpdateBoardDeviceData(
+    existingConfiguration: unknown,
+    boardId: string,
+    apartmentId: string | undefined,
+    updateDto: UpdateIoTBoardDeviceDto,
+  ): Prisma.IoTDeviceUncheckedUpdateInput {
+    const mqttConfig: Partial<DeviceMqttControlConfig> = {
+      ...(updateDto.topic !== undefined && { topic: updateDto.topic }),
+      ...(updateDto.deviceId !== undefined && { deviceId: updateDto.deviceId }),
+      ...(updateDto.state !== undefined && { state: updateDto.state }),
+      espId: boardId,
+    };
+
+    const configuration = this.buildMergedConfiguration(
+      existingConfiguration,
+      updateDto.icon !== undefined ? { icon: updateDto.icon } : undefined,
+      mqttConfig,
+    );
+
+    return {
+      ...(updateDto.deviceName !== undefined && { deviceName: updateDto.deviceName }),
+      ...(updateDto.topic !== undefined && {
+        deviceType: this.mapTopicToDeviceType(updateDto.topic),
+      }),
+      ...(apartmentId && { apartmentId }),
+      ...(configuration && {
+        configuration: configuration as Prisma.InputJsonValue,
+      }),
     };
   }
 
@@ -1518,7 +1631,7 @@ export class IoTService {
         id: string;
         apartmentNumber: string;
         streetAddress: string | null;
-      };
+      } | null;
       room: { id: string; roomNumber: string; roomType: string } | null;
     }>,
   ) {
@@ -1531,7 +1644,7 @@ export class IoTService {
           id: string;
           apartmentNumber: string;
           address: string;
-        };
+        } | null;
         createdAt: Date;
         updatedAt: Date;
         lastOnlineAt: Date | null;
@@ -1541,6 +1654,7 @@ export class IoTService {
           deviceType: string;
           status: IoTStatus;
           isControllableByTenant: boolean;
+          icon: string | null;
           mqttTopic: string | null;
           mqttDeviceId: number | null;
           mqttDoorPasswordDeviceId: number | null;
@@ -1581,6 +1695,10 @@ export class IoTService {
         board.name = metadata.boardName;
       }
 
+      if (!board.apartment && device.apartment) {
+        board.apartment = this.toApartmentSummary(device.apartment);
+      }
+
       if (device.createdAt < board.createdAt) {
         board.createdAt = device.createdAt;
       }
@@ -1602,6 +1720,7 @@ export class IoTService {
         deviceType: device.deviceType,
         status: device.status,
         isControllableByTenant: device.isControllableByTenant,
+        icon: this.readString(this.toPlainObject(device.configuration).icon) ?? null,
         mqttTopic: metadata.topic ?? null,
         mqttDeviceId: metadata.deviceId ?? null,
         mqttDoorPasswordDeviceId: metadata.doorPasswordDeviceId ?? null,
@@ -1664,6 +1783,7 @@ export class IoTService {
         this.readPositiveInteger(rootConfig.doorPasswordChannelId),
       state:
         this.readString(mqttConfig.state) ?? this.readString(rootConfig.state),
+      icon: this.readString(mqttConfig.icon) ?? this.readString(rootConfig.icon),
     };
   }
 
@@ -1700,6 +1820,8 @@ export class IoTService {
 
   private assertUniqueBoardAssignments(
     devices: Array<{
+      topic?: string;
+      deviceId?: number;
       mqttTopic?: string;
       mqttDeviceId?: number;
     }>,
@@ -1708,8 +1830,8 @@ export class IoTService {
 
     for (const device of devices) {
       const assignmentKey = this.buildBoardAssignmentKey(
-        device.mqttTopic,
-        device.mqttDeviceId,
+        device.topic ?? device.mqttTopic,
+        device.deviceId ?? device.mqttDeviceId,
       );
 
       if (!assignmentKey) {
@@ -1825,5 +1947,54 @@ export class IoTService {
       default:
         return undefined;
     }
+  }
+
+  private mapTopicToDeviceType(topic: MqttDeviceTopic): IoTDeviceType {
+    switch (topic) {
+      case 'light':
+        return IoTDeviceType.light;
+      case 'alarm':
+        return IoTDeviceType.alarm;
+      case 'door':
+        return IoTDeviceType.smart_lock;
+      case 'curtain':
+        return IoTDeviceType.sensor;
+    }
+  }
+
+  private normalizeBoardId(input: { id?: string; boardId?: string }) {
+    const boardId = this.readString(input.id) ?? this.readString(input.boardId);
+
+    if (!boardId) {
+      throw new BadRequestException('Board id is required');
+    }
+
+    return boardId;
+  }
+
+  private normalizeBoardDeviceCreatePayload(
+    device: CreateIoTBoardDeviceDto & {
+      mqttTopic?: MqttDeviceTopic;
+      mqttDeviceId?: number;
+      mqttState?: string;
+    },
+  ): CreateIoTBoardDeviceDto {
+    const topic = device.topic ?? device.mqttTopic;
+    const deviceId = device.deviceId ?? device.mqttDeviceId;
+
+    if (!topic || !deviceId) {
+      throw new BadRequestException('Board device requires topic and deviceId');
+    }
+
+    return {
+      id:
+        this.readString(device.id) ??
+        `${topic}-${deviceId}-${(device.deviceName ?? 'device').trim().toLowerCase().replace(/\s+/g, '-')}`,
+      deviceName: device.deviceName,
+      deviceId,
+      icon: device.icon,
+      topic,
+      state: device.state ?? device.mqttState,
+    };
   }
 }

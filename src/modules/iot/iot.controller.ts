@@ -12,6 +12,8 @@ import {
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IoTService } from './iot.service';
 import {
+  CreateUtilityMeterDto,
+  CreateUtilityReadingDto,
   CreateIoTBoardDeviceDto,
   CreateIoTBoardDto,
   DirectMqttControlDto,
@@ -24,13 +26,17 @@ import {
   IoTTestSequenceResponseDto,
   SetDoorPasswordDto,
   TestSequenceDto,
+  UpdateUtilityMeterDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
+  UtilityMeterDetailDto,
+  UtilityMeterListItemDto,
+  UtilityReadingDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
-import { IoTStatus } from '@prisma/client';
+import { IoTStatus, MeterStatus } from '@prisma/client';
 
 @ApiTags('IoT')
 @Controller('iot')
@@ -229,5 +235,104 @@ export class IoTController {
     @Param('deviceId') deviceId: string,
   ) {
     return this.iotService.removeBoardDevice(boardId, deviceId);
+  }
+
+  @Get('meters')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'List utility meters' })
+  @ApiQuery({ name: 'apartmentId', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
+  @ApiJsonResponse(UtilityMeterListItemDto, {
+    isArray: true,
+    description: 'List of utility meters',
+  })
+  async findAllMeters(
+    @Query('apartmentId') apartmentId?: string,
+    @Query('status') status?: MeterStatus,
+  ) {
+    return this.iotService.findAllMeters(apartmentId, status);
+  }
+
+  @Get('meters/:id')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Get utility meter details' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    description: 'Utility meter details',
+  })
+  async findOneMeter(@Param('id') id: string) {
+    return this.iotService.findOneMeter(id);
+  }
+
+  @Post('meters')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Create utility meter' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    status: 201,
+    description: 'Utility meter created successfully',
+  })
+  async createMeter(@Body() createDto: CreateUtilityMeterDto) {
+    return this.iotService.createMeter(createDto);
+  }
+
+  @Patch('meters/:id')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Update utility meter' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    description: 'Utility meter updated successfully',
+  })
+  async updateMeter(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateUtilityMeterDto,
+  ) {
+    return this.iotService.updateMeter(id, updateDto);
+  }
+
+  @Post('readings')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Create utility meter reading' })
+  @ApiJsonResponse(UtilityReadingDto, {
+    status: 201,
+    description: 'Utility reading created successfully',
+  })
+  async createReading(
+    @Body() createDto: CreateUtilityReadingDto,
+    @CurrentUser() currentUser?: any,
+  ) {
+    return this.iotService.createReading(createDto, currentUser);
+  }
+
+  @Get('meters/:meterId/readings')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'List readings of a utility meter' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiJsonResponse(UtilityReadingDto, {
+    isArray: true,
+    description: 'Utility meter readings',
+  })
+  async getReadings(
+    @Param('meterId') meterId: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.iotService.getReadings(meterId, limit);
+  }
+
+  @Patch('readings/:id/verify')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Verify utility reading' })
+  @ApiJsonResponse(UtilityReadingDto, {
+    description: 'Utility reading verified successfully',
+  })
+  async verifyReading(
+    @Param('id') id: string,
+    @CurrentUser() currentUser?: any,
+  ) {
+    return this.iotService.verifyReading(id, currentUser?.actorType === 'staff' ? currentUser.sub : undefined);
   }
 }

@@ -1346,7 +1346,7 @@ model IoTDevice {
   model                  String?
   serialNumber           String?      @unique
   macAddress             String?
-  apartmentId            String
+  apartmentId            String?
   roomId                 String?
   locationDescription    String?
   firmwareVersion        String?
@@ -1364,8 +1364,8 @@ model IoTDevice {
   updatedAt              DateTime     @updatedAt
 
   // Relations
-  apartment Apartment @relation(fields: [apartmentId], references: [id])
-  room      Room?     @relation(fields: [roomId], references: [id])
+  apartment Apartment? @relation(fields: [apartmentId], references: [id])
+  room      Room?      @relation(fields: [roomId], references: [id])
 
   @@index([apartmentId])
   @@index([roomId])
