@@ -1,5 +1,5 @@
 import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsUUID } from 'class-validator';
 import {
   CreateIoTBoardDeviceDto,
   CreateIoTBoardDto,
@@ -7,15 +7,7 @@ import {
 
 export class UpdateIoTBoardDto extends PartialType(CreateIoTBoardDto) {
   @ApiPropertyOptional({
-    example: 'A101 Main Board v2',
-    description: 'Updated board name propagated to child device metadata',
-  })
-  @IsString()
-  @IsOptional()
-  boardName?: string;
-
-  @ApiPropertyOptional({
-    description: 'Move all board devices to another apartment',
+    description: 'Assign or move the board to another apartment',
   })
   @IsUUID()
   @IsOptional()

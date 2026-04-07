@@ -31,28 +31,9 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import * as crypto from 'crypto';
 
-type WardLookupResponse = {
-  name?: string;
-  district_code?: number;
-  district_name?: string;
-  province_code?: number;
-  province_name?: string;
-};
-
-type WardAddressInfo = {
-  wardCode: number;
-  wardName: string | null;
-  districtCode: number | null;
-  districtName: string | null;
-  provinceCode: number | null;
-  provinceName: string | null;
-  fullAddress: string | null;
-};
-
 @Injectable()
 export class ApartmentsService {
   private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
-  private readonly wardAddressCache = new Map<number, WardAddressInfo | null>();
   private readonly pdfTokenSecret =
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly pdfTokenExpiry = 5 * 60 * 1000;
@@ -306,65 +287,6 @@ export class ApartmentsService {
     return Number(value.toFixed(2));
   }
 
-  private resolveGlobalCommissionRate(at: Date) {
-    return this.prisma.cooperationCommissionPhase.findFirst({
-      where: {
-        isActive: true,
-        effectiveFrom: { lte: at },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gte: at } }],
-      },
-      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
-      select: {
-        id: true,
-        phaseName: true,
-        commissionRate: true,
-      },
-    });
-  }
-
-  private mapApartmentAmenities(
-    apartmentAmenities:
-      | Array<{
-          amenity: {
-            id: string;
-            code: string;
-            name: string;
-            icon: string | null;
-          };
-        }>
-      | undefined,
-  ) {
-    if (!apartmentAmenities || apartmentAmenities.length === 0) {
-      return [];
-    }
-
-    return apartmentAmenities.map((item) => ({
-      id: item.amenity.id,
-      code: item.amenity.code,
-      name: item.amenity.name,
-      icon: item.amenity.icon,
-    }));
-  }
-
-  private async validateAmenityIds(amenityIds: string[]) {
-    if (!amenityIds.length) {
-      return;
-    }
-
-    const uniqueAmenityIds = Array.from(new Set(amenityIds));
-    const existingAmenities = await this.prisma.amenity.findMany({
-      where: {
-        id: { in: uniqueAmenityIds },
-        isActive: true,
-      },
-      select: { id: true },
-    });
-
-    if (existingAmenities.length !== uniqueAmenityIds.length) {
-      throw new BadRequestException('One or more amenity IDs are invalid');
-    }
-  }
-
   async getAddressDivisions(
     version: 'v1' | 'v2' = 'v2',
     depth = 2,
@@ -393,149 +315,16 @@ export class ApartmentsService {
   private async resolveProvinceCodeFromWard(
     wardCode: number,
   ): Promise<number | undefined> {
-    const cached = this.wardAddressCache.get(wardCode);
-    if (cached) {
-      return cached.provinceCode ?? undefined;
-    }
-
     try {
-      const response = await axios.get<WardLookupResponse>(
+      const response = await axios.get(
         `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
         { timeout: 15000 },
       );
-      return response.data.province_code;
+      return response.data?.province_code ?? undefined;
     } catch {
       // If lookup fails, don't block the operation
       return undefined;
     }
-  }
-
-  private normalizeWardName(value: string | undefined): string | null {
-    if (typeof value !== 'string') {
-      return null;
-    }
-
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  private async resolveWardAddressFromWardCode(
-    wardCode: number,
-  ): Promise<WardAddressInfo | null> {
-    if (this.wardAddressCache.has(wardCode)) {
-      return this.wardAddressCache.get(wardCode) ?? null;
-    }
-
-    try {
-      const response = await axios.get<WardLookupResponse>(
-        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
-        { timeout: 15000 },
-      );
-
-      const data = response.data;
-      const wardName = this.normalizeWardName(data.name);
-      const districtName = this.normalizeWardName(data.district_name);
-      const provinceName = this.normalizeWardName(data.province_name);
-
-      const fullAddressParts = [wardName, districtName, provinceName].filter(
-        (part): part is string => typeof part === 'string',
-      );
-
-      const address: WardAddressInfo = {
-        wardCode,
-        wardName,
-        districtCode:
-          typeof data.district_code === 'number' ? data.district_code : null,
-        districtName,
-        provinceCode:
-          typeof data.province_code === 'number' ? data.province_code : null,
-        provinceName,
-        fullAddress:
-          fullAddressParts.length > 0 ? fullAddressParts.join(', ') : null,
-      };
-
-      this.wardAddressCache.set(wardCode, address);
-      return address;
-    } catch {
-      this.wardAddressCache.set(wardCode, null);
-      return null;
-    }
-  }
-
-  private async enrichApartmentsWithWardAddress<
-    T extends { wardCode?: number | null; provinceCode?: number | null },
-  >(
-    apartments: T[],
-  ): Promise<
-    Array<
-      T & {
-        wardName: string | null;
-        districtCode: number | null;
-        districtName: string | null;
-        provinceName: string | null;
-        fullAddress: string | null;
-      }
-    >
-  > {
-    if (!apartments.length) {
-      return apartments.map((apartment) => ({
-        ...apartment,
-        wardName: null,
-        districtCode: null,
-        districtName: null,
-        provinceName: null,
-        fullAddress: null,
-      }));
-    }
-
-    const uniqueWardCodes = Array.from(
-      new Set(
-        apartments
-          .map((apartment) => apartment.wardCode)
-          .filter((code): code is number => typeof code === 'number'),
-      ),
-    );
-
-    if (uniqueWardCodes.length === 0) {
-      return apartments.map((apartment) => ({
-        ...apartment,
-        wardName: null,
-        districtCode: null,
-        districtName: null,
-        provinceName: null,
-        fullAddress: null,
-      }));
-    }
-
-    const resolvedEntries = await Promise.all(
-      uniqueWardCodes.map(async (wardCode) => {
-        return [
-          wardCode,
-          await this.resolveWardAddressFromWardCode(wardCode),
-        ] as const;
-      }),
-    );
-
-    const wardAddressMap = new Map<
-      number,
-      Awaited<ReturnType<typeof this.resolveWardAddressFromWardCode>>
-    >(resolvedEntries);
-
-    return apartments.map((apartment) => {
-      const wardAddress =
-        typeof apartment.wardCode === 'number'
-          ? wardAddressMap.get(apartment.wardCode)
-          : null;
-
-      return {
-        ...apartment,
-        wardName: wardAddress?.wardName ?? null,
-        districtCode: wardAddress?.districtCode ?? null,
-        districtName: wardAddress?.districtName ?? null,
-        provinceName: wardAddress?.provinceName ?? null,
-        fullAddress: wardAddress?.fullAddress ?? null,
-      };
-    });
   }
 
   /**
@@ -630,7 +419,7 @@ export class ApartmentsService {
 
     const skip = (page - 1) * limit;
 
-    const apartmentSelect = Prisma.validator<Prisma.ApartmentSelect>()({
+    const apartmentSelect: Prisma.ApartmentSelect = {
       id: true,
       buildingName: true,
       apartmentNumber: true,
@@ -649,19 +438,7 @@ export class ApartmentsService {
       wardCode: true,
       provinceCode: true,
       streetAddress: true,
-      apartmentAmenities: {
-        select: {
-          amenity: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              icon: true,
-            },
-          },
-        },
-      },
-    });
+    };
 
     const [apartments, total] = await Promise.all([
       this.prisma.apartment.findMany({
@@ -696,16 +473,13 @@ export class ApartmentsService {
       ]),
     );
 
-    const items = apartments.map((apartment) => ({
+    const items = apartments.map((apartment: any) => ({
       ...apartment,
-      amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       rating: ratingMap.get(apartment.id) ?? null,
     }));
 
-    const enrichedItems = await this.enrichApartmentsWithWardAddress(items);
-
     return {
-      items: enrichedItems,
+      items,
       total,
       page,
       limit,
@@ -716,7 +490,7 @@ export class ApartmentsService {
   /**
    * Get apartment by ID with full details
    */
-  async findOne(id: string, currentUser?: JwtPayload) {
+  async findOne(id: string) {
     const [apartment, ratingAggregate] = await Promise.all([
       this.prisma.apartment.findUnique({
         where: { id },
@@ -803,18 +577,6 @@ export class ApartmentsService {
               createdAt: 'asc',
             },
           },
-          apartmentAmenities: {
-            select: {
-              amenity: {
-                select: {
-                  id: true,
-                  code: true,
-                  name: true,
-                  icon: true,
-                },
-              },
-            },
-          },
         },
       }),
       this.prisma.apartmentRating.aggregate({
@@ -827,74 +589,10 @@ export class ApartmentsService {
       throw new NotFoundException('Apartment not found');
     }
 
-    let canRateApartment = false;
-    let hasRatedApartment = false;
-    let ratingEligibilityReason:
-      | 'not_authenticated'
-      | 'not_user_role'
-      | 'no_active_contract'
-      | 'already_rated'
-      | null = null;
-
-    if (!currentUser) {
-      ratingEligibilityReason = 'not_authenticated';
-    } else if (currentUser.actorType !== 'user') {
-      ratingEligibilityReason = 'not_user_role';
-    }
-
-    if (currentUser?.actorType === 'user') {
-      const [activeMembership, existingRating] = await Promise.all([
-        this.prisma.userContractMember.findFirst({
-          where: {
-            userId: currentUser.sub,
-            status: MemberStatus.active,
-            rentalContract: {
-              status: ContractStatus.active,
-              apartmentId: id,
-            },
-          },
-          select: { id: true },
-        }),
-        this.prisma.apartmentRating.findUnique({
-          where: {
-            userId_apartmentId: {
-              userId: currentUser.sub,
-              apartmentId: id,
-            },
-          },
-          select: { id: true },
-        }),
-      ]);
-
-      hasRatedApartment = !!existingRating;
-      canRateApartment = !!activeMembership && !hasRatedApartment;
-
-      if (hasRatedApartment) {
-        ratingEligibilityReason = 'already_rated';
-      } else if (!activeMembership) {
-        ratingEligibilityReason = 'no_active_contract';
-      } else {
-        ratingEligibilityReason = null;
-      }
-    }
-
-    const [enrichedApartment] = await this.enrichApartmentsWithWardAddress([
-      apartment,
-    ]);
-
     return {
       ...apartment,
-      amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       streetAddress: apartment.streetAddress,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
-      canRateApartment,
-      hasRatedApartment,
-      ratingEligibilityReason,
-      wardName: enrichedApartment.wardName,
-      districtCode: enrichedApartment.districtCode,
-      districtName: enrichedApartment.districtName,
-      provinceName: enrichedApartment.provinceName,
-      fullAddress: enrichedApartment.fullAddress,
     };
   }
 
@@ -985,11 +683,6 @@ export class ApartmentsService {
     currentUser: JwtPayload,
     media?: { imageUrls?: string[]; videoUrl?: string },
   ) {
-    if (createDto.amenityIds?.length) {
-      await this.validateAmenityIds(createDto.amenityIds);
-    }
-
-    // Auto-resolve province code from ward code
     let provinceCode: number | undefined;
     if (createDto.wardCode) {
       provinceCode = await this.resolveProvinceCodeFromWard(createDto.wardCode);
@@ -1015,6 +708,7 @@ export class ApartmentsService {
       numberOfBedrooms: createDto.numberOfBedrooms,
       numberOfBathrooms: createDto.numberOfBathrooms,
       furnishingStatus: createDto.furnishingStatus,
+      amenities: createDto.amenities,
       baseRentPrice: createDto.baseRentPrice,
       depositAmount: createDto.depositAmount,
       description: createDto.description,
@@ -1022,40 +716,120 @@ export class ApartmentsService {
       videoTourUrl,
       yearBuilt: createDto.yearBuilt,
       status: ApartmentStatus.available,
-      ...(createDto.amenityIds?.length
-        ? {
-            apartmentAmenities: {
-              create: createDto.amenityIds.map((amenityId) => ({
-                amenity: { connect: { id: amenityId } },
-              })),
-            },
-          }
-        : {}),
     };
 
-    // If user creates, link to their account
     if (currentUser.actorType === 'user') {
       data.owner = { connect: { id: currentUser.sub } };
     } else if (createDto.ownerId) {
       data.owner = { connect: { id: createDto.ownerId } };
     }
 
-    return this.prisma.apartment.create({
-      data,
+    if (!createDto.boardId) {
+      return this.prisma.apartment.create({
+        data,
+        select: {
+          id: true,
+          apartmentNumber: true,
+          wardCode: true,
+          provinceCode: true,
+          streetAddress: true,
+          baseRentPrice: true,
+          images: true,
+          videoTourUrl: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const apartment = await tx.apartment.create({
+        data,
+        select: {
+          id: true,
+          apartmentNumber: true,
+          wardCode: true,
+          provinceCode: true,
+          streetAddress: true,
+          baseRentPrice: true,
+          images: true,
+          videoTourUrl: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      await this.assignBoardToApartment(tx, createDto.boardId!, apartment.id);
+      return apartment;
+    });
+  }
+  private toPlainObject(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return { ...(value as Record<string, unknown>) };
+  }
+
+  private readBoardId(configuration: unknown) {
+    const rootConfig = this.toPlainObject(configuration);
+    const mqttConfig = this.toPlainObject(rootConfig.mqtt);
+
+    const rawValue = mqttConfig.espId ?? rootConfig.espId;
+    if (typeof rawValue !== 'string') {
+      return undefined;
+    }
+
+    const normalized = rawValue.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private async assignBoardToApartment(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    apartmentId: string,
+  ) {
+    const normalizedBoardId = boardId.trim();
+    if (!normalizedBoardId) {
+      throw new BadRequestException('boardId must not be empty');
+    }
+
+    const devices = await tx.ioTDevice.findMany({
       select: {
         id: true,
-        apartmentNumber: true,
-        wardCode: true,
-        provinceCode: true,
-        streetAddress: true,
-        baseRentPrice: true,
-        images: true,
-        videoTourUrl: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
+        roomId: true,
+        configuration: true,
       },
     });
+
+    const boardDevices = devices.filter(
+      (device) => this.readBoardId(device.configuration) === normalizedBoardId,
+    );
+
+    if (boardDevices.length === 0) {
+      throw new NotFoundException('IoT board not found');
+    }
+
+    const apartmentRooms = await tx.room.findMany({
+      where: { apartmentId },
+      select: { id: true },
+    });
+    const roomIds = new Set(apartmentRooms.map((room) => room.id));
+
+    await Promise.all(
+      boardDevices.map((device) =>
+        tx.ioTDevice.update({
+          where: { id: device.id },
+          data: {
+            apartmentId,
+            roomId: device.roomId && roomIds.has(device.roomId) ? device.roomId : null,
+          },
+          select: { id: true },
+        }),
+      ),
+    );
   }
 
   /**
@@ -1067,10 +841,6 @@ export class ApartmentsService {
     currentUser: JwtPayload,
     media?: { imageUrls?: string[]; videoUrl?: string },
   ) {
-    if (createDto.amenityIds?.length) {
-      await this.validateAmenityIds(createDto.amenityIds);
-    }
-
     const partnerIdentity = await this.prisma.user.findUnique({
       where: { id: currentUser.sub },
       select: {
@@ -1106,6 +876,7 @@ export class ApartmentsService {
       numberOfBedrooms: createDto.numberOfBedrooms,
       numberOfBathrooms: createDto.numberOfBathrooms,
       furnishingStatus: createDto.furnishingStatus,
+      amenities: createDto.amenities,
       baseRentPrice: createDto.baseRentPrice,
       depositAmount: createDto.depositAmount,
       description: createDto.description,
@@ -1116,15 +887,6 @@ export class ApartmentsService {
         ? this.cooperationVerifiedStatus
         : ApartmentStatus.inactive,
       owner: { connect: { id: currentUser.sub } },
-      ...(createDto.amenityIds?.length
-        ? {
-            apartmentAmenities: {
-              create: createDto.amenityIds.map((amenityId) => ({
-                amenity: { connect: { id: amenityId } },
-              })),
-            },
-          }
-        : {}),
     };
 
     const apartment = await this.prisma.apartment.create({
@@ -1151,10 +913,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.staff,
         recipientId: partner.createdByStaffId,
-        title: 'Partner gửi căn hộ hợp tác mới',
-        message: `Partner vừa gửi căn hộ ${apartment.apartmentNumber} cho quy trình hợp tác.`,
+        title: 'Partner gui can ho hop tac moi',
+        message: `Partner vua gui can ho ${apartment.apartmentNumber} cho quy trinh hop tac.`,
         actionUrl: `/apartments/${apartment.id}`,
-        actionLabel: 'Xem căn hộ',
+        actionLabel: 'Xem can ho',
         relatedEntityType: 'Apartment',
         relatedEntityId: apartment.id,
       });
@@ -1227,12 +989,7 @@ export class ApartmentsService {
     };
 
     if (canUpdateInfo) {
-      const blockedUpdateKeys = new Set([
-        'ownerId',
-        'images',
-        'videoTourUrl',
-        'amenityIds',
-      ]);
+      const blockedUpdateKeys = new Set(['ownerId', 'images', 'videoTourUrl']);
       const restUpdateDto = Object.fromEntries(
         Object.entries(updateDto).filter(
           ([key, value]) => !blockedUpdateKeys.has(key) && value !== undefined,
@@ -1249,38 +1006,17 @@ export class ApartmentsService {
       }
     }
 
-    if (updateDto?.amenityIds) {
-      await this.validateAmenityIds(updateDto.amenityIds);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      if (updateDto?.amenityIds) {
-        await tx.apartmentAmenity.deleteMany({ where: { apartmentId: id } });
-      }
-
-      return tx.apartment.update({
-        where: { id },
-        data: {
-          ...apartmentUpdateData,
-          ...(updateDto?.amenityIds
-            ? {
-                apartmentAmenities: {
-                  create: updateDto.amenityIds.map((amenityId) => ({
-                    amenity: { connect: { id: amenityId } },
-                  })),
-                },
-              }
-            : {}),
-        },
-        select: {
-          id: true,
-          apartmentNumber: true,
-          status: true,
-          images: true,
-          videoTourUrl: true,
-          updatedAt: true,
-        },
-      });
+    return this.prisma.apartment.update({
+      where: { id },
+      data: apartmentUpdateData,
+      select: {
+        id: true,
+        apartmentNumber: true,
+        status: true,
+        images: true,
+        videoTourUrl: true,
+        updatedAt: true,
+      },
     });
   }
 
@@ -1352,10 +1088,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.user,
         recipientId: apartment.ownerId,
-        title: 'Căn hộ hợp tác bị từ chối',
-        message: `Căn hộ ${apartment.apartmentNumber} đã bị operator từ chối. Lý do: ${reason}`,
+        title: 'Can ho hop tac bi tu choi',
+        message: `Can ho ${apartment.apartmentNumber} da bi operator tu choi. Ly do: ${reason}`,
         actionUrl: `/apartments/${id}`,
-        actionLabel: 'Xem chi tiết',
+        actionLabel: 'Xem chi tiet',
         relatedEntityType: 'Apartment',
         relatedEntityId: id,
       });
@@ -1389,7 +1125,6 @@ export class ApartmentsService {
       throw new NotFoundException('Apartment not found');
     }
 
-    // Users can only update their own apartments
     if (
       currentUser.actorType === 'user' &&
       apartment.ownerId !== currentUser.sub
@@ -1397,9 +1132,9 @@ export class ApartmentsService {
       throw new ForbiddenException('You can only update your own apartments');
     }
 
-    // Auto-resolve province code if wardCode is being updated
     const data: any = { ...updateDto };
-    delete data.amenityIds;
+    delete data.boardId;
+
     if (updateDto.wardCode !== undefined) {
       if (updateDto.wardCode !== null) {
         data.provinceCode = await this.resolveProvinceCodeFromWard(
@@ -1426,29 +1161,10 @@ export class ApartmentsService {
       data.videoTourUrl = media.videoUrl;
     }
 
-    if (updateDto.amenityIds) {
-      await this.validateAmenityIds(updateDto.amenityIds);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      if (updateDto.amenityIds) {
-        await tx.apartmentAmenity.deleteMany({ where: { apartmentId: id } });
-      }
-
-      return tx.apartment.update({
+    if (!updateDto.boardId) {
+      return this.prisma.apartment.update({
         where: { id },
-        data: {
-          ...data,
-          ...(updateDto.amenityIds
-            ? {
-                apartmentAmenities: {
-                  create: updateDto.amenityIds.map((amenityId) => ({
-                    amenity: { connect: { id: amenityId } },
-                  })),
-                },
-              }
-            : {}),
-        },
+        data,
         select: {
           id: true,
           apartmentNumber: true,
@@ -1463,9 +1179,31 @@ export class ApartmentsService {
           updatedAt: true,
         },
       });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedApartment = await tx.apartment.update({
+        where: { id },
+        data,
+        select: {
+          id: true,
+          apartmentNumber: true,
+          wardCode: true,
+          provinceCode: true,
+          streetAddress: true,
+          baseRentPrice: true,
+          images: true,
+          videoTourUrl: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      await this.assignBoardToApartment(tx, updateDto.boardId!, id);
+      return updatedApartment;
     });
   }
-
   /**
    * Delete apartment (soft delete by marking inactive)
    * Only Admin can delete
@@ -1531,18 +1269,6 @@ export class ApartmentsService {
             currentReading: true,
           },
         },
-        apartmentAmenities: {
-          select: {
-            amenity: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                icon: true,
-              },
-            },
-          },
-        },
         cooperationContracts: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -1583,14 +1309,16 @@ export class ApartmentsService {
       ]),
     );
 
-    const apartmentWithRating = apartments.map((apartment) => {
-      const cooperationContracts = (apartment.cooperationContracts ?? []).map(
-        (contract) => {
-          const contractToken = contract.contractPdfData
-            ? this.generatePdfToken(contract.id)
-            : null;
+    return apartments.map((apartment) => {
+      const latestCooperationContract = apartment.cooperationContracts?.[0];
+      const contractToken = latestCooperationContract?.contractPdfData
+        ? this.generatePdfToken(latestCooperationContract.id)
+        : null;
 
-          return {
+      return {
+        ...apartment,
+        cooperationContracts: (apartment.cooperationContracts ?? []).map(
+          (contract) => ({
             id: contract.id,
             contractNumber: contract.contractNumber,
             status: contract.status,
@@ -1604,21 +1332,30 @@ export class ApartmentsService {
             cooperationContractPublicPdfUrl: contractToken
               ? `/apartments/cooperation-contracts/pdf/view?token=${contractToken}`
               : null,
-          };
-        },
-      );
-      const latestCooperationContract = cooperationContracts[0] ?? null;
-
-      return {
-        ...apartment,
-        amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
-        cooperationContracts,
-        cooperationContract: latestCooperationContract,
+          }),
+        ),
+        cooperationContract: latestCooperationContract
+          ? {
+              id: latestCooperationContract.id,
+              contractNumber: latestCooperationContract.contractNumber,
+              status: latestCooperationContract.status,
+              startDate: latestCooperationContract.startDate,
+              endDate: latestCooperationContract.endDate,
+              signedDate: latestCooperationContract.signedAt,
+              contractDocumentUrl:
+                latestCooperationContract.contractDocumentUrl,
+              cooperationContractPdfUrl:
+                latestCooperationContract.contractPdfData
+                  ? `/apartments/cooperation-contracts/${latestCooperationContract.id}/pdf`
+                  : null,
+              cooperationContractPublicPdfUrl: contractToken
+                ? `/apartments/cooperation-contracts/pdf/view?token=${contractToken}`
+                : null,
+            }
+          : null,
         rating: ratingMap.get(apartment.id) ?? null,
       };
     });
-
-    return this.enrichApartmentsWithWardAddress(apartmentWithRating);
   }
 
   /**
@@ -1737,14 +1474,10 @@ export class ApartmentsService {
     const endDate = new Date(startDate);
     endDate.setFullYear(endDate.getFullYear() + 1);
 
-    const activeCommissionPhase =
-      await this.resolveGlobalCommissionRate(startDate);
     const commissionRate =
-      activeCommissionPhase?.commissionRate != null
-        ? Number(activeCommissionPhase.commissionRate)
-        : apartment.owner.commissionRate != null
-          ? Number(apartment.owner.commissionRate)
-          : 10;
+      apartment.owner.commissionRate != null
+        ? Number(apartment.owner.commissionRate)
+        : 10;
 
     const pdfData: PartnerCooperationPdfData = {
       contractNumber,
@@ -1758,9 +1491,7 @@ export class ApartmentsService {
       cooperationStartDate: this.formatDateDdMmYyyy(startDate),
       cooperationEndDate: this.formatDateDdMmYyyy(endDate),
       monthlyRevenueCommissionRate: commissionRate.toFixed(2),
-      notes: activeCommissionPhase
-        ? `Muc hoa hong ap dung theo giai doan: ${activeCommissionPhase.phaseName}`
-        : 'Hop dong hop tac khai thac can ho giua partner va IntelliServOps',
+      notes: 'Hop dong hop tac khai thac can ho giua partner va IntelliServOps',
     };
 
     const pdfBuffer =
@@ -1778,9 +1509,8 @@ export class ApartmentsService {
           commissionRate,
           status: PartnerCooperationContractStatus.pending,
           terms: 'COOPERATION_CONTRACT_TEMPLATE',
-          notes: activeCommissionPhase
-            ? `Generated when operator approved partner cooperation apartment | Applied phase: ${activeCommissionPhase.phaseName}`
-            : 'Generated when operator approved partner cooperation apartment',
+          notes:
+            'Generated when operator approved partner cooperation apartment',
           contractPdfData: new Uint8Array(pdfBuffer),
         },
         select: {
@@ -1815,10 +1545,10 @@ export class ApartmentsService {
     await this.notifySafely({
       recipientType: ActorType.user,
       recipientId: ownerId,
-      title: 'Căn hộ hợp tác đã được duyệt',
-      message: `Căn hộ ${result.approvedApartment.apartmentNumber} đã được operator duyệt và tạo hợp đồng hợp tác.`,
+      title: 'Can ho hop tac da duoc duyet',
+      message: `Can ho ${result.approvedApartment.apartmentNumber} da duoc operator duyet va tao hop dong hop tac.`,
       actionUrl: `/apartments/${id}/cooperation-contract`,
-      actionLabel: 'Xem hợp đồng',
+      actionLabel: 'Xem hop dong',
       relatedEntityType: 'Apartment',
       relatedEntityId: id,
     });
@@ -1942,10 +1672,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.operator,
         recipientId: contract.approvedByOperatorId,
-        title: 'Partner đã ký hợp đồng hợp tác',
-        message: `Partner đã ký và tải lên hợp đồng cho căn hộ ${apartment.apartmentNumber}.`,
+        title: 'Partner da ky hop dong hop tac',
+        message: `Partner da ky va upload hop dong cho can ho ${apartment.apartmentNumber}.`,
         actionUrl: `/apartments/${apartmentId}/cooperation-contract`,
-        actionLabel: 'Xem hợp đồng',
+        actionLabel: 'Xem hop dong',
         relatedEntityType: 'Apartment',
         relatedEntityId: apartmentId,
       });
@@ -2059,10 +1789,10 @@ export class ApartmentsService {
       await this.notifySafely({
         recipientType: ActorType.operator,
         recipientId: contract.approvedByOperatorId,
-        title: 'Partner đã hủy hợp đồng hợp tác',
-        message: `Partner đã hủy hợp đồng hợp tác của căn hộ ${apartment.apartmentNumber}.`,
+        title: 'Partner da huy hop dong hop tac',
+        message: `Partner da huy hop dong hop tac cua can ho ${apartment.apartmentNumber}.`,
         actionUrl: `/apartments/${apartmentId}/cooperation-contract`,
-        actionLabel: 'Xem hợp đồng',
+        actionLabel: 'Xem hop dong',
         relatedEntityType: 'Apartment',
         relatedEntityId: apartmentId,
       });
@@ -2080,3 +1810,4 @@ export class ApartmentsService {
     };
   }
 }
+
