@@ -167,6 +167,7 @@ describe('ContractsService', () => {
           provinceCode: null,
           buildingName: null,
           streetAddress: null,
+          maxOccupants: 2,
           numberOfBedrooms: 2,
           numberOfBathrooms: 1,
           totalArea: 75,
@@ -219,6 +220,7 @@ describe('ContractsService', () => {
           provinceCode: null,
           buildingName: null,
           streetAddress: null,
+          maxOccupants: 2,
           numberOfBedrooms: 2,
           numberOfBathrooms: 1,
           totalArea: 75,
@@ -659,7 +661,7 @@ describe('ContractsService', () => {
         .mockResolvedValueOnce({
           id: 'contract-123',
           status: ContractStatus.draft,
-          apartment: { numberOfBedrooms: 2 },
+          apartment: { maxOccupants: 2 },
           members: [{ userId: user.sub, memberType: 'primary' }],
         } as any)
         .mockResolvedValueOnce({
@@ -709,7 +711,7 @@ describe('ContractsService', () => {
       prisma.rentalContract.findUnique.mockResolvedValue({
         id: 'contract-123',
         status: ContractStatus.signed,
-        apartment: { numberOfBedrooms: 2 },
+        apartment: { maxOccupants: 2 },
         members: [{ userId: user.sub, memberType: 'primary' }],
       } as any);
 
@@ -722,13 +724,13 @@ describe('ContractsService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
-    it('should reject adding member when current member count reaches apartment bedroom limit', async () => {
+    it('should reject adding member when current member count reaches apartment max occupants limit', async () => {
       const user = mockUserJwtPayload();
 
       prisma.rentalContract.findUnique.mockResolvedValue({
         id: 'contract-123',
         status: ContractStatus.draft,
-        apartment: { numberOfBedrooms: 2 },
+        apartment: { maxOccupants: 2 },
         members: [
           { userId: user.sub, memberType: 'primary' },
           { userId: 'user-789', memberType: 'co_tenant' },
@@ -770,7 +772,7 @@ describe('ContractsService', () => {
           status: ContractStatus.active,
           apartment: {
             id: 'apt-123',
-            numberOfBedrooms: 3,
+            maxOccupants: 3,
           },
           members: [
             {
@@ -859,7 +861,7 @@ describe('ContractsService', () => {
           status: ContractStatus.active,
           apartment: {
             id: 'apt-123',
-            numberOfBedrooms: 3,
+            maxOccupants: 3,
           },
           members: [
             {

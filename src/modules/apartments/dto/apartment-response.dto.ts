@@ -287,6 +287,9 @@ export class ApartmentListItemDto {
   @ApiProperty({ example: '55' })
   totalArea: string;
 
+  @ApiProperty({ example: 4 })
+  maxOccupants: number;
+
   @ApiProperty({ example: 1 })
   numberOfBedrooms: number;
 
@@ -469,6 +472,9 @@ export class ApartmentDetailDto {
 
   @ApiProperty({ example: '55' })
   totalArea: string;
+
+  @ApiProperty({ example: 4 })
+  maxOccupants: number;
 
   @ApiPropertyOptional({ type: String, example: '50', nullable: true })
   usableArea: string | null;
