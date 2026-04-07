@@ -505,6 +505,10 @@ export class IoTService {
     if (currentUser?.actorType === 'user') {
       this.assertUserCanRenameDevice(updateDto);
 
+      if (!device.apartment) {
+        throw new ForbiddenException('Device is not assigned to an apartment');
+      }
+
       const hasAccess = device.apartment.rentalContracts.some((contract) =>
         contract.members.some((member) => member.userId === currentUser.sub),
       );
@@ -521,7 +525,7 @@ export class IoTService {
 
     await this.ensureRoomBelongsToApartment(
       updateDto.roomId,
-      targetApartmentId,
+      targetApartmentId ?? undefined,
     );
 
     const {
@@ -640,6 +644,10 @@ export class IoTService {
         throw new ForbiddenException(
           'This device is not controllable by tenants',
         );
+      }
+
+      if (!device.apartment) {
+        throw new ForbiddenException('Device is not assigned to an apartment');
       }
 
       const hasAccess = device.apartment.rentalContracts.some((contract) =>
@@ -974,6 +982,13 @@ export class IoTService {
     );
 
     const apartmentId = devices[0].apartmentId;
+
+    if (!apartmentId) {
+      this.logger.warn(
+        `Skipping meter sync for ${event.espId} because the board is not assigned to an apartment`,
+      );
+      return;
+    }
 
     if (event.waterTotal !== undefined) {
       await this.syncAutomaticMeterReading(
