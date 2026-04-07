@@ -11,6 +11,20 @@ class InvoiceContractApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 26728 })
   wardCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Phuong Ben Nghe',
+  })
+  wardName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Thanh pho Ho Chi Minh',
+  })
+  provinceName?: string | null;
 }
 
 class InvoiceContractMemberUserDto {
@@ -188,6 +202,23 @@ export class InvoiceListItemDto {
     description: 'Contract information for this invoice',
   })
   contract: InvoiceContractSummaryDto;
+}
+
+export class InvoiceListPaginatedDto {
+  @ApiProperty({ type: [InvoiceListItemDto] })
+  items: InvoiceListItemDto[];
+
+  @ApiProperty({ example: 120 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ example: 6 })
+  totalPages: number;
 }
 
 // ─── Invoice Detail DTO (findOne) ───────────────────────────────────

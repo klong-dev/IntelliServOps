@@ -38,6 +38,17 @@ import { ApartmentsService } from '../apartments/apartments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContractPdfData, ContractPdfService } from './contract-pdf.service';
 import * as crypto from 'crypto';
+import axios from 'axios';
+
+type WardLookupResponse = {
+  name?: string;
+  province_name?: string;
+};
+
+type WardAddressInfo = {
+  wardName: string | null;
+  provinceName: string | null;
+};
 
 @Injectable()
 export class ContractsService {
@@ -45,6 +56,8 @@ export class ContractsService {
   private readonly PDF_TOKEN_SECRET =
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly PDF_TOKEN_EXPIRY = 5 * 60 * 1000; // 5 minutes
+  private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
+  private readonly wardAddressCache = new Map<number, WardAddressInfo | null>();
 
   private readonly depositInvoiceSelect = {
     id: true,
@@ -69,6 +82,85 @@ export class ContractsService {
     private readonly notificationsService: NotificationsService,
     private readonly contractPdfService: ContractPdfService,
   ) {}
+
+  private normalizeWardName(value: string | undefined): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async resolveWardAddressFromWardCode(
+    wardCode: number,
+  ): Promise<WardAddressInfo | null> {
+    if (this.wardAddressCache.has(wardCode)) {
+      return this.wardAddressCache.get(wardCode) ?? null;
+    }
+
+    try {
+      const response = await axios.get<WardLookupResponse>(
+        `${this.provincesBaseUrl}/api/v2/w/${wardCode}`,
+        { timeout: 15000 },
+      );
+
+      const address: WardAddressInfo = {
+        wardName: this.normalizeWardName(response.data.name),
+        provinceName: this.normalizeWardName(response.data.province_name),
+      };
+
+      this.wardAddressCache.set(wardCode, address);
+      return address;
+    } catch {
+      this.wardAddressCache.set(wardCode, null);
+      return null;
+    }
+  }
+
+  private async enrichContractApartmentAddress<
+    T extends { apartment?: { wardCode?: number | null } | null },
+  >(items: T[]): Promise<T[]> {
+    const uniqueWardCodes = Array.from(
+      new Set(
+        items
+          .map((item) => item.apartment?.wardCode)
+          .filter((code): code is number => typeof code === 'number'),
+      ),
+    );
+
+    const resolvedEntries = await Promise.all(
+      uniqueWardCodes.map(async (wardCode) => {
+        return [
+          wardCode,
+          await this.resolveWardAddressFromWardCode(wardCode),
+        ] as const;
+      }),
+    );
+
+    const wardAddressMap = new Map<number, WardAddressInfo | null>(
+      resolvedEntries,
+    );
+
+    return items.map((item) => {
+      const wardCode = item.apartment?.wardCode;
+      const wardAddress =
+        typeof wardCode === 'number'
+          ? (wardAddressMap.get(wardCode) ?? null)
+          : null;
+
+      return {
+        ...item,
+        apartment: item.apartment
+          ? {
+              ...item.apartment,
+              wardName: wardAddress?.wardName ?? null,
+              provinceName: wardAddress?.provinceName ?? null,
+            }
+          : item.apartment,
+      };
+    });
+  }
 
   private formatDate(d: Date): string {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1)
@@ -822,8 +914,15 @@ export class ContractsService {
    * Get all contracts with filters
    * Admin/Operator see all, Staff see assigned, User see own
    */
-  async findAll(currentUser: JwtPayload, status?: ContractStatus) {
+  async findAll(
+    currentUser: JwtPayload,
+    query?: { status?: ContractStatus; page?: number; limit?: number },
+  ) {
     await this.autoActivateContractsWhenDepositPaid();
+
+    const { status, page = 1, limit = 20 } = query ?? {};
+    const safeLimit = Math.min(limit, 100);
+    const skip = (page - 1) * safeLimit;
 
     const where: Prisma.RentalContractWhereInput = {
       ...(status && { status }),
@@ -894,11 +993,16 @@ export class ContractsService {
         },
       },
       orderBy: { createdAt: 'desc' },
+      skip,
+      take: safeLimit,
     });
 
-    const contracts = await this.prisma.rentalContract.findMany(findAllArgs);
+    const [contracts, total] = await Promise.all([
+      this.prisma.rentalContract.findMany(findAllArgs),
+      this.prisma.rentalContract.count({ where }),
+    ]);
 
-    const items = contracts.map(
+    const mappedItems = contracts.map(
       ({ contractPdfData, invoices, renewalContracts, ...contract }) => {
         const pdfToken = contractPdfData
           ? this.generatePdfToken(contract.id)
@@ -918,7 +1022,15 @@ export class ContractsService {
       },
     );
 
-    return items;
+    const items = await this.enrichContractApartmentAddress(mappedItems);
+
+    return {
+      items,
+      total,
+      page,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    };
   }
 
   /**
@@ -1043,17 +1155,17 @@ export class ContractsService {
 
     // Convert binary PDF to base64 for JSON response
     const { contractPdfData, landlordSignature, tenantSignature, ...rest } =
-      contract as any;
+      contract;
 
     const pdfToken = contractPdfData ? this.generatePdfToken(id) : null;
-    const membersWithNationalId = (rest.members ?? []).map((member: any) => ({
+    const membersWithNationalId = (rest.members ?? []).map((member) => ({
       ...member,
       user: {
         id: member.user.id,
         fullName: member.user.fullName,
         email: member.user.email,
         phone: member.user.phone,
-        nationalId: member.user.identity?.nationalId || null,
+        nationalId: member.user.identity?.nationalId ?? null,
       },
     }));
     const bedroomLimit = rest.apartment?.numberOfBedrooms ?? 0;
@@ -1064,8 +1176,20 @@ export class ContractsService {
       bedroomLimit > 0 ? bedroomLimit - membersWithNationalId.length : 0,
     );
 
+    const wardAddress =
+      typeof rest.apartment?.wardCode === 'number'
+        ? await this.resolveWardAddressFromWardCode(rest.apartment.wardCode)
+        : null;
+
     return {
       ...rest,
+      apartment: rest.apartment
+        ? {
+            ...rest.apartment,
+            wardName: wardAddress?.wardName ?? null,
+            provinceName: wardAddress?.provinceName ?? null,
+          }
+        : rest.apartment,
       members: membersWithNationalId,
       maxAddableMembers,
       maxOccupants,
@@ -1078,7 +1202,7 @@ export class ContractsService {
       isDepositPaid: !!paidDepositInvoice,
       depositPaidAt: paidDepositInvoice?.paidAt ?? null,
       isRenewed: !!rest.renewalContracts?.length,
-      latestRenewalContractId: rest.renewalContracts?.[0]?.id ?? null,
+      latestRenewalContractId: rest.renewalContracts[0]?.id ?? null,
     };
   }
 

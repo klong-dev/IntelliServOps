@@ -100,18 +100,22 @@ describe('ContractsService', () => {
 
       const result = await service.findAll(admin);
 
-      expect(result).toHaveLength(2);
-      expect(result[0]).toMatchObject({
+      expect(result.items).toHaveLength(2);
+      expect(result.total).toBe(2);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.totalPages).toBe(1);
+      expect(result.items[0]).toMatchObject({
         id: 'contract-123',
         depositAmount: 20000000,
         hasPdf: false,
         pdfUrl: null,
       });
-      expect(result[1]).toMatchObject({
+      expect(result.items[1]).toMatchObject({
         id: 'contract-124',
         hasPdf: true,
       });
-      expect(result[1].pdfUrl).toContain('/contracts/pdf/view?token=');
+      expect(result.items[1].pdfUrl).toContain('/contracts/pdf/view?token=');
     });
 
     it('should return only user own contracts', async () => {
@@ -121,12 +125,13 @@ describe('ContractsService', () => {
 
       const result = await service.findAll(user);
 
-      expect(result).toHaveLength(1);
-      expect(result[0]).toMatchObject({
+      expect(result.items).toHaveLength(1);
+      expect(result.total).toBe(1);
+      expect(result.items[0]).toMatchObject({
         id: 'contract-123',
         hasPdf: true,
       });
-      expect(result[0].pdfUrl).toContain('/contracts/pdf/view?token=');
+      expect(result.items[0].pdfUrl).toContain('/contracts/pdf/view?token=');
       expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -140,7 +145,7 @@ describe('ContractsService', () => {
       const admin = mockAdminJwtPayload();
       prisma.rentalContract.findMany.mockResolvedValue([]);
 
-      await service.findAll(admin, ContractStatus.active);
+      await service.findAll(admin, { status: ContractStatus.active });
 
       expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
         expect.objectContaining({

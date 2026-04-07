@@ -66,9 +66,16 @@ export class PaymentsService {
 
   async findAll(
     currentUser: JwtPayload,
-    status?: PaymentStatus,
-    invoiceId?: string,
+    query?: {
+      status?: PaymentStatus;
+      invoiceId?: string;
+      page?: number;
+      limit?: number;
+    },
   ) {
+    const { status, invoiceId, page = 1, limit = 20 } = query ?? {};
+    const safeLimit = Math.min(limit, 100);
+
     const where: Prisma.PaymentWhereInput = {};
 
     if (status) {
@@ -111,7 +118,16 @@ export class PaymentsService {
     // Also expose unpaid invoices as pending payment entries when no payment exists yet.
     const shouldIncludeSynthetic = !status || status === PaymentStatus.pending;
     if (!shouldIncludeSynthetic) {
-      return payments;
+      const total = payments.length;
+      const skip = (page - 1) * safeLimit;
+
+      return {
+        items: payments.slice(skip, skip + safeLimit),
+        total,
+        page,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit),
+      };
     }
 
     const invoiceIdsWithPayments = new Set(payments.map((p) => p.invoice.id));
@@ -162,17 +178,35 @@ export class PaymentsService {
         },
       }));
 
-    return [...payments, ...syntheticPayments].sort(
+    const mergedItems = [...payments, ...syntheticPayments].sort(
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     );
+
+    const total = mergedItems.length;
+    const skip = (page - 1) * safeLimit;
+
+    return {
+      items: mergedItems.slice(skip, skip + safeLimit),
+      total,
+      page,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    };
   }
 
   async findByInvoiceId(
     invoiceId: string,
     currentUser: JwtPayload,
-    status?: PaymentStatus,
+    query?: {
+      status?: PaymentStatus;
+      page?: number;
+      limit?: number;
+    },
   ) {
-    return this.findAll(currentUser, status, invoiceId);
+    return this.findAll(currentUser, {
+      ...query,
+      invoiceId,
+    });
   }
 
   async findOne(id: string, currentUser: JwtPayload) {

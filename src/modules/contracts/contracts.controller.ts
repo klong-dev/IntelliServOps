@@ -31,7 +31,7 @@ import { ContractsService } from './contracts.service';
 import {
   CreateContractDto,
   UpdateContractDto,
-  ContractListItemDto,
+  ContractListPaginatedDto,
   ContractDetailDto,
   UploadContractPdfDto,
   CancelContractDto,
@@ -47,6 +47,7 @@ import {
   SetGlobalCooperationCommissionPhasesDto,
   SetGlobalCooperationCommissionPhasesResultDto,
 } from './dto';
+import { ContractListQueryDto } from './dto/contract-list-query.dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
 import { ApiJsonResponse } from '../../common/dto';
@@ -68,15 +69,20 @@ export class ContractsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List contracts' })
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
-  @ApiJsonResponse(ContractListItemDto, {
-    isArray: true,
-    description: 'List of contracts',
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiJsonResponse(ContractListPaginatedDto, {
+    description: 'Paginated list of contracts',
   })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
-    @Query('status') status?: ContractStatus,
+    @Query() query: ContractListQueryDto,
   ) {
-    return this.contractsService.findAll(currentUser, status);
+    return this.contractsService.findAll(currentUser, {
+      status: query.status,
+      page: query.page,
+      limit: query.limit,
+    });
   }
 
   @Get('pdf/view')
