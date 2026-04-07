@@ -39,6 +39,9 @@ export class IoTBoardDeviceItemDto {
   @ApiProperty()
   isControllableByTenant: boolean;
 
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'door-lock' })
+  icon: string | null;
+
   @ApiPropertyOptional({ type: String, nullable: true, example: 'door' })
   mqttTopic: string | null;
 
@@ -92,8 +95,8 @@ export class IoTBoardListItemDto {
   @ApiProperty({ example: 3 })
   deviceCount: number;
 
-  @ApiProperty({ type: IoTBoardApartmentSummaryDto })
-  apartment: IoTBoardApartmentSummaryDto;
+  @ApiPropertyOptional({ type: IoTBoardApartmentSummaryDto, nullable: true })
+  apartment: IoTBoardApartmentSummaryDto | null;
 
   @ApiProperty({ type: [IoTBoardDeviceItemDto] })
   devices: IoTBoardDeviceItemDto[];
