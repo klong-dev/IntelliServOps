@@ -180,14 +180,6 @@ export class CreateApartmentDto {
   yearBuilt?: number;
 
   @ApiPropertyOptional({
-    example: 'ESP_A101',
-    description: 'Optional board ID to assign to this apartment after creation',
-  })
-  @IsString()
-  @IsOptional()
-  @MaxLength(255)
-  boardId?: string;
-  @ApiPropertyOptional({
     description: 'Owner user ID if listed by a specific owner',
   })
   @IsString()
@@ -215,4 +207,3 @@ export class CreateApartmentRequestDto extends OmitType(CreateApartmentDto, [
   @Allow()
   video?: any;
 }
-

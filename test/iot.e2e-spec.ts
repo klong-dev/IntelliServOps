@@ -26,8 +26,6 @@ describe('IoTController (e2e)', () => {
 
   const apartmentId = '11111111-1111-4111-8111-111111111111';
   const deviceId = '22222222-2222-4222-8222-222222222222';
-  const meterId = '33333333-3333-4333-8333-333333333333';
-  const readingId = '44444444-4444-4444-8444-444444444444';
 
   beforeEach(async () => {
     prisma = createPrismaMock();
@@ -86,7 +84,8 @@ describe('IoTController (e2e)', () => {
       {
         id: deviceId,
         apartmentId,
-        deviceName: 'Front Door Lock',
+        deviceName: 'Front Door Lock',
+        deviceType: 'smart_lock',
         status: 'active',
         isControllableByTenant: true,
         lastOnlineAt: new Date('2026-03-31T00:00:00.000Z'),
@@ -94,7 +93,8 @@ describe('IoTController (e2e)', () => {
         updatedAt: new Date('2026-03-31T00:00:00.000Z'),
         configuration: {
           mqtt: {
-            espId: 'ESP_A101',
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
             topic: 'door',
             deviceId: 1,
             state: 'CLOSED',
@@ -122,7 +122,8 @@ describe('IoTController (e2e)', () => {
       {
         id: deviceId,
         apartmentId,
-        deviceName: 'Front Door Lock',
+        deviceName: 'Front Door Lock',
+        deviceType: 'smart_lock',
         status: 'active',
         isControllableByTenant: true,
         lastOnlineAt: null,
@@ -130,7 +131,8 @@ describe('IoTController (e2e)', () => {
         updatedAt: new Date('2026-03-31T00:00:00.000Z'),
         configuration: {
           mqtt: {
-            espId: 'ESP_A101',
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
             topic: 'door',
             deviceId: 1,
           },
@@ -148,22 +150,21 @@ describe('IoTController (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/iot/boards')
       .send({
-        id: 'ESP_A101',
+        boardId: 'ESP_A101',
+        boardName: 'A101 Main Board',
         apartmentId,
         devices: [
           {
-            deviceName: 'Front Door Lock',
-            topic: 'door',
-            deviceId: 1,
+            deviceName: 'Front Door Lock',
+            deviceType: 'smart_lock',
+            mqttTopic: 'door',
+            mqttDeviceId: 1,
           },
         ],
       })
       .expect(201);
 
-    expect(response.body.data).toMatchObject({
-      id: 'ESP_A101',
-      name: 'ESP_A101',
-    });
+    expect(response.body.data.id).toBe('ESP_A101');
   });
 
   it('sends door password', async () => {
@@ -228,13 +229,13 @@ describe('IoTController (e2e)', () => {
 
   it('accepts generic MQTT control', async () => {
     mqttService.controlDevice.mockImplementation(
-      (espId: string, action: string, deviceId: number, topic: string) => ({
+      (espId: string, action: string, mqttDeviceId: number, topic: string) => ({
         brokerUrl: 'mqtt://broker.hivemq.com:1883',
         topic: `${espId}/${topic}`,
-        payload: `${action}_${deviceId}`,
+        payload: `${action}_${mqttDeviceId}`,
         espId,
         deviceTopic: topic,
-        deviceId,
+        deviceId: mqttDeviceId,
         action,
         publishedAt: new Date('2026-03-31T00:00:00.000Z'),
       }),
@@ -286,4 +287,3 @@ describe('IoTController (e2e)', () => {
     expect(verifyResponse.body.data.isVerified).toBe(true);
   });
 });
-

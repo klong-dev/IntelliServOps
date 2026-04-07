@@ -1176,7 +1176,7 @@ model MaintenanceRequest {
   id                     String            @id @default(uuid())
   userId                 String
   rentalContractId       String
-  apartmentId            String?
+  apartmentId            String
   roomId                 String?
   category               MaintenanceCategory
   title                  String
@@ -1344,7 +1344,7 @@ model IoTDevice {
   model                  String?
   serialNumber           String?      @unique
   macAddress             String?
-  apartmentId            String?
+  apartmentId            String
   roomId                 String?
   locationDescription    String?
   firmwareVersion        String?
@@ -1362,7 +1362,7 @@ model IoTDevice {
   updatedAt              DateTime     @updatedAt
 
   // Relations
-  apartment Apartment? @relation(fields: [apartmentId], references: [id])
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
   room      Room?     @relation(fields: [roomId], references: [id])
 
   @@index([apartmentId])
@@ -1856,5 +1856,3 @@ model ChatMessage {
   @@index([createdAt])
   @@map("chat_messages")
 }
-
-
