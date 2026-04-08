@@ -2,10 +2,17 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreatePaymentDto, CreatePayOSPaymentLinkDto } from './dto';
+import {
+  CreatePaymentDto,
+  CreatePayOSPaymentLinkDto,
+  ConfirmPartnerMonthlyPayoutDto,
+  ListDuePartnerMonthlyPayoutsQueryDto,
+} from './dto';
 import {
   InvoiceType,
   PaymentStatus,
@@ -15,9 +22,12 @@ import {
   UserApartmentStatus,
   ActorType,
   Prisma,
+  PartnerCooperationContractStatus,
+  PartnerMonthlyPayoutStatus,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
 import { PayOS } from '@payos/node';
 import type {
   CreatePaymentLinkRequest,
@@ -30,6 +40,30 @@ import {
   PaymentInvoiceContent,
 } from './types';
 
+type PartnerPayoutDraft = {
+  partnerId: string;
+  partnerName: string;
+  partnerCompanyName: string | null;
+  bankName: string | null;
+  bankAccountNumber: string | null;
+  paymentTerms: string | null;
+  payoutMonth: string;
+  billingPeriodStart: Date;
+  billingPeriodEndExclusive: Date;
+  dueDate: Date;
+  grossRevenue: number;
+  commissionAmount: number;
+  effectiveCommissionRate: number;
+  payoutAmount: number;
+  currency: string;
+};
+
+type MonthRange = {
+  payoutMonth: string;
+  billingPeriodStart: Date;
+  billingPeriodEndExclusive: Date;
+};
+
 @Injectable()
 export class PaymentsService {
   private readonly payosClient: PayOS | null;
@@ -40,6 +74,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly storageService: SupabaseStorageService,
   ) {
     const clientId = this.configService.get<string>('payos.clientId');
     const apiKey = this.configService.get<string>('payos.apiKey');
@@ -62,6 +97,221 @@ export class PaymentsService {
             ...(baseURL ? { baseURL } : {}),
           })
         : null;
+  }
+
+  async listDuePartnerMonthlyPayouts(
+    currentUser: JwtPayload,
+    query: ListDuePartnerMonthlyPayoutsQueryDto,
+  ) {
+    if (currentUser.actorType !== 'staff') {
+      throw new ForbiddenException('Only staff can view due partner payouts');
+    }
+
+    const monthRange = this.resolveMonthRange(query.month);
+    const drafts = await this.buildPartnerPayoutDrafts(monthRange);
+
+    if (drafts.length === 0) {
+      return [];
+    }
+
+    const existingPayouts = await this.prisma.partnerMonthlyPayout.findMany({
+      where: {
+        payoutMonth: monthRange.payoutMonth,
+        partnerId: { in: drafts.map((item) => item.partnerId) },
+      },
+      select: {
+        id: true,
+        partnerId: true,
+        status: true,
+        transferProofUrl: true,
+        transferReference: true,
+        transferNote: true,
+        confirmedAt: true,
+        confirmedByStaffId: true,
+      },
+    });
+
+    const payoutByPartner = new Map(
+      existingPayouts.map((item) => [item.partnerId, item]),
+    );
+
+    const now = new Date();
+    return drafts
+      .map((draft) => {
+        const existing = payoutByPartner.get(draft.partnerId);
+        const status = existing?.status ?? PartnerMonthlyPayoutStatus.pending;
+        return {
+          payoutId: existing?.id ?? null,
+          partnerId: draft.partnerId,
+          partnerName: draft.partnerName,
+          partnerCompanyName: draft.partnerCompanyName,
+          bankName: draft.bankName,
+          bankAccountNumber: draft.bankAccountNumber,
+          paymentTerms: draft.paymentTerms,
+          payoutMonth: draft.payoutMonth,
+          billingPeriodStart: draft.billingPeriodStart,
+          billingPeriodEndExclusive: draft.billingPeriodEndExclusive,
+          dueDate: draft.dueDate,
+          grossRevenue: draft.grossRevenue.toFixed(2),
+          commissionAmount: draft.commissionAmount.toFixed(2),
+          effectiveCommissionRate: Number(
+            draft.effectiveCommissionRate.toFixed(2),
+          ),
+          payoutAmount: draft.payoutAmount.toFixed(2),
+          currency: draft.currency,
+          status,
+          isDue: draft.dueDate <= now,
+          transferProofUrl: existing?.transferProofUrl ?? null,
+          transferReference: existing?.transferReference ?? null,
+          transferNote: existing?.transferNote ?? null,
+          confirmedAt: existing?.confirmedAt ?? null,
+          confirmedByStaffId: existing?.confirmedByStaffId ?? null,
+        };
+      })
+      .filter(
+        (item) =>
+          item.isDue &&
+          item.payoutAmount !== '0.00' &&
+          item.status !== PartnerMonthlyPayoutStatus.paid,
+      )
+      .sort(
+        (a, b) =>
+          +new Date(a.dueDate) - +new Date(b.dueDate) ||
+          a.partnerName.localeCompare(b.partnerName, 'vi'),
+      );
+  }
+
+  async confirmPartnerMonthlyPayout(
+    currentUser: JwtPayload,
+    body: ConfirmPartnerMonthlyPayoutDto,
+    transferProof: {
+      mimetype?: string;
+      originalname?: string;
+      buffer?: Buffer;
+      size?: number;
+    },
+  ) {
+    if (currentUser.actorType !== 'staff') {
+      throw new ForbiddenException('Only staff can confirm partner payouts');
+    }
+
+    const mimeType = transferProof.mimetype || '';
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+      throw new BadRequestException(
+        `Invalid transfer proof format. Allowed: image/jpeg, image/png, image/webp. Received: ${mimeType || 'unknown'}`,
+      );
+    }
+
+    if (!transferProof.buffer) {
+      throw new BadRequestException('Transfer proof image data is required');
+    }
+
+    const monthRange = this.resolveMonthRange(body.payoutMonth);
+    const drafts = await this.buildPartnerPayoutDrafts(monthRange, [
+      body.partnerId,
+    ]);
+    const draft = drafts.find((item) => item.partnerId === body.partnerId);
+
+    if (!draft || draft.payoutAmount <= 0) {
+      throw new NotFoundException(
+        'No payable amount found for this partner/month',
+      );
+    }
+
+    if (draft.dueDate > new Date()) {
+      throw new BadRequestException('This partner payout is not due yet');
+    }
+
+    const existing = await this.prisma.partnerMonthlyPayout.findUnique({
+      where: {
+        partnerId_payoutMonth: {
+          partnerId: body.partnerId,
+          payoutMonth: monthRange.payoutMonth,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (existing?.status === PartnerMonthlyPayoutStatus.paid) {
+      throw new ConflictException('This partner payout is already confirmed');
+    }
+
+    const extension = this.getImageExtensionByMimeType(mimeType);
+    const storagePath = `partner-payouts/${monthRange.payoutMonth}/${body.partnerId}/staff-${currentUser.sub}-${Date.now()}.${extension}`;
+    const transferProofUrl = await this.storageService.uploadFile(
+      'apartment-cooperation',
+      storagePath,
+      transferProof,
+    );
+
+    const confirmedAt = new Date();
+    const payout = await this.prisma.partnerMonthlyPayout.upsert({
+      where: {
+        partnerId_payoutMonth: {
+          partnerId: body.partnerId,
+          payoutMonth: monthRange.payoutMonth,
+        },
+      },
+      create: {
+        partner: { connect: { id: body.partnerId } },
+        payoutMonth: monthRange.payoutMonth,
+        billingPeriodStart: monthRange.billingPeriodStart,
+        billingPeriodEnd: monthRange.billingPeriodEndExclusive,
+        dueDate: draft.dueDate,
+        grossRevenue: draft.grossRevenue,
+        commissionAmount: draft.commissionAmount,
+        payoutAmount: draft.payoutAmount,
+        effectiveCommissionRate: draft.effectiveCommissionRate,
+        currency: draft.currency,
+        status: PartnerMonthlyPayoutStatus.paid,
+        transferProofUrl,
+        transferReference: body.transferReference?.trim() || null,
+        transferNote: body.transferNote?.trim() || null,
+        confirmedAt,
+        confirmedByStaff: { connect: { id: currentUser.sub } },
+      },
+      update: {
+        billingPeriodStart: monthRange.billingPeriodStart,
+        billingPeriodEnd: monthRange.billingPeriodEndExclusive,
+        dueDate: draft.dueDate,
+        grossRevenue: draft.grossRevenue,
+        commissionAmount: draft.commissionAmount,
+        payoutAmount: draft.payoutAmount,
+        effectiveCommissionRate: draft.effectiveCommissionRate,
+        currency: draft.currency,
+        status: PartnerMonthlyPayoutStatus.paid,
+        transferProofUrl,
+        transferReference: body.transferReference?.trim() || null,
+        transferNote: body.transferNote?.trim() || null,
+        confirmedAt,
+        confirmedByStaffId: currentUser.sub,
+      },
+      select: {
+        id: true,
+        partnerId: true,
+        payoutMonth: true,
+        payoutAmount: true,
+        status: true,
+        transferProofUrl: true,
+        confirmedAt: true,
+        confirmedByStaffId: true,
+      },
+    });
+
+    return {
+      message: 'Partner monthly payout confirmed successfully',
+      payoutId: payout.id,
+      partnerId: payout.partnerId,
+      payoutMonth: payout.payoutMonth,
+      payoutAmount: Number(payout.payoutAmount).toFixed(2),
+      status: payout.status,
+      transferProofUrl: payout.transferProofUrl,
+      confirmedAt: payout.confirmedAt,
+      confirmedByStaffId: payout.confirmedByStaffId,
+    };
   }
 
   async findAll(
@@ -1142,5 +1392,248 @@ export class PaymentsService {
         };
       })
       .filter((item): item is InvoiceContentItem => item !== null);
+  }
+
+  private resolveMonthRange(month?: string): MonthRange {
+    if (month) {
+      const [yearRaw, monthRaw] = month.split('-');
+      const year = Number(yearRaw);
+      const monthIndex = Number(monthRaw) - 1;
+
+      if (
+        !Number.isInteger(year) ||
+        !Number.isInteger(monthIndex) ||
+        monthIndex < 0 ||
+        monthIndex > 11
+      ) {
+        throw new BadRequestException('month must be in YYYY-MM format');
+      }
+
+      const start = new Date(Date.UTC(year, monthIndex, 1));
+      const end = new Date(Date.UTC(year, monthIndex + 1, 1));
+      return {
+        payoutMonth: month,
+        billingPeriodStart: start,
+        billingPeriodEndExclusive: end,
+      };
+    }
+
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const monthIndex = now.getUTCMonth();
+    const previousMonthStart = new Date(Date.UTC(year, monthIndex - 1, 1));
+    const currentMonthStart = new Date(Date.UTC(year, monthIndex, 1));
+    const monthValue = `${previousMonthStart.getUTCFullYear()}-${String(
+      previousMonthStart.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
+
+    return {
+      payoutMonth: monthValue,
+      billingPeriodStart: previousMonthStart,
+      billingPeriodEndExclusive: currentMonthStart,
+    };
+  }
+
+  private async buildPartnerPayoutDrafts(
+    monthRange: MonthRange,
+    partnerIds?: string[],
+  ): Promise<PartnerPayoutDraft[]> {
+    const cooperationContracts =
+      await this.prisma.partnerCooperationContract.findMany({
+        where: {
+          status: {
+            in: [
+              PartnerCooperationContractStatus.signed,
+              PartnerCooperationContractStatus.active,
+            ],
+          },
+          startDate: { lt: monthRange.billingPeriodEndExclusive },
+          endDate: { gte: monthRange.billingPeriodStart },
+          ...(partnerIds?.length ? { partnerId: { in: partnerIds } } : {}),
+        },
+        select: {
+          apartmentId: true,
+          partnerId: true,
+          startDate: true,
+          endDate: true,
+          commissionRate: true,
+          partner: {
+            select: {
+              id: true,
+              fullName: true,
+              companyName: true,
+              bankName: true,
+              bankAccountNumber: true,
+              paymentTerms: true,
+            },
+          },
+        },
+      });
+
+    if (cooperationContracts.length === 0) {
+      return [];
+    }
+
+    const apartmentIds = Array.from(
+      new Set(cooperationContracts.map((item) => item.apartmentId)),
+    );
+
+    const paidInvoices = await this.prisma.invoice.findMany({
+      where: {
+        status: InvoiceStatus.paid,
+        paidAt: {
+          gte: monthRange.billingPeriodStart,
+          lt: monthRange.billingPeriodEndExclusive,
+        },
+        rentalContract: {
+          apartmentId: { in: apartmentIds },
+        },
+      },
+      select: {
+        totalAmount: true,
+        currency: true,
+        paidAt: true,
+        rentalContract: {
+          select: {
+            apartmentId: true,
+          },
+        },
+      },
+    });
+
+    if (paidInvoices.length === 0) {
+      return [];
+    }
+
+    const contractsByApartment = new Map(
+      apartmentIds.map((apartmentId) => [
+        apartmentId,
+        cooperationContracts.filter((item) => item.apartmentId === apartmentId),
+      ]),
+    );
+
+    const aggregateByPartner = new Map<
+      string,
+      {
+        partnerName: string;
+        partnerCompanyName: string | null;
+        bankName: string | null;
+        bankAccountNumber: string | null;
+        paymentTerms: string | null;
+        currency: string;
+        grossRevenue: number;
+        commissionAmount: number;
+      }
+    >();
+
+    for (const invoice of paidInvoices) {
+      if (!invoice.paidAt) {
+        continue;
+      }
+
+      const apartmentId = invoice.rentalContract.apartmentId;
+      const contracts = contractsByApartment.get(apartmentId) || [];
+      const matched = contracts
+        .filter(
+          (item) =>
+            item.startDate <= invoice.paidAt! &&
+            item.endDate >= invoice.paidAt!,
+        )
+        .sort((a, b) => +b.startDate - +a.startDate)[0];
+
+      if (!matched) {
+        continue;
+      }
+
+      const amount = Number(invoice.totalAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        continue;
+      }
+
+      const rate = Number(matched.commissionRate);
+      const commissionAmount = (amount * rate) / 100;
+      const existing = aggregateByPartner.get(matched.partnerId) || {
+        partnerName: matched.partner.fullName,
+        partnerCompanyName: matched.partner.companyName ?? null,
+        bankName: matched.partner.bankName ?? null,
+        bankAccountNumber: matched.partner.bankAccountNumber ?? null,
+        paymentTerms: matched.partner.paymentTerms ?? null,
+        currency: invoice.currency || 'VND',
+        grossRevenue: 0,
+        commissionAmount: 0,
+      };
+
+      existing.grossRevenue += amount;
+      existing.commissionAmount += commissionAmount;
+      aggregateByPartner.set(matched.partnerId, existing);
+    }
+
+    return Array.from(aggregateByPartner.entries()).map(([partnerId, item]) => {
+      const dueDay = this.resolveDueDay(item.paymentTerms);
+      const dueDate = new Date(
+        Date.UTC(
+          monthRange.billingPeriodEndExclusive.getUTCFullYear(),
+          monthRange.billingPeriodEndExclusive.getUTCMonth(),
+          dueDay,
+        ),
+      );
+      const payoutAmount = Math.max(
+        item.grossRevenue - item.commissionAmount,
+        0,
+      );
+      const effectiveRate =
+        item.grossRevenue > 0
+          ? (item.commissionAmount / item.grossRevenue) * 100
+          : 0;
+
+      return {
+        partnerId,
+        partnerName: item.partnerName,
+        partnerCompanyName: item.partnerCompanyName,
+        bankName: item.bankName,
+        bankAccountNumber: item.bankAccountNumber,
+        paymentTerms: item.paymentTerms,
+        payoutMonth: monthRange.payoutMonth,
+        billingPeriodStart: monthRange.billingPeriodStart,
+        billingPeriodEndExclusive: monthRange.billingPeriodEndExclusive,
+        dueDate,
+        grossRevenue: item.grossRevenue,
+        commissionAmount: item.commissionAmount,
+        effectiveCommissionRate: effectiveRate,
+        payoutAmount,
+        currency: item.currency,
+      };
+    });
+  }
+
+  private resolveDueDay(paymentTerms: string | null): number {
+    if (!paymentTerms) {
+      return 5;
+    }
+
+    const match = paymentTerms.match(/\b([1-9]|[12]\d|3[01])\b/);
+    if (!match) {
+      return 5;
+    }
+
+    const dueDay = Number(match[1]);
+    if (!Number.isFinite(dueDay)) {
+      return 5;
+    }
+
+    return Math.min(Math.max(dueDay, 1), 28);
+  }
+
+  private getImageExtensionByMimeType(mimeType: string): string {
+    switch (mimeType) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      default:
+        return 'jpg';
+    }
   }
 }

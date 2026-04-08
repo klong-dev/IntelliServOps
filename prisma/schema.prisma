@@ -352,6 +352,12 @@ enum PaymentStatus {
   cancelled
 }
 
+enum PartnerMonthlyPayoutStatus {
+  pending
+  paid
+  cancelled
+}
+
 // --- IoT Enums ---
 enum IoTDeviceType {
   smart_lock
@@ -515,6 +521,7 @@ model User {
   apartments            Apartment[]
   partnerRequests       PartnerRequest[]
   cooperationContracts  PartnerCooperationContract[] @relation("PartnerCooperationContractByPartner")
+  partnerMonthlyPayouts PartnerMonthlyPayout[]
 
   @@index([phone])
   @@index([supabaseId])
@@ -581,6 +588,7 @@ model Staff {
   appointments               Appointment[]
   contracts                  RentalContract[]           @relation("ContractCreatedByStaff")
   processedPayments          Payment[]                  @relation("PaymentProcessedByStaff")
+  confirmedPartnerMonthlyPayouts PartnerMonthlyPayout[] @relation("PartnerMonthlyPayoutConfirmedByStaff")
   assignedTickets            Ticket[]                   @relation("TicketAssignedToStaff")
   utilityReadings            UtilityReading[]           @relation("ReadingByStaff")
   verifiedReadings           UtilityReading[]           @relation("ReadingVerifiedByStaff")
@@ -1285,6 +1293,38 @@ model Payment {
   @@index([paymentDate])
   @@index([transactionId])
   @@map("payments")
+}
+
+model PartnerMonthlyPayout {
+  id                String                     @id @default(uuid())
+  partnerId         String
+  payoutMonth       String
+  billingPeriodStart DateTime
+  billingPeriodEnd  DateTime
+  dueDate           DateTime
+  grossRevenue      Decimal                    @db.Decimal(14, 2)
+  commissionAmount  Decimal                    @db.Decimal(14, 2)
+  payoutAmount      Decimal                    @db.Decimal(14, 2)
+  effectiveCommissionRate Decimal              @db.Decimal(5, 2)
+  currency          String                     @default("VND")
+  status            PartnerMonthlyPayoutStatus @default(pending)
+  transferProofUrl  String?
+  transferReference String?
+  transferNote      String?
+  confirmedAt       DateTime?
+  confirmedByStaffId String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  partner           User                       @relation(fields: [partnerId], references: [id])
+  confirmedByStaff  Staff?                     @relation("PartnerMonthlyPayoutConfirmedByStaff", fields: [confirmedByStaffId], references: [id])
+
+  @@unique([partnerId, payoutMonth])
+  @@index([payoutMonth])
+  @@index([status])
+  @@index([dueDate])
+  @@index([confirmedByStaffId])
+  @@map("partner_monthly_payouts")
 }
 
 // ============================================================================
