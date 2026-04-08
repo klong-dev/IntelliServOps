@@ -58,8 +58,6 @@ class ContractApartmentDto {
   @ApiPropertyOptional({ type: Number, nullable: true, example: 50.2 })
   usableArea?: number | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, example: 2 })
-  numberOfBedrooms?: number;
 }
 
 class WardAddressDto {

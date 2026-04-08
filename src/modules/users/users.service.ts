@@ -14,7 +14,10 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, PartnerRequestStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
-import { FptAiService } from '../../shared/services/fpt-ai.service';
+import {
+  FptAiService,
+  type FptAiResponse,
+} from '../../shared/services/fpt-ai.service';
 import type { JwtPayload } from '../auth/auth.service';
 import {
   CreateUserDto,
@@ -947,8 +950,8 @@ export class UsersService {
     }
 
     let autoVerified = false;
-    let frontResult = null;
-    let backResult = null;
+    let frontResult: FptAiResponse | null = null;
+    let backResult: FptAiResponse | null = null;
     let frontVerified = false;
     let backVerified = false;
 
@@ -1004,8 +1007,10 @@ export class UsersService {
     }
 
     // Merge extracted info from front and back
-    const frontInfo = this.fptAiService.extractUserInfo(frontResult) || {};
-    const backInfo = this.fptAiService.extractUserInfo(backResult) || {};
+    const frontInfo =
+      (frontResult ? this.fptAiService.extractUserInfo(frontResult) : null) || {};
+    const backInfo =
+      (backResult ? this.fptAiService.extractUserInfo(backResult) : null) || {};
     const extractedInfo = { ...frontInfo, ...backInfo };
 
     // Prepare UserIdentity update data - always update with latest AI recognition
