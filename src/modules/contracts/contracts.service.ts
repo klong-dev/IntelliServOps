@@ -224,6 +224,7 @@ export class ContractsService {
     id: string;
     apartmentId: string;
     startDate: Date;
+    endDate: Date;
     members?: Array<{
       userId: string;
       memberType: MemberType;
@@ -252,6 +253,7 @@ export class ContractsService {
           apartment: { connect: { id: contract.apartmentId } },
           rentalContract: { connect: { id: contract.id } },
           moveInDate: contract.startDate,
+          moveOutDate: contract.endDate,
           apartmentDoorPassword,
           isPrimaryTenant:
             member.memberType === MemberType.primary || member.isPrimaryContact,
@@ -259,7 +261,7 @@ export class ContractsService {
         },
         update: {
           moveInDate: contract.startDate,
-          moveOutDate: null,
+          moveOutDate: contract.endDate,
           apartmentDoorPassword,
           isPrimaryTenant:
             member.memberType === MemberType.primary || member.isPrimaryContact,
@@ -1888,6 +1890,7 @@ export class ContractsService {
       id: contract.id,
       apartmentId: contract.apartmentId,
       startDate: contract.startDate,
+      endDate: contract.endDate,
       members: contract.members,
     });
 
@@ -1967,7 +1970,7 @@ export class ContractsService {
         where: { rentalContractId: id },
         data: {
           status: UserApartmentStatus.moved_out,
-          moveOutDate: new Date(),
+          moveOutDate: contract.endDate,
         },
       }),
     ]);
@@ -2050,7 +2053,7 @@ export class ContractsService {
         where: { rentalContractId: id },
         data: {
           status: UserApartmentStatus.moved_out,
-          moveOutDate: terminatedAt,
+          moveOutDate: contract.endDate,
         },
       });
     });
@@ -2120,6 +2123,7 @@ export class ContractsService {
       id: contract.id,
       apartmentId: contract.apartmentId,
       startDate: contract.startDate,
+      endDate: contract.endDate,
       members: contract.members,
     });
 

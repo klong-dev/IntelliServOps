@@ -40,6 +40,7 @@ export class UserApartmentsService {
         wardCode: true,
         provinceCode: true,
         streetAddress: true,
+        images: true,
         status: true,
       },
     },

@@ -1150,6 +1150,7 @@ export class PaymentsService {
               connect: { id: rentalContract.id },
             },
             moveInDate: rentalContract.startDate,
+            moveOutDate: rentalContract.endDate,
             apartmentDoorPassword,
             isPrimaryTenant:
               member.memberType === 'primary' || member.isPrimaryContact,
@@ -1157,7 +1158,7 @@ export class PaymentsService {
           },
           update: {
             moveInDate: rentalContract.startDate,
-            moveOutDate: null,
+            moveOutDate: rentalContract.endDate,
             apartmentDoorPassword,
             isPrimaryTenant:
               member.memberType === 'primary' || member.isPrimaryContact,
