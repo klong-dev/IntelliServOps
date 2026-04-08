@@ -18,7 +18,12 @@ import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { UpdateHousePasswordDto } from './dto/update-house-password.dto';
-import { UpdateUserApartmentAccessDto, UserApartmentResponseDto } from './dto';
+import { UpdateUserApartmentAccessDto } from './dto';
+import {
+  UserApartmentDetailDto,
+  UserApartmentListItemDto,
+  UserApartmentMutationResultDto,
+} from './dto/user-apartment-response.dto';
 import { UserApartmentsService } from './user-apartments.service';
 
 @ApiTags('User Apartments')
@@ -34,12 +39,36 @@ export class UserApartmentsController {
     description:
       'Tra ve danh sach user-apartment cua user hien tai, bao gom day du thong tin apartment va thong tin truy cap.',
   })
-  @ApiJsonResponse(UserApartmentResponseDto, {
+  @ApiJsonResponse(UserApartmentListItemDto, {
     isArray: true,
     description: 'User apartment assignments with full apartment information',
   })
   async findMy(@CurrentUser() currentUser: JwtPayload) {
     return this.userApartmentsService.findMy(currentUser);
+  }
+
+  @Get(':id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({
+    summary: 'Get user-apartment assignment detail by id',
+    description:
+      'Tra ve chi tiet user-apartment theo id, populate day du cac thong tin lien quan.',
+  })
+  @ApiJsonResponse(UserApartmentDetailDto, {
+    description: 'User apartment detail with populated related data',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User apartment assignment not found',
+  })
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: JwtPayload,
+  ): Promise<unknown> {
+    const userApartmentsService = this.userApartmentsService as {
+      findOne: (assignmentId: string, actor: JwtPayload) => Promise<unknown>;
+    };
+    return userApartmentsService.findOne(id, currentUser);
   }
 
   @Patch(':id/access-info')
@@ -71,7 +100,7 @@ export class UserApartmentsController {
       },
     },
   })
-  @ApiJsonResponse(UserApartmentResponseDto, {
+  @ApiJsonResponse(UserApartmentMutationResultDto, {
     description: 'Updated user-apartment assignment',
   })
   @ApiResponse({
@@ -100,7 +129,7 @@ export class UserApartmentsController {
       },
     },
   })
-  @ApiJsonResponse(UserApartmentResponseDto, {
+  @ApiJsonResponse(UserApartmentMutationResultDto, {
     description: 'Updated user-apartment assignment',
   })
   @ApiResponse({
