@@ -536,7 +536,7 @@ describe('ContractsService', () => {
           }),
           update: expect.objectContaining({
             status: 'active',
-            moveOutDate: null,
+            moveOutDate: contract.endDate,
           }),
         }),
       );
@@ -1023,7 +1023,7 @@ describe('ContractsService', () => {
           }),
           update: expect.objectContaining({
             status: 'active',
-            moveOutDate: null,
+            moveOutDate: contract.endDate,
           }),
         }),
       );

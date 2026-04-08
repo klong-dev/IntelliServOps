@@ -30,6 +30,9 @@ class UserApartmentListApartmentDto {
   })
   streetAddress!: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  images!: unknown;
+
   @ApiProperty({ example: 'available' })
   status!: string;
 }
