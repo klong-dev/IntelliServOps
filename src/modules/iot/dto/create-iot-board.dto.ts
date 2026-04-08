@@ -1,5 +1,4 @@
 import {
-  ArrayMinSize,
   IsArray,
   IsIn,
   IsInt,
@@ -13,6 +12,9 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { MQTT_DEVICE_TOPICS } from '../iot-mqtt.types';
+
+export const BOARD_DEVICE_STATES = ['ON', 'OFF'] as const;
+export type BoardDeviceState = (typeof BOARD_DEVICE_STATES)[number];
 
 const readObjectValue = (obj: unknown, key: string) =>
   obj && typeof obj === 'object'
@@ -36,15 +38,6 @@ const toOptionalNumber = (value: unknown) => {
 };
 
 export class CreateIoTBoardDeviceDto {
-  @ApiProperty({
-    example: 'device-door-1',
-    description: 'Stable device identifier managed by the backend',
-  })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
-  @MaxLength(255)
-  id: string;
-
   @ApiProperty({
     example: 'Front Door Lock',
     description: 'Editable display name for this board device',
@@ -93,17 +86,19 @@ export class CreateIoTBoardDeviceDto {
   topic: (typeof MQTT_DEVICE_TOPICS)[number];
 
   @ApiPropertyOptional({
-    example: 'CLOSED',
+    enum: BOARD_DEVICE_STATES,
+    example: 'OFF',
     description:
-      "Latest known device state reported back from the IoT board. Legacy field 'mqttState' is also accepted.",
+      "Latest known device state reported back from the IoT board. Values are normalized to ON/OFF. Legacy field 'mqttState' is also accepted.",
   })
-  @Transform(({ value, obj }) =>
-    toTrimmedString(value ?? readObjectValue(obj, 'mqttState')),
-  )
-  @IsString()
+  @Transform(({ value, obj }) => {
+    const rawValue = toTrimmedString(value ?? readObjectValue(obj, 'mqttState'));
+    return typeof rawValue === 'string' ? rawValue.toUpperCase() : rawValue;
+  })
+  @IsIn(BOARD_DEVICE_STATES)
   @IsOptional()
   @MaxLength(255)
-  state?: string;
+  state?: BoardDeviceState;
 }
 
 export class CreateIoTBoardDto {
@@ -126,10 +121,11 @@ export class CreateIoTBoardDto {
   @ApiProperty({
     type: [CreateIoTBoardDeviceDto],
     description: 'Child devices connected to this board',
+    required: false,
   })
   @IsArray()
-  @ArrayMinSize(1)
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CreateIoTBoardDeviceDto)
-  devices: CreateIoTBoardDeviceDto[];
+  devices?: CreateIoTBoardDeviceDto[];
 }
