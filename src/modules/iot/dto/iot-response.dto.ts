@@ -31,17 +31,36 @@ export class IoTMqttPublishDetailsDto {
   @ApiProperty({ example: 'ESP_A101/light' })
   topic: string;
 
-  @ApiProperty({ example: 'on_1' })
+  @ApiProperty({ example: 'ON_1' })
   payload: string;
 
   @ApiProperty({ example: 'ESP_A101' })
   espId: string;
 
-  @ApiProperty({ example: 'light' })
-  controlType: string;
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'light' })
+  deviceTopic: string | null;
 
-  @ApiProperty({ example: 1 })
-  channelId: number;
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  deviceId: number | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'ON' })
+  action: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'light',
+    deprecated: true,
+  })
+  controlType: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 1,
+    deprecated: true,
+  })
+  channelId: number | null;
 
   @ApiProperty()
   publishedAt: Date;
@@ -59,6 +78,9 @@ export class IoTGatewayStatusDto {
 
   @ApiProperty({ example: 'HOMEIQ/+/status' })
   statusTopic: string;
+
+  @ApiProperty({ example: 'HOMEIQ/+/telemetry' })
+  telemetryTopic: string;
 }
 
 export class IoTDeviceListItemDto {
@@ -88,6 +110,18 @@ export class IoTDeviceListItemDto {
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   lastOnlineAt: Date | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'ESP_A101' })
+  mqttEspId: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'light' })
+  mqttTopic: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  mqttDeviceId: number | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'ON' })
+  mqttState: string | null;
 
   @ApiProperty()
   createdAt: Date;
@@ -164,12 +198,39 @@ export class IoTDeviceDetailDto {
   mqttBoardName: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true, example: 'door' })
+  mqttTopic: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  mqttDeviceId: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  mqttDoorPasswordDeviceId: number | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'CLOSED' })
+  mqttState: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'door',
+    deprecated: true,
+  })
   mqttControlType: string | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 1,
+    deprecated: true,
+  })
   mqttChannelId: number | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 1,
+    deprecated: true,
+  })
   mqttDoorPasswordChannelId: number | null;
 
   @ApiProperty()
@@ -200,8 +261,8 @@ export class ControlDeviceResponseDto {
   @ApiProperty()
   deviceId: string;
 
-  @ApiProperty({ example: 'unlock' })
-  command: string;
+  @ApiProperty({ example: 'ON' })
+  action: string;
 
   @ApiProperty()
   executedAt: Date;
@@ -210,15 +271,31 @@ export class ControlDeviceResponseDto {
   mqttEspId: string;
 
   @ApiProperty({ example: 'door' })
-  mqttControlType: string;
-
-  @ApiProperty({ example: 1 })
-  mqttChannelId: number;
-
-  @ApiProperty({ example: 'ESP_A101/door' })
   mqttTopic: string;
 
-  @ApiProperty({ example: 'open_1' })
+  @ApiProperty({ example: 1 })
+  mqttDeviceId: number;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'door',
+    deprecated: true,
+  })
+  mqttControlType: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 1,
+    deprecated: true,
+  })
+  mqttChannelId: number | null;
+
+  @ApiProperty({ example: 'ESP_A101/door' })
+  mqttPublishTopic: string;
+
+  @ApiProperty({ example: 'ON_1' })
   mqttPayload: string;
 }
 
@@ -226,7 +303,18 @@ export class IoTMqttCommandResultDto {
   @ApiProperty({ example: true })
   success: boolean;
 
-  @ApiProperty({ example: 'The lights have been turned on' })
+  @ApiProperty({ example: 'light 1 has been ON' })
+  message: string;
+
+  @ApiProperty({ type: IoTMqttPublishDetailsDto })
+  details: IoTMqttPublishDetailsDto;
+}
+
+export class IoTMqttSignalResultDto {
+  @ApiProperty({ example: true })
+  success: boolean;
+
+  @ApiProperty({ example: 'Health check signal sent' })
   message: string;
 
   @ApiProperty({ type: IoTMqttPublishDetailsDto })

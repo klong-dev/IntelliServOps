@@ -5,7 +5,6 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -13,28 +12,23 @@ import {
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IoTService } from './iot.service';
 import {
-  ControlDeviceDto,
-  ControlDeviceResponseDto,
-  CreateIoTBoardDeviceDto,
-  CreateIoTBoardDto,
-  CreateIoTDeviceDto,
   CreateUtilityMeterDto,
   CreateUtilityReadingDto,
-  DeviceActionDto,
+  CreateIoTBoardDeviceDto,
+  CreateIoTBoardDto,
+  DirectMqttControlDto,
   IoTBoardDeleteResultDto,
   IoTBoardDetailDto,
   IoTBoardListItemDto,
-  IoTDeviceDetailDto,
-  IoTDeviceListItemDto,
   IoTGatewayStatusDto,
   IoTMqttCommandResultDto,
+  IoTMqttSignalResultDto,
   IoTTestSequenceResponseDto,
   SetDoorPasswordDto,
   TestSequenceDto,
+  UpdateUtilityMeterDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
-  UpdateIoTDeviceDto,
-  UpdateUtilityMeterDto,
   UtilityMeterDetailDto,
   UtilityMeterListItemDto,
   UtilityReadingDto,
@@ -42,7 +36,6 @@ import {
 import { ApiJsonResponse } from '../../common/dto';
 import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
-import type { JwtPayload } from '../auth/auth.service';
 import { IoTStatus, MeterStatus } from '@prisma/client';
 
 @ApiTags('IoT')
@@ -60,70 +53,6 @@ export class IoTController {
     return this.iotService.getGatewayStatus();
   }
 
-  // ============================================================================
-  // Direct MQTT Routes Compatible With control-iot-server
-  // ============================================================================
-
-  @Post('devices/:espId/light/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Publish light command to MQTT device' })
-  @ApiJsonResponse(IoTMqttCommandResultDto, {
-    description: 'Light command published to MQTT broker',
-  })
-  triggerLight(
-    @Param('espId') espId: string,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: DeviceActionDto,
-  ) {
-    return this.iotService.triggerLight(espId, id, body.action);
-  }
-
-  @Post('devices/:espId/alarm/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Publish alarm command to MQTT device' })
-  @ApiJsonResponse(IoTMqttCommandResultDto, {
-    description: 'Alarm command published to MQTT broker',
-  })
-  triggerAlarm(
-    @Param('espId') espId: string,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: DeviceActionDto,
-  ) {
-    return this.iotService.triggerAlarm(espId, id, body.action);
-  }
-
-  @Post('devices/:espId/door/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Publish door command to MQTT device' })
-  @ApiJsonResponse(IoTMqttCommandResultDto, {
-    description: 'Door command published to MQTT broker',
-  })
-  triggerDoor(
-    @Param('espId') espId: string,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: DeviceActionDto,
-  ) {
-    return this.iotService.triggerDoor(espId, id, body.action);
-  }
-
-  @Post('devices/:espId/curtain/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Publish curtain command to MQTT device' })
-  @ApiJsonResponse(IoTMqttCommandResultDto, {
-    description: 'Curtain command published to MQTT broker',
-  })
-  triggerCurtain(
-    @Param('espId') espId: string,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: DeviceActionDto,
-  ) {
-    return this.iotService.triggerCurtain(espId, id, body.action);
-  }
-
   @Post('devices/:espId/config-door-password/:id')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
@@ -137,6 +66,28 @@ export class IoTController {
     @Body() body: SetDoorPasswordDto,
   ) {
     return this.iotService.configureDoorPassword(espId, id, body.password);
+  }
+
+  @Post('devices/:espId/get-telemetry')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Request telemetry from MQTT board' })
+  @ApiJsonResponse(IoTMqttSignalResultDto, {
+    description: 'Telemetry request published to MQTT broker',
+  })
+  requestTelemetry(@Param('espId') espId: string) {
+    return this.iotService.requestTelemetry(espId);
+  }
+
+  @Get('devices/:espId/check-health')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Send health check signal to MQTT board' })
+  @ApiJsonResponse(IoTMqttSignalResultDto, {
+    description: 'Health check signal published to MQTT broker',
+  })
+  checkHealth(@Param('espId') espId: string) {
+    return this.iotService.checkHealth(espId);
   }
 
   @Post('devices/:espId/test-sequence')
@@ -153,16 +104,33 @@ export class IoTController {
     return this.iotService.runDeviceTestSequence(espId, body.holdMs);
   }
 
-  // ============================================================================
-  // IoT Boards
-  // ============================================================================
+  @Post('devices/:espId/:deviceId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Publish a generic MQTT device command by topic and device id',
+  })
+  @ApiJsonResponse(IoTMqttCommandResultDto, {
+    status: 201,
+    description: 'Generic MQTT command published to MQTT broker',
+  })
+  controlDeviceByTopic(
+    @Param('espId') espId: string,
+    @Param('deviceId', ParseIntPipe) deviceId: number,
+    @Body() body: DirectMqttControlDto,
+  ) {
+    return this.iotService.controlDeviceByTopic(
+      espId,
+      deviceId,
+      body.topic,
+      body.action,
+    );
+  }
 
   @Get('boards')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'List IoT boards with their child devices',
-  })
+  @ApiOperation({ summary: 'List IoT boards with their child devices' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: IoTStatus })
   @ApiJsonResponse(IoTBoardListItemDto, {
@@ -179,9 +147,7 @@ export class IoTController {
   @Get('boards/:boardId')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Get IoT board details with grouped child devices',
-  })
+  @ApiOperation({ summary: 'Get IoT board details with grouped child devices' })
   @ApiJsonResponse(IoTBoardDetailDto, {
     description: 'Board details with child devices',
   })
@@ -193,12 +159,10 @@ export class IoTController {
   @Post('boards')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Create IoT board with child devices',
-  })
+  @ApiOperation({ summary: 'Create IoT board with child devices' })
   @ApiJsonResponse(IoTBoardDetailDto, {
     status: 201,
-    description: 'IoT board created successfully',
+    description: 'Board created successfully',
   })
   async createBoard(@Body() createDto: CreateIoTBoardDto) {
     return this.iotService.createBoard(createDto);
@@ -207,11 +171,9 @@ export class IoTController {
   @Patch('boards/:boardId')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Update IoT board metadata',
-  })
+  @ApiOperation({ summary: 'Update IoT board metadata' })
   @ApiJsonResponse(IoTBoardDetailDto, {
-    description: 'IoT board updated successfully',
+    description: 'Board updated successfully',
   })
   async updateBoard(
     @Param('boardId') boardId: string,
@@ -222,12 +184,10 @@ export class IoTController {
 
   @Delete('boards/:boardId')
   @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Deactivate an IoT board and all child devices',
-  })
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Deactivate IoT board and all its child devices' })
   @ApiJsonResponse(IoTBoardDeleteResultDto, {
-    description: 'IoT board deactivated successfully',
+    description: 'Board deactivated successfully',
   })
   async removeBoard(@Param('boardId') boardId: string) {
     return this.iotService.removeBoard(boardId);
@@ -236,12 +196,10 @@ export class IoTController {
   @Post('boards/:boardId/devices')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Add a child device to an IoT board',
-  })
-  @ApiJsonResponse(IoTDeviceDetailDto, {
+  @ApiOperation({ summary: 'Add a child device to an IoT board' })
+  @ApiJsonResponse(IoTBoardDetailDto, {
     status: 201,
-    description: 'IoT board device created successfully',
+    description: 'Child device created successfully',
   })
   async createBoardDevice(
     @Param('boardId') boardId: string,
@@ -253,15 +211,13 @@ export class IoTController {
   @Patch('boards/:boardId/devices/:deviceId')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Update a child device on an IoT board',
-  })
-  @ApiJsonResponse(IoTDeviceDetailDto, {
-    description: 'IoT board device updated successfully',
+  @ApiOperation({ summary: 'Update an IoT board child device' })
+  @ApiJsonResponse(IoTBoardDetailDto, {
+    description: 'Child device updated successfully',
   })
   async updateBoardDevice(
     @Param('boardId') boardId: string,
-    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Param('deviceId') deviceId: string,
     @Body() updateDto: UpdateIoTBoardDeviceDto,
   ) {
     return this.iotService.updateBoardDevice(boardId, deviceId, updateDto);
@@ -269,128 +225,22 @@ export class IoTController {
 
   @Delete('boards/:boardId/devices/:deviceId')
   @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({
-    summary: 'Deactivate a child device on an IoT board',
-  })
-  @ApiJsonResponse(IoTDeviceDetailDto, {
-    description: 'IoT board device deactivated successfully',
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Deactivate a child device from an IoT board' })
+  @ApiJsonResponse(IoTBoardDetailDto, {
+    description: 'Child device deactivated successfully',
   })
   async removeBoardDevice(
     @Param('boardId') boardId: string,
-    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Param('deviceId') deviceId: string,
   ) {
     return this.iotService.removeBoardDevice(boardId, deviceId);
   }
 
-  // ============================================================================
-  // IoT Devices
-  // ============================================================================
-
-  @Get('devices')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'List all IoT devices' })
-  @ApiQuery({ name: 'apartmentId', required: false })
-  @ApiQuery({ name: 'status', required: false, enum: IoTStatus })
-  @ApiJsonResponse(IoTDeviceListItemDto, {
-    isArray: true,
-    description: 'List of IoT devices',
-  })
-  async findAllDevices(
-    @Query('apartmentId') apartmentId?: string,
-    @Query('status') status?: IoTStatus,
-  ) {
-    return this.iotService.findAllDevices(apartmentId, status);
-  }
-
-  @Get('devices/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Get IoT device details' })
-  @ApiJsonResponse(IoTDeviceDetailDto, { description: 'Device details' })
-  @ApiResponse({ status: 404, description: 'Device not found' })
-  async findOneDevice(@Param('id', ParseUUIDPipe) id: string) {
-    return this.iotService.findOneDevice(id);
-  }
-
-  @Get('apartments/:apartmentId/devices')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
-  @ApiOperation({
-    summary: 'Get devices by apartment',
-    description: 'Tenants see only controllable active devices.',
-  })
-  @ApiJsonResponse(IoTDeviceListItemDto, {
-    isArray: true,
-    description: 'List of apartment devices',
-  })
-  async findDevicesByApartment(
-    @Param('apartmentId', ParseUUIDPipe) apartmentId: string,
-    @CurrentUser() currentUser?: JwtPayload,
-  ) {
-    return this.iotService.findDevicesByApartment(apartmentId, currentUser);
-  }
-
-  @Post('devices')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Register new IoT device' })
-  @ApiJsonResponse(IoTDeviceDetailDto, {
-    status: 201,
-    description: 'Device registered',
-  })
-  async createDevice(@Body() createDto: CreateIoTDeviceDto) {
-    return this.iotService.createDevice(createDto);
-  }
-
-  @Patch('devices/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Update IoT device' })
-  @ApiJsonResponse(IoTDeviceDetailDto, { description: 'Device updated' })
-  async updateDevice(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateDto: UpdateIoTDeviceDto,
-  ) {
-    return this.iotService.updateDevice(id, updateDto);
-  }
-
-  @Delete('devices/:id')
-  @Public()
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Deactivate IoT device' })
-  @ApiResponse({ status: 200, description: 'Device deactivated' })
-  async removeDevice(@Param('id', ParseUUIDPipe) id: string) {
-    return this.iotService.removeDevice(id);
-  }
-
-  @Post('devices/:id/control')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
-  @ApiOperation({
-    summary: 'Send command to IoT device',
-    description:
-      'Control device over MQTT using stored device metadata. Tenants must have an active contract.',
-  })
-  @ApiJsonResponse(ControlDeviceResponseDto, { description: 'Command sent' })
-  @ApiResponse({ status: 403, description: 'Access denied' })
-  async controlDevice(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() controlDto: ControlDeviceDto,
-    @CurrentUser() currentUser?: JwtPayload,
-  ) {
-    return this.iotService.controlDevice(id, controlDto.command, currentUser);
-  }
-
-  // ============================================================================
-  // Utility Meters
-  // ============================================================================
-
   @Get('meters')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'List all utility meters' })
+  @ApiOperation({ summary: 'List utility meters' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
   @ApiJsonResponse(UtilityMeterListItemDto, {
@@ -407,21 +257,21 @@ export class IoTController {
   @Get('meters/:id')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Get utility meter details with readings history' })
+  @ApiOperation({ summary: 'Get utility meter details' })
   @ApiJsonResponse(UtilityMeterDetailDto, {
-    description: 'Meter details with readings',
+    description: 'Utility meter details',
   })
-  async findOneMeter(@Param('id', ParseUUIDPipe) id: string) {
+  async findOneMeter(@Param('id') id: string) {
     return this.iotService.findOneMeter(id);
   }
 
   @Post('meters')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Register new utility meter' })
+  @ApiOperation({ summary: 'Create utility meter' })
   @ApiJsonResponse(UtilityMeterDetailDto, {
     status: 201,
-    description: 'Meter registered',
+    description: 'Utility meter created successfully',
   })
   async createMeter(@Body() createDto: CreateUtilityMeterDto) {
     return this.iotService.createMeter(createDto);
@@ -431,44 +281,42 @@ export class IoTController {
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Update utility meter' })
-  @ApiJsonResponse(UtilityMeterDetailDto, { description: 'Meter updated' })
+  @ApiJsonResponse(UtilityMeterDetailDto, {
+    description: 'Utility meter updated successfully',
+  })
   async updateMeter(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() updateDto: UpdateUtilityMeterDto,
   ) {
     return this.iotService.updateMeter(id, updateDto);
   }
 
-  // ============================================================================
-  // Utility Readings
-  // ============================================================================
-
   @Post('readings')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Record utility reading' })
+  @ApiOperation({ summary: 'Create utility meter reading' })
   @ApiJsonResponse(UtilityReadingDto, {
     status: 201,
-    description: 'Reading recorded',
+    description: 'Utility reading created successfully',
   })
   async createReading(
     @Body() createDto: CreateUtilityReadingDto,
-    @CurrentUser() currentUser?: JwtPayload,
+    @CurrentUser() currentUser?: any,
   ) {
     return this.iotService.createReading(createDto, currentUser);
   }
 
   @Get('meters/:meterId/readings')
   @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
-  @ApiOperation({ summary: 'Get meter reading history' })
-  @ApiQuery({ name: 'limit', required: false, example: 12 })
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'List readings of a utility meter' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiJsonResponse(UtilityReadingDto, {
     isArray: true,
-    description: 'Reading history',
+    description: 'Utility meter readings',
   })
   async getReadings(
-    @Param('meterId', ParseUUIDPipe) meterId: string,
+    @Param('meterId') meterId: string,
     @Query('limit') limit?: number,
   ) {
     return this.iotService.getReadings(meterId, limit);
@@ -478,11 +326,13 @@ export class IoTController {
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({ summary: 'Verify utility reading' })
-  @ApiJsonResponse(UtilityReadingDto, { description: 'Reading verified' })
+  @ApiJsonResponse(UtilityReadingDto, {
+    description: 'Utility reading verified successfully',
+  })
   async verifyReading(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() currentUser?: JwtPayload,
+    @Param('id') id: string,
+    @CurrentUser() currentUser?: any,
   ) {
-    return this.iotService.verifyReading(id, currentUser?.sub);
+    return this.iotService.verifyReading(id, currentUser?.actorType === 'staff' ? currentUser.sub : undefined);
   }
 }

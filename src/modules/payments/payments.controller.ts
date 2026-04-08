@@ -34,6 +34,7 @@ import {
   ConfirmPartnerMonthlyPayoutDto,
   ConfirmPartnerMonthlyPayoutResultDto,
 } from './dto';
+import { PaymentListQueryDto } from './dto/payment-list-query.dto';
 import { SimulatePaymentSuccessDto } from './dto/simulate-payment-success.dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
@@ -54,33 +55,38 @@ export class PaymentsController {
   @ApiOperation({ summary: 'List payments' })
   @ApiQuery({ name: 'status', required: false, enum: PaymentStatus })
   @ApiQuery({ name: 'invoiceId', required: false, type: String })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiJsonResponse(PaymentListItemDto, {
     isArray: true,
-    description: 'List of payments',
+    isPaginated: true,
+    description: 'Paginated list of payments',
   })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
-    @Query('status') status?: PaymentStatus,
-    @Query('invoiceId') invoiceId?: string,
+    @Query() query: PaymentListQueryDto,
   ) {
-    return this.paymentsService.findAll(currentUser, status, invoiceId);
+    return this.paymentsService.findAll(currentUser, query);
   }
 
   @Get('invoice/:invoiceId')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get payments by invoice ID' })
   @ApiQuery({ name: 'status', required: false, enum: PaymentStatus })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiJsonResponse(PaymentListItemDto, {
     isArray: true,
+    isPaginated: true,
     description:
-      'Payments of a specific invoice (includes pending synthetic entry if unpaid)',
+      'Paginated payments of a specific invoice (includes pending synthetic entry if unpaid)',
   })
   async findByInvoiceId(
     @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
     @CurrentUser() currentUser: JwtPayload,
-    @Query('status') status?: PaymentStatus,
+    @Query() query: PaymentListQueryDto,
   ) {
-    return this.paymentsService.findByInvoiceId(invoiceId, currentUser, status);
+    return this.paymentsService.findByInvoiceId(invoiceId, currentUser, query);
   }
 
   @Get(':id')

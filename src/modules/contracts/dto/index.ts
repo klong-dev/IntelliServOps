@@ -7,3 +7,5 @@ export * from './cooperation-contract.dto';
 export * from './add-contract-member.dto';
 export * from './renew-contract.dto';
 export * from './update-contract-pdf-content.dto';
+export * from './cooperation-commission.dto';
+export * from './contract-list-query.dto';

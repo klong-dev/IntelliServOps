@@ -229,12 +229,52 @@ export class ApartmentListItemDto {
   wardCode?: number | null;
 
   @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé',
+    nullable: true,
+    description: 'Tên phường/xã (resolve từ wardCode)',
+  })
+  wardName?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 760,
+    nullable: true,
+    description: 'Mã quận/huyện (resolve từ wardCode)',
+  })
+  districtCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Quận 1',
+    nullable: true,
+    description: 'Tên quận/huyện (resolve từ wardCode)',
+  })
+  districtName?: string | null;
+
+  @ApiPropertyOptional({
     type: Number,
     example: 79,
     nullable: true,
     description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
   })
   provinceCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Tên tỉnh/thành (resolve từ wardCode)',
+  })
+  provinceName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé, Quận 1, Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Địa chỉ hành chính đầy đủ (resolve từ wardCode)',
+  })
+  fullAddress?: string | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -246,6 +286,9 @@ export class ApartmentListItemDto {
 
   @ApiProperty({ example: '55' })
   totalArea: string;
+
+  @ApiProperty({ example: 4 })
+  maxOccupants: number;
 
   @ApiProperty({ example: 1 })
   numberOfBedrooms: number;
@@ -366,12 +409,52 @@ export class ApartmentDetailDto {
   wardCode?: number | null;
 
   @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé',
+    nullable: true,
+    description: 'Tên phường/xã (resolve từ wardCode)',
+  })
+  wardName?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 760,
+    nullable: true,
+    description: 'Mã quận/huyện (resolve từ wardCode)',
+  })
+  districtCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Quận 1',
+    nullable: true,
+    description: 'Tên quận/huyện (resolve từ wardCode)',
+  })
+  districtName?: string | null;
+
+  @ApiPropertyOptional({
     type: Number,
     example: 79,
     nullable: true,
     description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
   })
   provinceCode?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Tên tỉnh/thành (resolve từ wardCode)',
+  })
+  provinceName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Phường Bến Nghé, Quận 1, Thành phố Hồ Chí Minh',
+    nullable: true,
+    description: 'Địa chỉ hành chính đầy đủ (resolve từ wardCode)',
+  })
+  fullAddress?: string | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -389,6 +472,9 @@ export class ApartmentDetailDto {
 
   @ApiProperty({ example: '55' })
   totalArea: string;
+
+  @ApiProperty({ example: 4 })
+  maxOccupants: number;
 
   @ApiPropertyOptional({ type: String, example: '50', nullable: true })
   usableArea: string | null;

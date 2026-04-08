@@ -316,9 +316,16 @@ export class PaymentsService {
 
   async findAll(
     currentUser: JwtPayload,
-    status?: PaymentStatus,
-    invoiceId?: string,
+    query?: {
+      status?: PaymentStatus;
+      invoiceId?: string;
+      page?: number;
+      limit?: number;
+    },
   ) {
+    const { status, invoiceId, page = 1, limit = 20 } = query ?? {};
+    const safeLimit = Math.min(limit, 100);
+
     const where: Prisma.PaymentWhereInput = {};
 
     if (status) {
@@ -361,7 +368,16 @@ export class PaymentsService {
     // Also expose unpaid invoices as pending payment entries when no payment exists yet.
     const shouldIncludeSynthetic = !status || status === PaymentStatus.pending;
     if (!shouldIncludeSynthetic) {
-      return payments;
+      const total = payments.length;
+      const skip = (page - 1) * safeLimit;
+
+      return {
+        items: payments.slice(skip, skip + safeLimit),
+        total,
+        page,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit),
+      };
     }
 
     const invoiceIdsWithPayments = new Set(payments.map((p) => p.invoice.id));
@@ -412,17 +428,35 @@ export class PaymentsService {
         },
       }));
 
-    return [...payments, ...syntheticPayments].sort(
+    const mergedItems = [...payments, ...syntheticPayments].sort(
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     );
+
+    const total = mergedItems.length;
+    const skip = (page - 1) * safeLimit;
+
+    return {
+      items: mergedItems.slice(skip, skip + safeLimit),
+      total,
+      page,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    };
   }
 
   async findByInvoiceId(
     invoiceId: string,
     currentUser: JwtPayload,
-    status?: PaymentStatus,
+    query?: {
+      status?: PaymentStatus;
+      page?: number;
+      limit?: number;
+    },
   ) {
-    return this.findAll(currentUser, status, invoiceId);
+    return this.findAll(currentUser, {
+      ...query,
+      invoiceId,
+    });
   }
 
   async findOne(id: string, currentUser: JwtPayload) {
@@ -1092,13 +1126,57 @@ export class PaymentsService {
       };
     }
 
+    const members = rentalContract.members ?? [];
+
+    const buildUserApartmentUpserts = (
+      status: UserApartmentStatus,
+      apartmentDoorPassword: string | null,
+    ): Prisma.PrismaPromise<any>[] =>
+      members.map((member) =>
+        this.prisma.userApartment.upsert({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: member.userId,
+              apartmentId: rentalContract.apartmentId,
+              rentalContractId: rentalContract.id,
+            },
+          },
+          create: {
+            user: { connect: { id: member.userId } },
+            apartment: {
+              connect: { id: rentalContract.apartmentId },
+            },
+            rentalContract: {
+              connect: { id: rentalContract.id },
+            },
+            moveInDate: rentalContract.startDate,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status,
+          },
+          update: {
+            moveInDate: rentalContract.startDate,
+            moveOutDate: null,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === 'primary' || member.isPrimaryContact,
+            status,
+          },
+        }),
+      );
+
     const todayStart = this.getUtcDayStart();
 
     if (rentalContract.startDate > todayStart) {
+      txOperations.push(
+        ...buildUserApartmentUpserts(UserApartmentStatus.inactive, null),
+      );
+
       return {
         activated: false,
         apartmentDoorPassword: null,
-        memberUserIds: [],
+        memberUserIds: members.map((member) => member.userId),
       };
     }
 
@@ -1133,40 +1211,10 @@ export class PaymentsService {
       }),
     );
 
-    const members = rentalContract.members ?? [];
     txOperations.push(
-      ...members.map((member) =>
-        this.prisma.userApartment.upsert({
-          where: {
-            userId_apartmentId_rentalContractId: {
-              userId: member.userId,
-              apartmentId: rentalContract.apartmentId,
-              rentalContractId: rentalContract.id,
-            },
-          },
-          create: {
-            user: { connect: { id: member.userId } },
-            apartment: {
-              connect: { id: rentalContract.apartmentId },
-            },
-            rentalContract: {
-              connect: { id: rentalContract.id },
-            },
-            moveInDate: rentalContract.startDate,
-            apartmentDoorPassword,
-            isPrimaryTenant:
-              member.memberType === 'primary' || member.isPrimaryContact,
-            status: UserApartmentStatus.active,
-          },
-          update: {
-            moveInDate: rentalContract.startDate,
-            moveOutDate: null,
-            apartmentDoorPassword,
-            isPrimaryTenant:
-              member.memberType === 'primary' || member.isPrimaryContact,
-            status: UserApartmentStatus.active,
-          },
-        }),
+      ...buildUserApartmentUpserts(
+        UserApartmentStatus.active,
+        apartmentDoorPassword,
       ),
     );
 
@@ -1190,10 +1238,10 @@ export class PaymentsService {
           recipientId: memberUserId,
           notificationType: 'info',
           channel: 'in_app',
-          title: 'Kich hoat hop dong thanh cong',
-          message: `Hoa don dat coc ${invoiceNumber} da thanh toan thanh cong. Mat khau cua nha: ${apartmentDoorPassword}`,
+          title: 'Kích hoạt hợp đồng thành công',
+          message: `Hóa đơn đặt cọc ${invoiceNumber} đã thanh toán thành công. Mật khẩu cửa nhà: ${apartmentDoorPassword}`,
           actionUrl: `/contracts/${rentalContractId}`,
-          actionLabel: 'Xem hop dong',
+          actionLabel: 'Xem hợp đồng',
           priority: 'high',
           relatedEntityType: 'RentalContract',
           relatedEntityId: rentalContractId,

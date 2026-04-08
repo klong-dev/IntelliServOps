@@ -48,8 +48,19 @@ describe('InvoicesService', () => {
   });
 
   describe('findAll', () => {
+    it('should mark overdue before listing invoices', async () => {
+      const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.invoice.findMany.mockResolvedValue([] as any);
+
+      await service.findAll(admin);
+
+      expect(prisma.invoice.updateMany).toHaveBeenCalled();
+    });
+
     it('should return all invoices for admin', async () => {
       const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
       const invoices = [
         {
           ...mockInvoice(),
@@ -64,18 +75,32 @@ describe('InvoicesService', () => {
         },
       ];
       prisma.invoice.findMany.mockResolvedValue(invoices as any);
+      prisma.invoice.count.mockResolvedValue(1 as any);
 
       const result = await service.findAll(admin);
 
-      expect(result[0]).toMatchObject({
-        rentalContract: invoices[0].rentalContract,
-        contract: invoices[0].rentalContract,
+      expect(result.items).toHaveLength(1);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.totalPages).toBe(1);
+      expect(result.items[0]).toMatchObject({
+        rentalContract: expect.objectContaining({
+          id: invoices[0].rentalContract.id,
+          contractNumber: invoices[0].rentalContract.contractNumber,
+        }),
+        contract: expect.objectContaining({
+          id: invoices[0].rentalContract.id,
+          contractNumber: invoices[0].rentalContract.contractNumber,
+        }),
       });
     });
 
     it('should filter user own invoices', async () => {
       const user = mockUserJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
       prisma.invoice.findMany.mockResolvedValue([]);
+      prisma.invoice.count.mockResolvedValue(0 as any);
 
       await service.findAll(user);
 
@@ -90,9 +115,11 @@ describe('InvoicesService', () => {
 
     it('should filter by status', async () => {
       const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
       prisma.invoice.findMany.mockResolvedValue([]);
+      prisma.invoice.count.mockResolvedValue(0 as any);
 
-      await service.findAll(admin, InvoiceStatus.paid);
+      await service.findAll(admin, { status: InvoiceStatus.paid });
 
       expect(prisma.invoice.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -103,8 +130,31 @@ describe('InvoicesService', () => {
   });
 
   describe('findOne', () => {
+    it('should mark overdue before returning invoice detail', async () => {
+      const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.invoice.findUnique.mockResolvedValue({
+        ...mockInvoice(),
+        rentalContract: {
+          id: 'contract-123',
+          contractNumber: 'CTR-202601-00001',
+          apartment: {
+            apartmentNumber: 'A101',
+            wardCode: 26728,
+          },
+          members: [{ user: { id: 'user-123' } }],
+        },
+        payments: [],
+      } as any);
+
+      await service.findOne('invoice-123', admin);
+
+      expect(prisma.invoice.updateMany).toHaveBeenCalled();
+    });
+
     it('should return invoice by ID', async () => {
       const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
       const invoice = {
         ...mockInvoice(),
         rentalContract: {
@@ -129,6 +179,7 @@ describe('InvoicesService', () => {
 
     it('should throw NotFoundException if not found', async () => {
       const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
       prisma.invoice.findUnique.mockResolvedValue(null);
 
       await expect(service.findOne('non-existent', admin)).rejects.toThrow(
@@ -209,12 +260,27 @@ describe('InvoicesService', () => {
       expect(prisma.invoice.updateMany).toHaveBeenCalledWith({
         where: {
           status: {
-            in: [InvoiceStatus.draft, InvoiceStatus.issued, InvoiceStatus.sent],
+            in: [
+              InvoiceStatus.draft,
+              InvoiceStatus.issued,
+              InvoiceStatus.sent,
+              InvoiceStatus.partially_paid,
+            ],
           },
           dueDate: { lt: expect.any(Date) },
         },
         data: { status: InvoiceStatus.overdue },
       });
+    });
+  });
+
+  describe('autoMarkOverdueInvoices', () => {
+    it('should run overdue sync', async () => {
+      prisma.invoice.updateMany.mockResolvedValue({ count: 3 } as any);
+
+      await service.autoMarkOverdueInvoices();
+
+      expect(prisma.invoice.updateMany).toHaveBeenCalled();
     });
   });
 

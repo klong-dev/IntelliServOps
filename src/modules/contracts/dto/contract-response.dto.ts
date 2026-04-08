@@ -25,12 +25,29 @@ class ContractApartmentDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
+    example: 'Phuong Ben Nghe',
+  })
+  wardName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Thanh pho Ho Chi Minh',
+  })
+  provinceName?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
     example: '12 Nguyễn Huệ, Phường Bến Nghé',
   })
   streetAddress: string | null;
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 2 })
   numberOfBedrooms?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 4 })
+  maxOccupants?: number | null;
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
   numberOfBathrooms?: number | null;
@@ -40,6 +57,9 @@ class ContractApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 50.2 })
   usableArea?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 2 })
+  numberOfBedrooms?: number;
 }
 
 class WardAddressDto {
@@ -217,6 +237,9 @@ export class ContractListItemDto {
   @ApiProperty({ example: '15000000.00' })
   monthlyRent: string;
 
+  @ApiProperty({ example: '30000000.00' })
+  depositAmount: string;
+
   @ApiProperty()
   createdAt: Date;
 
@@ -250,6 +273,23 @@ export class ContractListItemDto {
 
   @ApiProperty({ type: [ContractListMemberDto] })
   members: ContractListMemberDto[];
+}
+
+export class ContractListPaginatedDto {
+  @ApiProperty({ type: [ContractListItemDto] })
+  items: ContractListItemDto[];
+
+  @ApiProperty({ example: 120 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ example: 6 })
+  totalPages: number;
 }
 
 // ─── Contract Detail DTO (findOne) ──────────────────────────────────
@@ -387,9 +427,21 @@ export class ContractDetailDto {
   @ApiProperty({
     example: 1,
     description:
-      'Maximum number of additional members that can still be added to this contract based on apartment bedrooms',
+      'Maximum number of additional members that can still be added to this contract based on apartment max occupants',
   })
   maxAddableMembers: number;
+
+  @ApiProperty({
+    example: 2,
+    description: 'Maximum occupants allowed for this contract',
+  })
+  maxOccupants: number;
+
+  @ApiProperty({
+    example: 1,
+    description: 'Current active occupants in this contract',
+  })
+  currentOccupants: number;
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   terminationDate: Date | null;

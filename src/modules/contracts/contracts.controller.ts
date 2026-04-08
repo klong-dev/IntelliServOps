@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Patch,
   Param,
@@ -30,19 +31,23 @@ import { ContractsService } from './contracts.service';
 import {
   CreateContractDto,
   UpdateContractDto,
-  ContractListItemDto,
+  ContractListPaginatedDto,
   ContractDetailDto,
   UploadContractPdfDto,
   CancelContractDto,
   AddContractMemberDto,
   RenewContractDto,
   RenewContractResponseDto,
+  RenewalOption,
   UpdateContractPdfContentDto,
   SignCooperationContractDto,
   SignCooperationContractResultDto,
   CancelCooperationContractDto,
   CancelCooperationContractResultDto,
+  SetGlobalCooperationCommissionPhasesDto,
+  SetGlobalCooperationCommissionPhasesResultDto,
 } from './dto';
+import { ContractListQueryDto } from './dto/contract-list-query.dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
 import { ApiJsonResponse } from '../../common/dto';
@@ -64,15 +69,20 @@ export class ContractsController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List contracts' })
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
-  @ApiJsonResponse(ContractListItemDto, {
-    isArray: true,
-    description: 'List of contracts',
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiJsonResponse(ContractListPaginatedDto, {
+    description: 'Paginated list of contracts',
   })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
-    @Query('status') status?: ContractStatus,
+    @Query() query: ContractListQueryDto,
   ) {
-    return this.contractsService.findAll(currentUser, status);
+    return this.contractsService.findAll(currentUser, {
+      status: query.status,
+      page: query.page,
+      limit: query.limit,
+    });
   }
 
   @Get('pdf/view')
@@ -227,6 +237,31 @@ export class ContractsController {
     );
   }
 
+  @Put('cooperation/commission-phases')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Admin setup global cooperation commission phases',
+    description:
+      'Replace all active global commission phases for partner cooperation contracts. New cooperation contracts use phase matched by contract start date.',
+  })
+  @ApiBody({ type: SetGlobalCooperationCommissionPhasesDto })
+  @ApiJsonResponse(SetGlobalCooperationCommissionPhasesResultDto, {
+    description: 'Global cooperation commission phases updated',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid phase dates or overlapping phase ranges',
+  })
+  async setGlobalCooperationCommissionPhases(
+    @Body() body: SetGlobalCooperationCommissionPhasesDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.contractsService.setGlobalCooperationCommissionPhases(
+      body,
+      currentUser.sub,
+    );
+  }
+
   @Patch('cooperation/:id/cancel')
   @Roles(Role.USER)
   @ApiOperation({
@@ -311,34 +346,23 @@ export class ContractsController {
   @ApiOperation({
     summary: 'Renew rental contract',
     description:
-      'Create a new draft (unsigned) renewal contract from an existing contract. Request may update important fields, append new members by CCCD, or only provide extensionMonths for automatic new date calculation.',
+      'Create a new draft (unsigned) renewal contract from an existing contract with 2 options: keep_current (keep old duration and members) or customize (provide extensionMonths and new members by CCCD).',
   })
   @ApiBody({
     type: RenewContractDto,
     examples: {
-      renewByMonthsOnly: {
-        summary: 'Renew by months only',
+      keepEverythingAsOldContract: {
+        summary: 'Keep current months and members',
         value: {
-          extensionMonths: 12,
+          renewalOption: RenewalOption.KEEP_CURRENT,
         },
       },
-      renewWithUpdatedTermsAndMembers: {
-        summary: 'Renew with updated terms and extra member',
+      customizeMonthsAndMembers: {
+        summary: 'Customize months and replace members by CCCD',
         value: {
-          extensionMonths: 18,
-          monthlyRent: 17000000,
-          depositAmount: 34000000,
-          paymentDueDay: 7,
-          paymentMethod: 'bank_transfer',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          additionalMembers: [
-            {
-              nationalId: '079203009999',
-              memberType: 'co_tenant',
-              isPrimaryContact: false,
-              sharePercentage: 25,
-            },
-          ],
+          renewalOption: RenewalOption.CUSTOMIZE,
+          extensionMonths: 12,
+          memberNationalIds: ['079203009999', '079203008888'],
         },
       },
     },

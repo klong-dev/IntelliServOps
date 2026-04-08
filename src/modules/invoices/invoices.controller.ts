@@ -19,7 +19,8 @@ import { InvoicesService } from './invoices.service';
 import {
   CreateInvoiceDto,
   UpdateInvoiceDto,
-  InvoiceListItemDto,
+  InvoiceListPaginatedDto,
+  InvoiceListQueryDto,
   InvoiceDetailDto,
   InvoiceCreatedDto,
   InvoiceUpdatedDto,
@@ -40,15 +41,16 @@ export class InvoicesController {
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List invoices' })
   @ApiQuery({ name: 'status', required: false, enum: InvoiceStatus })
-  @ApiJsonResponse(InvoiceListItemDto, {
-    isArray: true,
-    description: 'List of invoices',
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiJsonResponse(InvoiceListPaginatedDto, {
+    description: 'Paginated list of invoices',
   })
   async findAll(
     @CurrentUser() currentUser: JwtPayload,
-    @Query('status') status?: InvoiceStatus,
+    @Query() query: InvoiceListQueryDto,
   ) {
-    return this.invoicesService.findAll(currentUser, status);
+    return this.invoicesService.findAll(currentUser, query);
   }
 
   @Get(':id')

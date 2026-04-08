@@ -19,7 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:seed": "npx prisma db seed",
-    "db:reset": "npx prisma migrate reset --force"
+    "db:reset": "npx prisma migrate reset --force",
+    "db:backfill:user-apartments": "ts-node prisma/backfill-user-apartments.ts",
+    "db:backfill:user-apartments:dry-run": "ts-node prisma/backfill-user-apartments.ts --dry-run"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -35,6 +37,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/platform-socket.io": "^11.1.17",
+    "@nestjs/schedule": "^6.1.1",
     "@nestjs/swagger": "^11.2.5",
     "@nestjs/websockets": "^11.1.17",
     "@payos/node": "^2.0.5",

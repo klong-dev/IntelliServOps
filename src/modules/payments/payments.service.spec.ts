@@ -13,6 +13,7 @@ import {
   InvoiceStatus,
   ContractStatus,
   InvoiceType,
+  UserApartmentStatus,
 } from '@prisma/client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -95,7 +96,11 @@ describe('PaymentsService', () => {
 
       const result = await service.findAll(admin);
 
-      expect(result).toEqual(payments);
+      expect(result.items).toEqual(payments);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.totalPages).toBe(1);
     });
 
     it('should filter user own payments', async () => {
@@ -116,7 +121,7 @@ describe('PaymentsService', () => {
       const admin = mockAdminJwtPayload();
       prisma.payment.findMany.mockResolvedValue([]);
 
-      await service.findAll(admin, PaymentStatus.completed);
+      await service.findAll(admin, { status: PaymentStatus.completed });
 
       expect(prisma.payment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -139,10 +144,13 @@ describe('PaymentsService', () => {
         },
       ] as any);
 
-      const result = await service.findAll(admin, PaymentStatus.pending);
+      const result = await service.findAll(admin, {
+        status: PaymentStatus.pending,
+      });
 
-      expect(result).toHaveLength(1);
-      expect(result[0]).toMatchObject({
+      expect(result.items).toHaveLength(1);
+      expect(result.total).toBe(1);
+      expect(result.items[0]).toMatchObject({
         id: 'invoice-pending-invoice-999',
         status: PaymentStatus.pending,
         isSynthetic: true,
@@ -154,7 +162,7 @@ describe('PaymentsService', () => {
       prisma.payment.findMany.mockResolvedValue([] as any);
       prisma.invoice.findMany.mockResolvedValue([] as any);
 
-      await service.findAll(admin, undefined, 'invoice-123');
+      await service.findAll(admin, { invoiceId: 'invoice-123' });
 
       expect(prisma.payment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -345,7 +353,7 @@ describe('PaymentsService', () => {
         expect.objectContaining({
           recipientType: 'user',
           recipientId: 'user-123',
-          message: expect.stringMatching(/Mat khau cua nha: \d{6}/),
+          message: expect.stringMatching(/Mật khẩu cửa nhà: \d{6}/),
         }),
       );
     });
@@ -400,7 +408,19 @@ describe('PaymentsService', () => {
         }),
       );
       expect(prisma.apartment.update).not.toHaveBeenCalled();
-      expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
+      expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            status: UserApartmentStatus.inactive,
+            apartmentDoorPassword: null,
+          }),
+          update: expect.objectContaining({
+            status: UserApartmentStatus.inactive,
+            apartmentDoorPassword: null,
+          }),
+        }),
+      );
+      expect(notificationsService.createAndPush).not.toHaveBeenCalled();
     });
   });
 
