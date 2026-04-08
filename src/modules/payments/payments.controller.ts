@@ -6,6 +6,10 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UploadedFile,
+  UseInterceptors,
+  UsePipes,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -13,7 +17,10 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { PaymentsService } from './payments.service';
 import {
   CreatePaymentDto,
@@ -22,11 +29,16 @@ import {
   PaymentDetailDto,
   PaymentCreatedDto,
   PayOSPaymentLinkCreatedDto,
+  ListDuePartnerMonthlyPayoutsQueryDto,
+  PartnerMonthlyPayoutItemDto,
+  ConfirmPartnerMonthlyPayoutDto,
+  ConfirmPartnerMonthlyPayoutResultDto,
 } from './dto';
 import { PaymentListQueryDto } from './dto/payment-list-query.dto';
 import { SimulatePaymentSuccessDto } from './dto/simulate-payment-success.dto';
 import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
+import { FileUploadPipe } from '../../common/pipes';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { PaymentStatus } from '@prisma/client';
@@ -158,5 +170,59 @@ export class PaymentsController {
   @ApiResponse({ status: 200, description: 'Webhook processed' })
   async handlePayOSWebhook(@Body() body: Webhook) {
     return this.paymentsService.handlePayOSWebhook(body);
+  }
+
+  @Get('partner-monthly-payouts/due')
+  @Roles(Role.STAFF)
+  @ApiOperation({
+    summary: 'List due monthly partner payouts',
+    description:
+      'Return only partners whose payout for billing month is already due and not yet paid.',
+  })
+  @ApiJsonResponse(PartnerMonthlyPayoutItemDto, {
+    isArray: true,
+    description: 'Due monthly partner payouts',
+  })
+  listDuePartnerMonthlyPayouts(
+    @CurrentUser() currentUser: JwtPayload,
+    @Query() query: ListDuePartnerMonthlyPayoutsQueryDto,
+  ) {
+    return this.paymentsService.listDuePartnerMonthlyPayouts(
+      currentUser,
+      query,
+    );
+  }
+
+  @Post('partner-monthly-payouts/confirm')
+  @Roles(Role.STAFF)
+  @UsePipes(FileUploadPipe)
+  @UseInterceptors(FileInterceptor('transferProof'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description:
+      'Confirm monthly partner payout and upload transfer proof image (required).',
+    type: ConfirmPartnerMonthlyPayoutDto,
+  })
+  @ApiOperation({
+    summary: 'Confirm monthly partner payout with transfer proof',
+  })
+  @ApiJsonResponse(ConfirmPartnerMonthlyPayoutResultDto, {
+    status: 201,
+    description: 'Partner monthly payout confirmed',
+  })
+  async confirmPartnerMonthlyPayout(
+    @CurrentUser() currentUser: JwtPayload,
+    @Body() body: ConfirmPartnerMonthlyPayoutDto,
+    @UploadedFile() transferProof: any,
+  ) {
+    if (!transferProof) {
+      throw new BadRequestException('Transfer proof image is required');
+    }
+
+    return this.paymentsService.confirmPartnerMonthlyPayout(
+      currentUser,
+      body,
+      transferProof,
+    );
   }
 }

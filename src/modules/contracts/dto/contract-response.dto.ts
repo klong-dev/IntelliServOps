@@ -57,6 +57,44 @@ class ContractApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 50.2 })
   usableArea?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 2 })
+  numberOfBedrooms?: number;
+}
+
+class WardAddressDto {
+  @ApiProperty({ example: 26728 })
+  wardCode: number;
+
+  @ApiPropertyOptional({ type: String, example: 'Xa Chau Pha', nullable: true })
+  wardName: string | null;
+
+  @ApiPropertyOptional({ type: Number, example: 754, nullable: true })
+  districtCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thi xa Phu My',
+    nullable: true,
+  })
+  districtName: string | null;
+
+  @ApiPropertyOptional({ type: Number, example: 79, nullable: true })
+  provinceCode: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Thanh pho Ho Chi Minh',
+    nullable: true,
+  })
+  provinceName: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Xa Chau Pha, Thanh pho Ho Chi Minh',
+    nullable: true,
+  })
+  fullAddress: string | null;
 }
 
 class ContractMemberUserDto {
