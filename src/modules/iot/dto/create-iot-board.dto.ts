@@ -42,7 +42,9 @@ export class CreateIoTBoardDeviceDto {
     example: 'Front Door Lock',
     description: 'Editable display name for this board device',
   })
-  @Transform(({ value }) => toTrimmedString(value))
+  @Transform(({ value, obj }) =>
+    toTrimmedString(value ?? readObjectValue(obj, 'name')),
+  )
   @IsString()
   @MaxLength(255)
   deviceName: string;
