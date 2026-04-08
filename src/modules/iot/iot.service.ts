@@ -112,15 +112,18 @@ export class IoTService {
 
     this.assertUniqueBoardAssignments(devices);
 
-    await this.prisma.ioTBoard.create({
-      data: {
-        id: boardId,
-        name: boardName,
-        ...(createDto.apartmentId && { apartmentId: createDto.apartmentId }),
-        status: IoTStatus.active,
-      },
-      select: { id: true },
+    const storedBoardCreated = await this.createStoredBoardRecord({
+      id: boardId,
+      name: boardName,
+      apartmentId: createDto.apartmentId,
+      status: IoTStatus.active,
     });
+
+    if (!storedBoardCreated && devices.length === 0) {
+      throw new BadRequestException(
+        'Creating an empty board requires the iot_boards table. Please run the latest Prisma migration first.',
+      );
+    }
 
     if (devices.length > 0) {
       await this.prisma.$transaction(
@@ -150,7 +153,7 @@ export class IoTService {
 
     const targetApartmentId = updateDto.apartmentId ?? board.apartment?.id;
 
-    await this.prisma.ioTBoard.upsert({
+    await this.upsertStoredBoardRecord({
       where: { id: boardId },
       create: {
         id: boardId,
@@ -180,27 +183,28 @@ export class IoTService {
   async removeBoard(boardId: string) {
     const board = await this.findOneBoard(boardId);
 
-    await this.prisma.$transaction([
-      this.prisma.ioTBoard.upsert({
-        where: { id: boardId },
-        create: {
-          id: boardId,
-          name: board.name,
-          ...(board.apartment?.id && { apartmentId: board.apartment.id }),
-          ...(board.lastOnlineAt && { lastOnlineAt: board.lastOnlineAt }),
-          status: IoTStatus.inactive,
-        },
-        update: { status: IoTStatus.inactive },
-        select: { id: true },
-      }),
-      ...board.devices.map((device) =>
+    await this.upsertStoredBoardRecord({
+      where: { id: boardId },
+      create: {
+        id: boardId,
+        name: board.name,
+        ...(board.apartment?.id && { apartmentId: board.apartment.id }),
+        ...(board.lastOnlineAt && { lastOnlineAt: board.lastOnlineAt }),
+        status: IoTStatus.inactive,
+      },
+      update: { status: IoTStatus.inactive },
+      select: { id: true },
+    });
+
+    await this.prisma.$transaction(
+      board.devices.map((device) =>
         this.prisma.ioTDevice.update({
           where: { id: device.id },
           data: { status: IoTStatus.inactive },
           select: { id: true },
         }),
       ),
-    ]);
+    );
 
     return {
       id: board.id,
@@ -970,7 +974,7 @@ export class IoTService {
       }),
     );
 
-    await this.prisma.ioTBoard.updateMany({
+    await this.updateStoredBoardMany({
       where: { id: event.espId },
       data: { lastOnlineAt: event.receivedAt },
     });
@@ -1004,7 +1008,7 @@ export class IoTService {
       ),
     );
 
-    await this.prisma.ioTBoard.updateMany({
+    await this.updateStoredBoardMany({
       where: { id: event.espId },
       data: { lastOnlineAt: event.receivedAt },
     });
@@ -1573,49 +1577,130 @@ export class IoTService {
   }
 
   private async findStoredBoards(apartmentId?: string, status?: IoTStatus) {
-    return this.prisma.ioTBoard.findMany({
-      where: {
-        ...(apartmentId && { apartmentId }),
-        ...(status && { status }),
-      },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        lastOnlineAt: true,
-        createdAt: true,
-        updatedAt: true,
-        apartment: {
+    return this.withStoredBoardFallback(
+      () =>
+        this.prisma.ioTBoard.findMany({
+          where: {
+            ...(apartmentId && { apartmentId }),
+            ...(status && { status }),
+          },
           select: {
             id: true,
-            apartmentNumber: true,
-            streetAddress: true,
+            name: true,
+            status: true,
+            lastOnlineAt: true,
+            createdAt: true,
+            updatedAt: true,
+            apartment: {
+              select: {
+                id: true,
+                apartmentNumber: true,
+                streetAddress: true,
+              },
+            },
           },
-        },
-      },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    });
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+      [],
+    );
   }
 
   private async findStoredBoard(boardId: string) {
-    return this.prisma.ioTBoard.findUnique({
-      where: { id: boardId },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        lastOnlineAt: true,
-        createdAt: true,
-        updatedAt: true,
-        apartment: {
+    return this.withStoredBoardFallback(
+      () =>
+        this.prisma.ioTBoard.findUnique({
+          where: { id: boardId },
           select: {
             id: true,
-            apartmentNumber: true,
-            streetAddress: true,
+            name: true,
+            status: true,
+            lastOnlineAt: true,
+            createdAt: true,
+            updatedAt: true,
+            apartment: {
+              select: {
+                id: true,
+                apartmentNumber: true,
+                streetAddress: true,
+              },
+            },
           },
-        },
+        }),
+      null,
+    );
+  }
+
+  private async createStoredBoardRecord(data: {
+    id: string;
+    name: string;
+    apartmentId?: string;
+    status: IoTStatus;
+  }) {
+    return this.withStoredBoardFallback(
+      async () => {
+        await this.prisma.ioTBoard.create({
+          data: {
+            id: data.id,
+            name: data.name,
+            ...(data.apartmentId && { apartmentId: data.apartmentId }),
+            status: data.status,
+          },
+          select: { id: true },
+        });
+
+        return true;
       },
-    });
+      false,
+    );
+  }
+
+  private async upsertStoredBoardRecord<T extends Prisma.IoTBoardUpsertArgs>(
+    args: T,
+  ) {
+    return this.withStoredBoardFallback(
+      () => this.prisma.ioTBoard.upsert(args),
+      null,
+    );
+  }
+
+  private async updateStoredBoardMany(args: Prisma.IoTBoardUpdateManyArgs) {
+    return this.withStoredBoardFallback(
+      () => this.prisma.ioTBoard.updateMany(args),
+      { count: 0 },
+    );
+  }
+
+  private async withStoredBoardFallback<T>(
+    operation: () => Promise<T>,
+    fallbackValue: T,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (this.isMissingStoredBoardTableError(error)) {
+        this.logger.warn(
+          'iot_boards table is missing. Falling back to device-derived board data.',
+        );
+        return fallbackValue;
+      }
+
+      throw error;
+    }
+  }
+
+  private isMissingStoredBoardTableError(error: unknown) {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const code = 'code' in error ? error.code : undefined;
+    const message = 'message' in error ? error.message : undefined;
+
+    return (
+      code === 'P2021' &&
+      typeof message === 'string' &&
+      message.includes('iot_boards')
+    );
   }
 
   private async updateBoardDeviceRecord(
@@ -2183,7 +2268,10 @@ export class IoTService {
     }
 
     return {
-      deviceName: device.deviceName,
+      deviceName:
+        this.readString(device.deviceName) ??
+        this.readString((device as { name?: string }).name) ??
+        `Device ${deviceId}`,
       deviceId,
       icon: device.icon,
       topic,

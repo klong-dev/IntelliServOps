@@ -336,6 +336,77 @@ describe('IoTService', () => {
       expect(result).toMatchObject({ id: 'ESP_A101', deviceCount: 0 });
     });
 
+    it('should accept legacy device name field when creating a board', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.ioTBoard.findMany.mockResolvedValueOnce([] as any).mockResolvedValueOnce([
+        {
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-03-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+          apartment: null,
+        },
+      ] as any);
+      prisma.ioTDevice.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          mockBoardSourceDevice({
+            configuration: {
+              mqtt: {
+                espId: 'ESP_A101',
+                boardName: 'A101 Main Board',
+                topic: 'door',
+                deviceId: 1,
+                state: 'OFF',
+              },
+            },
+          }),
+        ] as any);
+      prisma.$transaction.mockResolvedValue([{ id: 'device-123' }] as any);
+
+      await service.createBoard({
+        id: 'ESP_A101',
+        devices: [
+          {
+            name: 'Front Door Lock',
+            mqttTopic: 'door',
+            mqttDeviceId: 1,
+            state: 'OFF',
+          } as any,
+        ],
+      });
+
+      expect(prisma.ioTDevice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            deviceName: 'Front Door Lock',
+          }),
+        }),
+      );
+    });
+
+    it('should fall back to device-derived boards when iot_boards table is missing', async () => {
+      prisma.ioTBoard.findMany.mockRejectedValue(
+        {
+          code: 'P2021',
+          message:
+            'The table `public.iot_boards` does not exist in the current database.',
+        } as any,
+      );
+      prisma.ioTDevice.findMany.mockResolvedValue([mockBoardSourceDevice()] as any);
+
+      const result = await service.findAllBoards();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        deviceCount: 1,
+      });
+    });
+
     it('should reject duplicate board assignments on the same board', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
       prisma.ioTDevice.findMany.mockResolvedValue([] as any);
