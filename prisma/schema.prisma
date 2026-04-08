@@ -692,6 +692,7 @@ model Apartment {
   approvedByOperator Operator?          @relation("ApartmentApprovedByOperator", fields: [approvedByOperatorId], references: [id])
   rooms             Room[]
   rentalContracts   RentalContract[]
+  iotBoards         IoTBoard[]
   iotDevices        IoTDevice[]
   utilityMeters     UtilityMeter[]
   contactRequests   ContactRequest[]
@@ -1376,6 +1377,22 @@ model PartnerMonthlyPayout {
 // ============================================================================
 // IOT MODELS
 // ============================================================================
+
+model IoTBoard {
+  id          String     @id
+  name        String
+  apartmentId String?
+  status      IoTStatus  @default(active)
+  lastOnlineAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  apartment   Apartment? @relation(fields: [apartmentId], references: [id])
+
+  @@index([apartmentId])
+  @@index([status])
+  @@map("iot_boards")
+}
 
 model IoTDevice {
   id                     String       @id @default(uuid())

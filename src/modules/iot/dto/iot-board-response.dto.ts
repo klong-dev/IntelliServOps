@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IoTStatus } from '@prisma/client';
+import { BOARD_DEVICE_STATES, type BoardDeviceState } from './create-iot-board.dto';
 
 class IoTBoardApartmentSummaryDto {
   @ApiProperty()
@@ -51,8 +52,12 @@ export class IoTBoardDeviceItemDto {
   @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
   mqttDoorPasswordDeviceId: number | null;
 
-  @ApiPropertyOptional({ type: String, nullable: true, example: 'CLOSED' })
-  mqttState: string | null;
+  @ApiPropertyOptional({
+    enum: BOARD_DEVICE_STATES,
+    nullable: true,
+    example: 'OFF',
+  })
+  mqttState: BoardDeviceState | null;
 
   @ApiPropertyOptional({
     type: String,

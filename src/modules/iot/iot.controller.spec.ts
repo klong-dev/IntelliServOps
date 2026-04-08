@@ -101,11 +101,10 @@ describe('IoTController', () => {
         apartmentId: '11111111-1111-4111-8111-111111111111',
         devices: [
           {
-            id: 'device-door-1',
             deviceName: 'Front Door Lock',
             deviceId: 1,
             topic: 'door',
-            state: 'CLOSED',
+            state: 'OFF',
           },
         ],
       } as any),
@@ -140,11 +139,10 @@ describe('IoTController', () => {
         apartmentId: '11111111-1111-4111-8111-111111111111',
         devices: [
           {
-            id: 'device-door-1',
             deviceName: 'Front Door Lock',
             deviceId: 1,
             topic: 'door',
-            state: 'CLOSED',
+            state: 'OFF',
           },
         ],
       } as any),

@@ -99,7 +99,7 @@ describe('IoTController (e2e)', () => {
             boardName: 'A101 Main Board',
             topic: 'door',
             deviceId: 1,
-            state: 'CLOSED',
+            state: 'OFF',
           },
         },
         apartment: {
@@ -147,7 +147,6 @@ describe('IoTController (e2e)', () => {
         room: null,
       },
     ] as any);
-    prisma.$transaction.mockResolvedValue([{ id: deviceId }] as any);
 
     const response = await request(app.getHttpServer())
       .post('/api/v1/iot/boards')
@@ -156,17 +155,48 @@ describe('IoTController (e2e)', () => {
         apartmentId,
         devices: [
           {
-            id: deviceId,
             deviceName: 'Front Door Lock',
             deviceId: 1,
             topic: 'door',
-            state: 'CLOSED',
+            state: 'OFF',
           },
         ],
       })
       .expect(201);
 
     expect(response.body.data.id).toBe('ESP_A101');
+  });
+
+  it('creates an empty MQTT board', async () => {
+    prisma.apartment.findUnique.mockResolvedValue({ id: apartmentId } as any);
+    prisma.ioTBoard.findUnique
+      .mockResolvedValueOnce(null as any)
+      .mockResolvedValueOnce({
+        id: 'ESP_EMPTY',
+        name: 'ESP_EMPTY',
+        status: 'active',
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: apartmentId,
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+    prisma.ioTDevice.findMany.mockResolvedValue([] as any);
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/iot/boards')
+      .send({
+        id: 'ESP_EMPTY',
+        apartmentId,
+        devices: [],
+      })
+      .expect(201);
+
+    expect(response.body.data.id).toBe('ESP_EMPTY');
+    expect(response.body.data.deviceCount).toBe(0);
   });
 
   it('sends door password', async () => {

@@ -54,7 +54,7 @@ describe('IoTService', () => {
         boardName: 'A101 Main Board',
         topic: 'door',
         deviceId: 1,
-        state: 'CLOSED',
+        state: 'OFF',
       },
     },
     accessLogsEnabled: true,
@@ -102,7 +102,7 @@ describe('IoTService', () => {
         boardName: 'A101 Main Board',
         topic: 'door',
         deviceId: 1,
-        state: 'CLOSED',
+        state: 'OFF',
       },
     },
     apartment: {
@@ -202,7 +202,7 @@ describe('IoTService', () => {
             id: 'device-123',
             mqttTopic: 'door',
             mqttDeviceId: 1,
-            mqttState: 'CLOSED',
+            mqttState: 'OFF',
           }),
           expect.objectContaining({
             id: 'device-456',
@@ -216,6 +216,21 @@ describe('IoTService', () => {
 
     it('should create a board and propagate board metadata to child devices', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.ioTBoard.findMany.mockResolvedValueOnce([] as any).mockResolvedValueOnce([
+        {
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-03-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+          apartment: {
+            id: 'apt-123',
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+      ] as any);
       prisma.ioTDevice.findMany
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
@@ -246,15 +261,15 @@ describe('IoTService', () => {
         devices: [
           {
             deviceName: 'Front Door Lock',
-            deviceType: 'smart_lock' as any,
             mqttTopic: 'door',
             mqttDeviceId: 1,
+            state: 'OFF',
           },
           {
             deviceName: 'Living Room Light',
-            deviceType: 'light' as any,
             mqttTopic: 'light',
             mqttDeviceId: 2,
+            state: 'OFF',
           },
         ],
       });
@@ -283,6 +298,44 @@ describe('IoTService', () => {
       });
     });
 
+    it('should create a board without requiring devices', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.ioTBoard.findUnique
+        .mockResolvedValueOnce(null as any)
+        .mockResolvedValueOnce({
+          id: 'ESP_A101',
+          name: 'ESP_A101',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-03-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+          apartment: {
+            id: 'apt-123',
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([] as any);
+
+      const result = await service.createBoard({
+        id: 'ESP_A101',
+        apartmentId: 'apt-123',
+        devices: [],
+      });
+
+      expect(prisma.ioTBoard.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            id: 'ESP_A101',
+            name: 'ESP_A101',
+            apartmentId: 'apt-123',
+          }),
+        }),
+      );
+      expect(prisma.ioTDevice.create).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ id: 'ESP_A101', deviceCount: 0 });
+    });
+
     it('should reject duplicate board assignments on the same board', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
       prisma.ioTDevice.findMany.mockResolvedValue([] as any);
@@ -295,13 +348,11 @@ describe('IoTService', () => {
           devices: [
             {
               deviceName: 'Light 1',
-              deviceType: 'light' as any,
               mqttTopic: 'light',
               mqttDeviceId: 1,
             },
             {
               deviceName: 'Light 2',
-              deviceType: 'light' as any,
               mqttTopic: 'light',
               mqttDeviceId: 1,
             },
@@ -414,7 +465,7 @@ describe('IoTService', () => {
         }),
       );
       expect(result.mqttDeviceId).toBe(2);
-      expect(result.mqttState).toBe('OPEN');
+      expect(result.mqttState).toBe('ON');
     });
 
     it('should allow tenants to rename a device only', async () => {
@@ -687,7 +738,7 @@ describe('IoTService', () => {
               espId: 'ESP_A101',
               topic: 'door',
               deviceId: 1,
-              state: 'CLOSED',
+              state: 'OFF',
             },
           },
         },
@@ -711,7 +762,7 @@ describe('IoTService', () => {
             lastOnlineAt: new Date('2026-04-01T00:00:00.000Z'),
             configuration: expect.objectContaining({
               mqtt: expect.objectContaining({
-                state: 'OPEN',
+                state: 'ON',
                 lastMessage: 'DOOR_1_OPEN',
               }),
             }),
