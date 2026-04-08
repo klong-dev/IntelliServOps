@@ -1415,6 +1415,13 @@ export class ContractsService {
         },
       });
 
+      await tx.user.update({
+        where: { id: contract.partnerId },
+        data: {
+          isPartner: true,
+        },
+      });
+
       const updatedApartment = await tx.apartment.update({
         where: { id: contract.apartmentId },
         data: {
@@ -2350,10 +2357,7 @@ export class ContractsService {
     }
 
     const occupancyLimit = sourceContract.apartment.maxOccupants ?? 0;
-    if (
-      occupancyLimit > 0 &&
-      sourceContract.members.length > occupancyLimit
-    ) {
+    if (occupancyLimit > 0 && sourceContract.members.length > occupancyLimit) {
       throw new BadRequestException(
         `Source contract exceeds max occupants (${occupancyLimit}) based on apartment max occupants`,
       );
