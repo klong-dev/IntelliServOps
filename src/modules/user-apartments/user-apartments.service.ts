@@ -359,7 +359,11 @@ export class UserApartmentsService {
           userId: currentUser.sub,
           status: UserApartmentStatus.active,
         },
-        select: { id: true },
+        select: {
+          id: true,
+          apartmentId: true,
+          rentalContractId: true,
+        },
       });
 
       if (!existing) {
@@ -375,11 +379,21 @@ export class UserApartmentsService {
         );
       }
 
-      return this.prisma.userApartment.update({
-        where: { id },
+      await this.prisma.userApartment.updateMany({
+        where: {
+          apartmentId: existing.apartmentId,
+          rentalContractId: existing.rentalContractId,
+          status: {
+            in: [UserApartmentStatus.active, UserApartmentStatus.inactive],
+          },
+        },
         data: {
           apartmentDoorPassword: dto.apartmentDoorPassword,
         },
+      });
+
+      return this.prisma.userApartment.findUniqueOrThrow({
+        where: { id: existing.id },
         select: this.userApartmentListSelect,
       });
     }
@@ -396,27 +410,51 @@ export class UserApartmentsService {
 
     const existing = await this.prisma.userApartment.findUnique({
       where: { id },
-      select: { id: true },
+      select: {
+        id: true,
+        apartmentId: true,
+        rentalContractId: true,
+      },
     });
 
     if (!existing) {
       throw new NotFoundException('User apartment assignment not found');
     }
 
-    return this.prisma.userApartment.update({
-      where: { id },
-      data: {
-        apartmentDoorPassword: dto.apartmentDoorPassword,
-        buildingGateCode: dto.buildingGateCode,
-        smartLockPin: dto.smartLockPin,
-        mailboxCode: dto.mailboxCode,
-        parkingAccessCode: dto.parkingAccessCode,
-        wifiName: dto.wifiName,
-        wifiPassword: dto.wifiPassword,
-        emergencyContactName: dto.emergencyContactName,
-        emergencyContactPhone: dto.emergencyContactPhone,
-        notes: dto.notes,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      if (dto.apartmentDoorPassword !== undefined) {
+        await tx.userApartment.updateMany({
+          where: {
+            apartmentId: existing.apartmentId,
+            rentalContractId: existing.rentalContractId,
+            status: {
+              in: [UserApartmentStatus.active, UserApartmentStatus.inactive],
+            },
+          },
+          data: {
+            apartmentDoorPassword: dto.apartmentDoorPassword,
+          },
+        });
+      }
+
+      await tx.userApartment.update({
+        where: { id },
+        data: {
+          buildingGateCode: dto.buildingGateCode,
+          smartLockPin: dto.smartLockPin,
+          mailboxCode: dto.mailboxCode,
+          parkingAccessCode: dto.parkingAccessCode,
+          wifiName: dto.wifiName,
+          wifiPassword: dto.wifiPassword,
+          emergencyContactName: dto.emergencyContactName,
+          emergencyContactPhone: dto.emergencyContactPhone,
+          notes: dto.notes,
+        },
+      });
+    });
+
+    return this.prisma.userApartment.findUniqueOrThrow({
+      where: { id: existing.id },
       select: this.userApartmentListSelect,
     });
   }
