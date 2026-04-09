@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -1987,6 +1988,8 @@ export class ContractsService {
         members: {
           select: {
             userId: true,
+            memberType: true,
+            isPrimaryContact: true,
           },
         },
       },
@@ -1996,9 +1999,17 @@ export class ContractsService {
       throw new NotFoundException('Contract not found');
     }
 
-    const isMember = contract.members.some((m) => m.userId === currentUser.sub);
-    if (!isMember) {
+    const currentMember = contract.members.find(
+      (member) => member.userId === currentUser.sub,
+    );
+    if (!currentMember) {
       throw new NotFoundException('Contract not found');
+    }
+
+    if (currentMember.memberType !== MemberType.primary) {
+      throw new ForbiddenException(
+        'Only the primary member can cancel this contract',
+      );
     }
 
     if (
@@ -2214,6 +2225,16 @@ export class ContractsService {
       );
     }
 
+    if (body.memberType && body.memberType !== MemberType.co_tenant) {
+      throw new BadRequestException(
+        'Added member must be secondary (co_tenant)',
+      );
+    }
+
+    if (body.isPrimaryContact === true) {
+      throw new BadRequestException('Added member cannot be primary contact');
+    }
+
     const normalizedNationalId = body.nationalId.trim();
     if (!normalizedNationalId) {
       throw new BadRequestException('nationalId is required');
@@ -2249,32 +2270,12 @@ export class ContractsService {
       throw new ConflictException('This user is already a contract member');
     }
 
-    const targetMemberType = body.memberType ?? MemberType.co_tenant;
-    const targetIsPrimaryContact = body.isPrimaryContact ?? false;
-
-    if (targetMemberType === MemberType.primary) {
-      throw new BadRequestException(
-        'Cannot add another primary member to this contract',
-      );
-    }
-
-    if (targetIsPrimaryContact) {
-      const hasPrimaryContact = contract.members.some(
-        (member) => member.isPrimaryContact,
-      );
-      if (hasPrimaryContact) {
-        throw new BadRequestException(
-          'Contract already has a primary contact member',
-        );
-      }
-    }
-
     await this.prisma.userContractMember.create({
       data: {
         userId: identity.userId,
         rentalContractId: contractId,
-        memberType: targetMemberType,
-        isPrimaryContact: targetIsPrimaryContact,
+        memberType: MemberType.co_tenant,
+        isPrimaryContact: false,
         sharePercentage: body.sharePercentage,
         status: MemberStatus.active,
       },

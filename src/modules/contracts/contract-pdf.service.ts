@@ -56,10 +56,17 @@ export interface ContractPdfMemberData {
 
 export interface PartnerCooperationPdfData {
   contractNumber: string;
+  partyAName?: string;
+  partyATaxCode?: string;
+  partyAAddress?: string;
+  partyAPhone?: string;
+  partyARepresentative?: string;
+  partyASignature?: Buffer | null;
   partnerName: string;
   partnerCompanyName?: string;
   partnerPhone?: string;
   partnerEmail?: string;
+  partnerSignature?: Buffer | null;
   apartmentNumber?: string;
   apartmentAddress?: string;
   cooperationStartDate: string;
@@ -200,11 +207,11 @@ export class ContractPdfService {
       doc
         .font('Bold')
         .fontSize(13)
-        .text('CONG HOA XA HOI CHU NGHIA VIET NAM', { align: 'center' });
+        .text('CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM', { align: 'center' });
       doc
         .font('Bold')
         .fontSize(12)
-        .text('Doc lap - Tu do - Hanh phuc', { align: 'center' });
+        .text('Độc lập - Tự do - Hạnh phúc', { align: 'center' });
       doc
         .moveTo(doc.page.width / 2 - 80, doc.y)
         .lineTo(doc.page.width / 2 + 80, doc.y)
@@ -214,63 +221,69 @@ export class ContractPdfService {
       doc
         .font('Bold')
         .fontSize(16)
-        .text('HOP DONG HOP TAC KHAI THAC CAN HO', { align: 'center' });
+        .text('HỢP ĐỒNG HỢP TÁC KHAI THÁC CĂN HỘ', { align: 'center' });
       doc.moveDown(0.2);
       doc
         .font('Regular')
         .fontSize(11)
-        .text(`So hop dong: ${data.contractNumber}`, { align: 'center' });
+        .text(`Số hợp đồng: ${data.contractNumber}`, { align: 'center' });
 
       doc.moveDown(1);
-      doc.font('Bold').fontSize(12).text('1. THONG TIN CAC BEN');
+      doc.font('Bold').fontSize(12).text('1. THÔNG TIN CÁC BÊN');
       doc.moveDown(0.3);
       doc
         .font('Regular')
         .fontSize(11)
-        .text('Ben A (Don vi khai thac): IntelliServOps')
-        .text('Dia chi: Ho Chi Minh City, Viet Nam')
-        .text('Dien thoai: 1900 0000');
+        .text(
+          `Bên A (Đơn vị khai thác): ${data.partyAName || 'Công ty TNHH IntelliServOps'}`,
+        )
+        .text(`Mã số thuế: ${data.partyATaxCode || 'Chưa cập nhật'}`)
+        .text(`Địa chỉ: ${data.partyAAddress || 'TP. Hồ Chí Minh, Việt Nam'}`)
+        .text(`Điện thoại: ${data.partyAPhone || '1900 0000'}`)
+        .text(
+          `Đại diện: ${data.partyARepresentative || 'Đại diện theo ủy quyền'}`,
+        );
 
       doc.moveDown(0.4);
       doc
         .font('Regular')
         .fontSize(11)
-        .text(`Ben B (Partner): ${data.partnerName}`)
-        .text(`Cong ty: ${data.partnerCompanyName || 'N/A'}`)
-        .text(`Dien thoai: ${data.partnerPhone || 'N/A'}`)
+        .text(`Bên B (Partner): ${data.partnerName}`)
+        .text(`Công ty: ${data.partnerCompanyName || 'N/A'}`)
+        .text(`Điện thoại: ${data.partnerPhone || 'N/A'}`)
         .text(`Email: ${data.partnerEmail || 'N/A'}`);
 
       doc.moveDown(0.8);
-      doc.font('Bold').fontSize(12).text('2. NOI DUNG HOP TAC');
+      doc.font('Bold').fontSize(12).text('2. NỘI DUNG HỢP TÁC');
       doc.moveDown(0.3);
       doc
         .font('Regular')
         .fontSize(11)
-        .text(`Can ho hop tac: ${data.apartmentNumber || 'N/A'}`)
-        .text(`Dia chi can ho: ${data.apartmentAddress || 'N/A'}`)
+        .text(`Căn hộ hợp tác: ${data.apartmentNumber || 'N/A'}`)
+        .text(`Địa chỉ căn hộ: ${data.apartmentAddress || 'N/A'}`)
         .text(
-          `Thoi han hop tac: tu ${data.cooperationStartDate} den ${data.cooperationEndDate}`,
+          `Thời hạn hợp tác: từ ${data.cooperationStartDate} đến ${data.cooperationEndDate}`,
         )
         .text(
-          `Ty le hoa hong tren doanh thu moi thang: ${data.monthlyRevenueCommissionRate}%`,
+          `Tỷ lệ hoa hồng trên doanh thu mỗi tháng: ${data.monthlyRevenueCommissionRate}%`,
         );
 
       if (data.notes) {
         doc.moveDown(0.3);
-        doc.text(`Dieu khoan bo sung: ${data.notes}`);
+        doc.text(`Điều khoản bổ sung: ${data.notes}`);
       }
 
       doc.moveDown(1);
-      doc.font('Bold').fontSize(12).text('3. XAC NHAN VA HIEU LUC');
+      doc.font('Bold').fontSize(12).text('3. XÁC NHẬN VÀ HIỆU LỰC');
       doc.moveDown(0.3);
       doc
         .font('Regular')
         .fontSize(11)
         .text(
-          'Hop dong co hieu luc ke tu ngay duoc cac ben ky xac nhan va duoc luu tru tren he thong IntelliServOps.',
+          'Hợp đồng có hiệu lực kể từ ngày được các bên ký xác nhận và được lưu trữ trên hệ thống IntelliServOps.',
         )
         .text(
-          'Doanh thu hang thang duoc doi soat dinh ky, hoa hong duoc tinh theo ty le da thoa thuan o tren.',
+          'Doanh thu hằng tháng được đối soát định kỳ, hoa hồng được tính theo tỷ lệ đã thỏa thuận ở trên.',
         );
 
       doc.moveDown(1.5);
@@ -281,13 +294,13 @@ export class ContractPdfService {
       doc
         .font('Bold')
         .fontSize(11)
-        .text('DAI DIEN BEN A', doc.page.margins.left, currentY, {
+        .text('ĐẠI DIỆN BÊN A', doc.page.margins.left, currentY, {
           width: colWidth,
           align: 'center',
         })
         .font('Regular')
         .fontSize(10)
-        .text('(Ky, ghi ro ho ten)', doc.page.margins.left, currentY + 18, {
+        .text('(Ký, ghi rõ họ tên)', doc.page.margins.left, currentY + 18, {
           width: colWidth,
           align: 'center',
         });
@@ -296,7 +309,7 @@ export class ContractPdfService {
         .font('Bold')
         .fontSize(11)
         .text(
-          'DAI DIEN BEN B (PARTNER)',
+          'ĐẠI DIỆN BÊN B (PARTNER)',
           doc.page.margins.left + colWidth,
           currentY,
           {
@@ -307,7 +320,7 @@ export class ContractPdfService {
         .font('Regular')
         .fontSize(10)
         .text(
-          '(Ky, ghi ro ho ten)',
+          '(Ký, ghi rõ họ tên)',
           doc.page.margins.left + colWidth,
           currentY + 18,
           {
@@ -315,6 +328,68 @@ export class ContractPdfService {
             align: 'center',
           },
         );
+
+      const signatureY = currentY + 45;
+      if (data.partyASignature) {
+        doc.image(
+          data.partyASignature,
+          doc.page.margins.left + colWidth / 2 - 50,
+          signatureY,
+          {
+            width: 100,
+            height: 60,
+          },
+        );
+      } else {
+        doc
+          .font('Italic')
+          .fontSize(10)
+          .text('Đã ký điện tử', doc.page.margins.left, signatureY + 18, {
+            width: colWidth,
+            align: 'center',
+          })
+          .text(
+            data.partyAName || 'Công ty TNHH IntelliServOps',
+            doc.page.margins.left,
+            signatureY + 32,
+            {
+              width: colWidth,
+              align: 'center',
+            },
+          );
+      }
+
+      if (data.partnerSignature) {
+        doc.image(
+          data.partnerSignature,
+          doc.page.margins.left + colWidth + colWidth / 2 - 50,
+          signatureY,
+          {
+            width: 100,
+            height: 60,
+          },
+        );
+      }
+
+      const nameY = signatureY + 70;
+      doc
+        .font('Regular')
+        .fontSize(11)
+        .text(
+          data.partyARepresentative ||
+            data.partyAName ||
+            'Công ty TNHH IntelliServOps',
+          doc.page.margins.left,
+          nameY,
+          {
+            width: colWidth,
+            align: 'center',
+          },
+        )
+        .text(data.partnerName || '', doc.page.margins.left + colWidth, nameY, {
+          width: colWidth,
+          align: 'center',
+        });
 
       doc.end();
     });

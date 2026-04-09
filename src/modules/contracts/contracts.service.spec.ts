@@ -22,6 +22,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 
 describe('ContractsService', () => {
@@ -588,7 +589,13 @@ describe('ContractsService', () => {
       const contract = mockContract({
         status: ContractStatus.signed,
         apartmentId: 'apt-123',
-        members: [{ userId: user.sub }],
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
       });
 
       prisma.rentalContract.findUnique
@@ -638,7 +645,13 @@ describe('ContractsService', () => {
       const user = mockUserJwtPayload();
       const contract = mockContract({
         status: ContractStatus.signed,
-        members: [{ userId: 'other-user' }],
+        members: [
+          {
+            userId: 'other-user',
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
       });
 
       prisma.rentalContract.findUnique.mockResolvedValue(contract as any);
@@ -650,6 +663,30 @@ describe('ContractsService', () => {
           user,
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException when secondary member cancels contract', async () => {
+      const user = mockUserJwtPayload();
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'co_tenant',
+            isPrimaryContact: false,
+          },
+        ],
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue(contract as any);
+
+      await expect(
+        service.cancelByUser(
+          'contract-123',
+          { reason: 'Khong thue nua' },
+          user,
+        ),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -747,6 +784,60 @@ describe('ContractsService', () => {
 
       expect(prisma.userIdentity.findFirst).not.toHaveBeenCalled();
       expect(prisma.userContractMember.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject adding member with non co_tenant memberType', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        status: ContractStatus.draft,
+        apartment: { maxOccupants: 3 },
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
+      } as any);
+
+      await expect(
+        service.addMemberByNationalId(
+          'contract-123',
+          { nationalId: '079203001234', memberType: 'primary' as any },
+          user,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.userIdentity.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('should reject adding member with isPrimaryContact=true', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        status: ContractStatus.draft,
+        apartment: { maxOccupants: 3 },
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
+      } as any);
+
+      await expect(
+        service.addMemberByNationalId(
+          'contract-123',
+          { nationalId: '079203001234', isPrimaryContact: true },
+          user,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.userIdentity.findFirst).not.toHaveBeenCalled();
     });
   });
 
