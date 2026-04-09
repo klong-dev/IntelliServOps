@@ -60,7 +60,14 @@ describe('NotificationsService', () => {
 
       const result = await service.findMyNotifications(user);
 
-      expect(result).toEqual(notifications);
+      expect(result).toEqual([
+        expect.not.objectContaining({ actionUrl: expect.anything() }),
+      ]);
+      expect(result[0]).toMatchObject({
+        id: notifications[0].id,
+        title: notifications[0].title,
+        message: notifications[0].message,
+      });
       expect(prisma.notification.findMany).toHaveBeenCalledWith({
         where: { recipientType: user.actorType, recipientId: user.sub },
         select: expect.any(Object),
@@ -85,6 +92,20 @@ describe('NotificationsService', () => {
         orderBy: { createdAt: 'desc' },
         take: 50,
       });
+    });
+
+    it('should not expose actionUrl on read responses', async () => {
+      const user = mockUserJwtPayload();
+      prisma.notification.findMany.mockResolvedValue([
+        mockNotification({
+          recipientId: user.sub,
+          actionUrl: 'https://app.example.com/contracts/contract-123?tab=detail',
+        }),
+      ] as any);
+
+      const result = await service.findMyNotifications(user);
+
+      expect(result[0]).not.toHaveProperty('actionUrl');
     });
   });
 
@@ -155,6 +176,31 @@ describe('NotificationsService', () => {
 
       expect(result).toBeDefined();
     });
+
+    it('should normalize actionUrl before persisting notification', async () => {
+      const createDto = {
+        recipientType: ActorType.user,
+        recipientId: 'user-123',
+        notificationType: 'general' as any,
+        channel: 'in_app' as any,
+        title: 'Test',
+        message: 'Test message',
+        actionUrl: 'contracts/contract-123',
+      };
+      prisma.notification.create.mockResolvedValue(
+        mockNotification({ actionUrl: '/contracts/contract-123' }) as any,
+      );
+
+      await service.create(createDto);
+
+      expect(prisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            actionUrl: '/contracts/contract-123',
+          }),
+        }),
+      );
+    });
   });
 
   describe('findAll', () => {
@@ -164,7 +210,14 @@ describe('NotificationsService', () => {
 
       const result = await service.findAll();
 
-      expect(result).toEqual(notifications);
+      expect(result).toEqual([
+        expect.not.objectContaining({ actionUrl: expect.anything() }),
+      ]);
+      expect(result[0]).toMatchObject({
+        id: notifications[0].id,
+        title: notifications[0].title,
+        message: notifications[0].message,
+      });
     });
 
     it('should filter by recipientType', async () => {

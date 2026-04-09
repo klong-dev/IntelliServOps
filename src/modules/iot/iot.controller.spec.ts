@@ -18,6 +18,8 @@ describe('IoTController', () => {
     createBoard: jest.fn(),
     updateBoard: jest.fn(),
     removeBoard: jest.fn(),
+    unlinkBoardApartment: jest.fn(),
+    unlinkBoardsByApartment: jest.fn(),
     createBoardDevice: jest.fn(),
     updateBoardDevice: jest.fn(),
     removeBoardDevice: jest.fn(),
@@ -163,6 +165,30 @@ describe('IoTController', () => {
       'device-123',
       { deviceName: 'Updated Lamp' },
     );
+  });
+
+  it('delegates unlink board apartment', async () => {
+    iotService.unlinkBoardApartment.mockResolvedValue({ boardId: 'ESP_A101' });
+
+    await expect(controller.unlinkBoardApartment('ESP_A101')).resolves.toEqual({
+      boardId: 'ESP_A101',
+    });
+    expect(iotService.unlinkBoardApartment).toHaveBeenCalledWith('ESP_A101');
+  });
+
+  it('delegates unlink boards by apartment', async () => {
+    iotService.unlinkBoardsByApartment.mockResolvedValue({
+      apartmentId: 'apt-123',
+      affectedBoards: 1,
+      affectedDevices: 2,
+    });
+
+    await expect(controller.unlinkBoardsByApartment('apt-123')).resolves.toEqual({
+      apartmentId: 'apt-123',
+      affectedBoards: 1,
+      affectedDevices: 2,
+    });
+    expect(iotService.unlinkBoardsByApartment).toHaveBeenCalledWith('apt-123');
   });
 
 });

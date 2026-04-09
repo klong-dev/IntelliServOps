@@ -20,6 +20,8 @@ import {
   IoTBoardDeleteResultDto,
   IoTBoardDetailDto,
   IoTBoardListItemDto,
+  IoTBoardUnlinkResultDto,
+  IoTApartmentBoardsUnlinkResultDto,
   IoTGatewayStatusDto,
   IoTMqttCommandResultDto,
   IoTMqttSignalResultDto,
@@ -191,6 +193,30 @@ export class IoTController {
   })
   async removeBoard(@Param('boardId') boardId: string) {
     return this.iotService.removeBoard(boardId);
+  }
+
+  @Patch('boards/:boardId/unlink-apartment')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Remove apartment link from a board and its child devices' })
+  @ApiJsonResponse(IoTBoardUnlinkResultDto, {
+    description: 'Board-to-apartment link removed successfully',
+  })
+  async unlinkBoardApartment(@Param('boardId') boardId: string) {
+    return this.iotService.unlinkBoardApartment(boardId);
+  }
+
+  @Patch('boards/unlink-apartment-by-apartment/:apartmentId')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Remove apartment link from all boards currently assigned to an apartment' })
+  @ApiJsonResponse(IoTApartmentBoardsUnlinkResultDto, {
+    description: 'Apartment-to-boards links removed successfully',
+  })
+  async unlinkBoardsByApartment(
+    @Param('apartmentId') apartmentId: string,
+  ) {
+    return this.iotService.unlinkBoardsByApartment(apartmentId);
   }
 
   @Post('boards/:boardId/devices')

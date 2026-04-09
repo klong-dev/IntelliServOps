@@ -131,3 +131,32 @@ export class IoTBoardDeleteResultDto {
   @ApiProperty({ enum: IoTStatus, example: IoTStatus.inactive })
   status: IoTStatus;
 }
+
+export class IoTBoardUnlinkResultDto {
+  @ApiProperty({ example: 'ESP_A101' })
+  boardId: string;
+
+  @ApiProperty({ example: 'A101 Main Board' })
+  boardName: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+  })
+  previousApartmentId: string | null;
+
+  @ApiProperty({ example: 3 })
+  affectedDevices: number;
+}
+
+export class IoTApartmentBoardsUnlinkResultDto {
+  @ApiProperty({ example: '3fa85f64-5717-4562-b3fc-2c963f66afa6' })
+  apartmentId: string;
+
+  @ApiProperty({ example: 2 })
+  affectedBoards: number;
+
+  @ApiProperty({ example: 5 })
+  affectedDevices: number;
+}

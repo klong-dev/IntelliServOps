@@ -214,6 +214,56 @@ export class IoTService {
     };
   }
 
+  async unlinkBoardApartment(boardId: string) {
+    const board = await this.findOneBoard(boardId);
+    const previousApartmentId = board.apartment?.id ?? null;
+
+    await this.updateStoredBoardMany({
+      where: { id: boardId },
+      data: { apartmentId: null },
+    });
+
+    const deviceIds = board.devices.map((device) => device.id);
+    const updatedDevices = deviceIds.length
+      ? await this.prisma.ioTDevice.updateMany({
+          where: { id: { in: deviceIds } },
+          data: { apartmentId: null },
+        })
+      : { count: 0 };
+
+    return {
+      boardId: board.id,
+      boardName: board.name,
+      previousApartmentId,
+      affectedDevices: updatedDevices.count,
+    };
+  }
+
+  async unlinkBoardsByApartment(apartmentId: string) {
+    await this.ensureApartmentExists(apartmentId);
+
+    const boards = await this.findAllBoards(apartmentId);
+    const boardIds = boards.map((board) => board.id);
+
+    const updatedBoards = boardIds.length
+      ? await this.updateStoredBoardMany({
+          where: { id: { in: boardIds } },
+          data: { apartmentId: null },
+        })
+      : { count: 0 };
+
+    const updatedDevices = await this.prisma.ioTDevice.updateMany({
+      where: { apartmentId },
+      data: { apartmentId: null },
+    });
+
+    return {
+      apartmentId,
+      affectedBoards: Math.max(updatedBoards.count, boards.length),
+      affectedDevices: updatedDevices.count,
+    };
+  }
+
   async createBoardDevice(boardId: string, createDto: CreateIoTBoardDeviceDto) {
     const board = await this.findOneBoard(boardId);
     const normalizedDevice = this.normalizeBoardDeviceCreatePayload(createDto);
@@ -2009,10 +2059,7 @@ export class IoTService {
             ? this.resolveBoardStatus(existing.devices.map((device) => device.status))
             : storedBoard.status,
         apartment: this.toApartmentSummary(storedBoard.apartment) ?? existing.apartment,
-        createdAt:
-          storedBoard.createdAt < existing.createdAt
-            ? storedBoard.createdAt
-            : existing.createdAt,
+        createdAt: storedBoard.createdAt,
         updatedAt:
           storedBoard.updatedAt > existing.updatedAt
             ? storedBoard.updatedAt

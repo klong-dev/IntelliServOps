@@ -121,6 +121,31 @@ describe('ApartmentsService', () => {
     );
   });
 
+  it('should normalize local apartment media urls to configured public base url', async () => {
+    process.env.APP_PUBLIC_BASE_URL = 'https://api.example.com';
+
+    prisma.apartment.findMany.mockResolvedValue([
+      mockApartmentListItem({
+        images: ['http://localhost:3006/uploads/apartment-images/apt-123/cover.jpg'],
+        videoTourUrl:
+          'http://localhost:3006/uploads/apartment-videos/apt-123/video.mp4',
+      }),
+    ] as any);
+    prisma.apartment.count.mockResolvedValue(1);
+    prisma.apartmentRating.groupBy.mockResolvedValue([] as any);
+
+    const result = await service.search({ page: 1, limit: 20 });
+
+    expect(result.items[0].images).toEqual([
+      'https://api.example.com/uploads/apartment-images/apt-123/cover.jpg',
+    ]);
+    expect(result.items[0].videoTourUrl).toBe(
+      'https://api.example.com/uploads/apartment-videos/apt-123/video.mp4',
+    );
+
+    delete process.env.APP_PUBLIC_BASE_URL;
+  });
+
   it('should return apartment detail with rounded rating', async () => {
     prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
     prisma.apartmentRating.aggregate.mockResolvedValue({
