@@ -94,11 +94,11 @@ export class ViewingRequestsController {
 
   @Get('my')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.USER)
+  @Roles(Role.USER, Role.STAFF)
   @ApiOperation({
     summary: 'Get my viewing requests',
     description:
-      'Authenticated user gets their own viewing requests/appointments with optional status filter and pagination.',
+      'Authenticated user or staff gets their own viewing requests/appointments with optional status filter and pagination.',
   })
   @ApiQuery({
     name: 'status',
@@ -122,7 +122,7 @@ export class ViewingRequestsController {
   @ApiJsonResponse(UserMyViewingRequestDto, {
     isArray: true,
     isPaginated: true,
-    description: 'Paginated list of current user viewing requests',
+    description: 'Paginated list of current actor viewing requests',
   })
   async getMyViewingRequests(
     @CurrentUser() currentUser: JwtPayload,
