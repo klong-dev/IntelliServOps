@@ -66,6 +66,7 @@ export class RevenueController {
   }
 
   @Get('overview')
+  @Roles(Role.USER)
   @ApiOperation({
     summary: 'System revenue overview',
     description:
@@ -81,6 +82,7 @@ export class RevenueController {
   }
 
   @Get('partners')
+  @Roles(Role.USER)
   @ApiOperation({
     summary: 'Partner revenue summaries',
     description:
@@ -97,6 +99,7 @@ export class RevenueController {
   }
 
   @Get('transactions')
+  @Roles(Role.USER)
   @ApiOperation({
     summary: 'Revenue transaction reconciliation list',
     description:
