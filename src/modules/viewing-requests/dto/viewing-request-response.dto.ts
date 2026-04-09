@@ -185,6 +185,13 @@ export class UserMyViewingRequestDto {
   @ApiPropertyOptional({ type: Date, nullable: true })
   cancelledAt: Date | null;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Nguoi dung ban viec dot xuat, xin doi lich tuan sau.',
+  })
+  cancellationReason: string | null;
+
   @ApiProperty({ type: UserMyViewingApartmentDto })
   apartment: UserMyViewingApartmentDto;
 
