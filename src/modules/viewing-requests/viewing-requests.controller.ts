@@ -47,7 +47,7 @@ export class ViewingRequestsController {
   @ApiOperation({
     summary: 'User books apartment viewing',
     description:
-      'Authenticated user books a viewing by sending apartmentId and appointmentAt. Note is optional.',
+      'Authenticated user books a viewing by sending apartmentId, appointmentAt and optional durationMinutes. Note is optional.',
   })
   @ApiBody({
     type: CreateUserViewingRequestDto,
@@ -57,6 +57,7 @@ export class ViewingRequestsController {
         value: {
           apartmentId: '11111111-2222-3333-4444-555555555555',
           appointmentAt: '2026-03-24T09:30:00.000Z',
+          durationMinutes: 45,
           note: 'Toi muon xem can ho vao buoi sang, vui long lien he truoc 30 phut.',
         },
       },
@@ -65,6 +66,7 @@ export class ViewingRequestsController {
         value: {
           apartmentId: '11111111-2222-3333-4444-555555555555',
           appointmentAt: '2026-03-24T09:30:00.000Z',
+          durationMinutes: 30,
         },
       },
     },
@@ -78,7 +80,7 @@ export class ViewingRequestsController {
   @ApiResponse({
     status: 409,
     description:
-      'Requested slot is full or user already has an active appointment for this apartment',
+      'Requested time range overlaps existing appointment of user, assigned staff, or apartment',
   })
   async createUserViewingBooking(
     @Body() createDto: CreateUserViewingRequestDto,

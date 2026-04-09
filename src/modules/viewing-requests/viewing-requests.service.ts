@@ -22,6 +22,9 @@ import type { JwtPayload } from '../auth/auth.service';
 
 @Injectable()
 export class ViewingRequestsService {
+  private readonly defaultDurationMinutes = 30;
+  private readonly maxDurationMinutes = 240;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
@@ -36,6 +39,8 @@ export class ViewingRequestsService {
     currentUser: JwtPayload,
   ) {
     const appointmentTime = new Date(createDto.appointmentAt);
+    const durationMinutes = this.resolveDurationMinutes(createDto);
+
     if (Number.isNaN(appointmentTime.getTime())) {
       throw new BadRequestException('Invalid appointmentAt datetime');
     }
@@ -83,20 +88,18 @@ export class ViewingRequestsService {
       throw new BadRequestException('Apartment is not available for viewing');
     }
 
+    await this.ensureApartmentSlotAvailable(
+      apartment.id,
+      appointmentTime,
+      durationMinutes,
+    );
+
     const assignedStaff = this.assignStaff(
-      await this.findBestMatchingStaff(appointmentTime, 30),
+      await this.findBestMatchingStaff(appointmentTime, durationMinutes),
     );
     if (!assignedStaff) {
       throw new BadRequestException('No active staff available to assign');
     }
-
-    await this.checkSlotAvailability(
-      apartment.id,
-      apartment.buildingName,
-      appointmentTime,
-      30,
-      apartment.maxConcurrentViewings,
-    );
 
     const appointmentDate = new Date(appointmentTime);
     appointmentDate.setHours(0, 0, 0, 0);
@@ -119,23 +122,81 @@ export class ViewingRequestsService {
         });
       }
 
-      const existingActiveAppointment = await tx.appointment.findFirst({
+      const slotStart = appointmentTime;
+      const slotEnd = this.buildSlotEnd(slotStart, durationMinutes);
+      const possibleOverlaps = await tx.appointment.findMany({
         where: {
-          guestId: guest.id,
-          apartmentId: apartment.id,
           status: {
-            notIn: [AppointmentStatus.cancelled, AppointmentStatus.completed],
+            in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
           },
+          appointmentTime: {
+            lt: slotEnd,
+            gte: this.buildSearchWindowStart(slotStart),
+          },
+          OR: [
+            { guestId: guest.id },
+            { apartmentId: apartment.id },
+            { assignedStaffId: assignedStaff.id },
+          ],
         },
         select: {
           id: true,
-          status: true,
+          guestId: true,
+          apartmentId: true,
+          assignedStaffId: true,
+          appointmentTime: true,
+          durationMinutes: true,
         },
       });
 
-      if (existingActiveAppointment) {
+      const hasUserOverlap = possibleOverlaps.some(
+        (item) =>
+          item.guestId === guest.id &&
+          this.hasAppointmentOverlap(
+            slotStart,
+            durationMinutes,
+            item.appointmentTime,
+            item.durationMinutes,
+          ),
+      );
+
+      if (hasUserOverlap) {
         throw new ConflictException(
-          `You already have an active appointment for this apartment (status: ${existingActiveAppointment.status}).`,
+          'You already have another appointment that overlaps this time range.',
+        );
+      }
+
+      const hasApartmentOverlap = possibleOverlaps.some(
+        (item) =>
+          item.apartmentId === apartment.id &&
+          this.hasAppointmentOverlap(
+            slotStart,
+            durationMinutes,
+            item.appointmentTime,
+            item.durationMinutes,
+          ),
+      );
+
+      if (hasApartmentOverlap) {
+        throw new ConflictException(
+          'This apartment already has another appointment in the selected time range.',
+        );
+      }
+
+      const hasStaffOverlap = possibleOverlaps.some(
+        (item) =>
+          item.assignedStaffId === assignedStaff.id &&
+          this.hasAppointmentOverlap(
+            slotStart,
+            durationMinutes,
+            item.appointmentTime,
+            item.durationMinutes,
+          ),
+      );
+
+      if (hasStaffOverlap) {
+        throw new ConflictException(
+          'Assigned staff already has another appointment in the selected time range.',
         );
       }
 
@@ -146,7 +207,7 @@ export class ViewingRequestsService {
           assignedStaff: { connect: { id: assignedStaff.id } },
           appointmentDate,
           appointmentTime,
-          durationMinutes: 30,
+          durationMinutes,
           guestNotes: normalizedNote,
           status: AppointmentStatus.scheduled,
         },
@@ -221,6 +282,7 @@ export class ViewingRequestsService {
           durationMinutes: true,
           status: true,
           guestNotes: true,
+          cancellationReason: true,
           cancelledAt: true,
           createdAt: true,
           apartment: {
@@ -255,7 +317,8 @@ export class ViewingRequestsService {
       appointmentAt: appointment.appointmentTime,
       durationMinutes: appointment.durationMinutes,
       status: appointment.status,
-      note: appointment.guestNotes ?? null,
+      note: appointment.cancellationReason ?? appointment.guestNotes ?? null,
+      cancellationReason: appointment.cancellationReason ?? null,
       cancelledAt: appointment.cancelledAt,
       apartment: appointment.apartment,
       assignedStaff: appointment.assignedStaff,
@@ -835,95 +898,134 @@ export class ViewingRequestsService {
     appointmentTime?: Date,
     durationMinutes = 30,
   ) {
-    const where: Prisma.StaffWhereInput = {
+    const baseWhere: Prisma.StaffWhereInput = {
       isActive: true,
       role: 'customer_service',
     };
 
-    if (appointmentTime) {
-      const slotStart = appointmentTime;
-      const slotEnd = new Date(
-        appointmentTime.getTime() + durationMinutes * 60000,
-      );
-
-      where.appointments = {
-        none: {
-          status: AppointmentStatus.confirmed,
-          OR: [
-            {
-              // Existing confirmed appointment starts during requested slot
-              appointmentTime: { gte: slotStart, lt: slotEnd },
-            },
-            {
-              // Requested slot starts during existing confirmed slot
-              AND: [
-                { appointmentTime: { lte: slotStart } },
-                {
-                  appointmentTime: {
-                    gt: new Date(slotStart.getTime() - durationMinutes * 60000),
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      };
+    if (!appointmentTime) {
+      return this.prisma.staff.findMany({ where: baseWhere });
     }
 
-    return await this.prisma.staff.findMany({ where });
-  }
-
-  /**
-   * Check if slot is available for the given time.
-   * Counts existing appointments at same building/type and time.
-   */
-  private async checkSlotAvailability(
-    apartmentId: string,
-    buildingName: string | null,
-    appointmentTime: Date,
-    durationMinutes: number,
-    maxSlots: number,
-  ) {
     const slotStart = appointmentTime;
-    const slotEnd = new Date(
-      appointmentTime.getTime() + durationMinutes * 60000,
-    );
-
-    // Build filter for same building
-    const apartmentFilter: Prisma.ApartmentWhereInput = buildingName
-      ? { buildingName }
-      : { id: apartmentId };
-
-    // Count overlapping appointments
-    const existingCount = await this.prisma.appointment.count({
+    const slotEnd = this.buildSlotEnd(slotStart, durationMinutes);
+    const possibleOverlaps = await this.prisma.appointment.findMany({
       where: {
-        apartment: apartmentFilter,
         status: {
           in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
         },
-        OR: [
-          {
-            // Starts during our slot
-            appointmentTime: { gte: slotStart, lt: slotEnd },
-          },
-          {
-            // We start during their slot
-            AND: [
-              { appointmentTime: { lte: slotStart } },
-              {
-                appointmentTime: {
-                  gt: new Date(slotStart.getTime() - durationMinutes * 60000),
-                },
-              },
-            ],
-          },
-        ],
+        appointmentTime: {
+          lt: slotEnd,
+          gte: this.buildSearchWindowStart(slotStart),
+        },
+      },
+      select: {
+        assignedStaffId: true,
+        appointmentTime: true,
+        durationMinutes: true,
       },
     });
 
-    if (existingCount >= maxSlots) {
+    const occupiedStaffIds = new Set(
+      possibleOverlaps
+        .filter(
+          (item) =>
+            !!item.assignedStaffId &&
+            this.hasAppointmentOverlap(
+              slotStart,
+              durationMinutes,
+              item.appointmentTime,
+              item.durationMinutes,
+            ),
+        )
+        .map((item) => item.assignedStaffId)
+        .filter((staffId): staffId is string => !!staffId),
+    );
+
+    return this.prisma.staff.findMany({
+      where:
+        occupiedStaffIds.size > 0
+          ? {
+              ...baseWhere,
+              id: { notIn: Array.from(occupiedStaffIds) },
+            }
+          : baseWhere,
+    });
+  }
+
+  private buildSlotEnd(start: Date, durationMinutes: number) {
+    return new Date(start.getTime() + durationMinutes * 60000);
+  }
+
+  private resolveDurationMinutes(
+    createDto: CreateUserViewingRequestDto,
+  ): number {
+    const maybeDuration = (createDto as { durationMinutes?: unknown })
+      .durationMinutes;
+
+    if (typeof maybeDuration === 'number' && Number.isFinite(maybeDuration)) {
+      return maybeDuration;
+    }
+
+    return this.defaultDurationMinutes;
+  }
+
+  private buildSearchWindowStart(slotStart: Date) {
+    return new Date(slotStart.getTime() - this.maxDurationMinutes * 60000);
+  }
+
+  private hasAppointmentOverlap(
+    slotStart: Date,
+    slotDurationMinutes: number,
+    existingStart: Date,
+    existingDurationMinutes: number,
+  ) {
+    const slotEnd = this.buildSlotEnd(slotStart, slotDurationMinutes);
+    const existingEnd = this.buildSlotEnd(
+      existingStart,
+      existingDurationMinutes,
+    );
+
+    return existingStart < slotEnd && existingEnd > slotStart;
+  }
+
+  private async ensureApartmentSlotAvailable(
+    apartmentId: string,
+    appointmentTime: Date,
+    durationMinutes: number,
+  ) {
+    const slotStart = appointmentTime;
+    const slotEnd = this.buildSlotEnd(slotStart, durationMinutes);
+
+    const possibleOverlaps = await this.prisma.appointment.findMany({
+      where: {
+        apartmentId,
+        status: {
+          in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
+        },
+        appointmentTime: {
+          lt: slotEnd,
+          gte: this.buildSearchWindowStart(slotStart),
+        },
+      },
+      select: {
+        appointmentTime: true,
+        durationMinutes: true,
+      },
+    });
+
+    const hasOverlap = possibleOverlaps.some((item) =>
+      this.hasAppointmentOverlap(
+        slotStart,
+        durationMinutes,
+        item.appointmentTime,
+        item.durationMinutes,
+      ),
+    );
+
+    if (hasOverlap) {
       throw new ConflictException(
-        `Slot is full. Maximum ${maxSlots} viewings allowed at this time for this apartment type.`,
+        'This apartment already has another appointment in the selected time range.',
       );
     }
   }

@@ -363,6 +363,7 @@ export class UserApartmentsService {
           id: true,
           apartmentId: true,
           rentalContractId: true,
+          isPrimaryTenant: true,
         },
       });
 
@@ -376,6 +377,12 @@ export class UserApartmentsService {
       if (!userAllowedOnlyPassword) {
         throw new ForbiddenException(
           'Users can only update their own house password',
+        );
+      }
+
+      if (!existing.isPrimaryTenant) {
+        throw new ForbiddenException(
+          'Only primary tenant can update apartment door password',
         );
       }
 
