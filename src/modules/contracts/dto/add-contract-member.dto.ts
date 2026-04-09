@@ -18,12 +18,19 @@ export class AddContractMemberDto {
   @IsString()
   nationalId: string;
 
-  @ApiPropertyOptional({ enum: MemberType, default: MemberType.co_tenant })
+  @ApiPropertyOptional({
+    enum: [MemberType.co_tenant],
+    default: MemberType.co_tenant,
+    description: 'Added member is always secondary (co_tenant)',
+  })
   @IsOptional()
   @IsEnum(MemberType)
   memberType?: MemberType;
 
-  @ApiPropertyOptional({ example: false })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Added member cannot be primary contact',
+  })
   @IsOptional()
   @IsBoolean()
   isPrimaryContact?: boolean;

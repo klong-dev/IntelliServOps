@@ -1751,10 +1751,19 @@ export class ApartmentsService {
 
     const pdfData: PartnerCooperationPdfData = {
       contractNumber,
+      partyAName: 'Công ty TNHH IntelliServOps',
+      partyATaxCode: process.env.INTELLISERVOPS_TAX_CODE || '0312345678',
+      partyAAddress:
+        process.env.INTELLISERVOPS_ADDRESS || 'TP. Hồ Chí Minh, Việt Nam',
+      partyAPhone: process.env.INTELLISERVOPS_PHONE || '1900 0000',
+      partyARepresentative:
+        process.env.INTELLISERVOPS_REPRESENTATIVE || 'Đại diện theo ủy quyền',
+      partyASignature: null,
       partnerName: apartment.owner.fullName,
       partnerCompanyName: apartment.owner.companyName ?? undefined,
       partnerPhone: apartment.owner.phone ?? undefined,
       partnerEmail: apartment.owner.email,
+      partnerSignature: null,
       apartmentAddress:
         apartment.streetAddress ?? apartment.buildingName ?? undefined,
       apartmentNumber: apartment.apartmentNumber,
@@ -1762,8 +1771,8 @@ export class ApartmentsService {
       cooperationEndDate: this.formatDateDdMmYyyy(endDate),
       monthlyRevenueCommissionRate: commissionRate.toFixed(2),
       notes: activeCommissionPhase
-        ? `Muc hoa hong ap dung theo giai doan: ${activeCommissionPhase.phaseName}`
-        : 'Hop dong hop tac khai thac can ho giua partner va IntelliServOps',
+        ? `Mức hoa hồng áp dụng theo giai đoạn: ${activeCommissionPhase.phaseName}`
+        : 'Hợp đồng hợp tác khai thác căn hộ giữa partner và IntelliServOps',
     };
 
     const pdfBuffer =
