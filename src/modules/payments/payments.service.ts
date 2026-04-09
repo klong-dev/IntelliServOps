@@ -1254,20 +1254,27 @@ export class PaymentsService {
   private resolvePayerUserId(
     invoice: {
       rentalContract: {
-        members: Array<{ userId: string; memberType?: string | null }>;
+        members: Array<{
+          userId: string;
+          memberType?: string | null;
+          isPrimaryContact?: boolean | null;
+        }>;
       };
     },
-    currentUser: JwtPayload,
+    _currentUser: JwtPayload,
   ): string {
-    if (currentUser.actorType === 'user') {
-      return currentUser.sub;
-    }
-
     const primary = invoice.rentalContract.members.find(
       (member) => member.memberType === 'primary',
     );
     if (primary?.userId) {
       return primary.userId;
+    }
+
+    const primaryContact = invoice.rentalContract.members.find(
+      (member) => member.isPrimaryContact,
+    );
+    if (primaryContact?.userId) {
+      return primaryContact.userId;
     }
 
     const firstMember = invoice.rentalContract.members[0];
