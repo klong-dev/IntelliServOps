@@ -251,25 +251,50 @@ export class ViewingRequestsService {
   ) {
     const { status, page = 1, limit = 10 } = query;
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: currentUser.sub },
-      select: {
-        id: true,
-        email: true,
-        isActive: true,
-      },
-    });
+    let where: Prisma.AppointmentWhereInput;
 
-    if (!user || !user.isActive) {
-      throw new NotFoundException('User not found or inactive');
+    if (currentUser.actorType === 'user') {
+      const user = await this.prisma.user.findUnique({
+        where: { id: currentUser.sub },
+        select: {
+          id: true,
+          email: true,
+          isActive: true,
+        },
+      });
+
+      if (!user || !user.isActive) {
+        throw new NotFoundException('User not found or inactive');
+      }
+
+      where = {
+        guest: {
+          email: user.email,
+        },
+        ...(status ? { status } : {}),
+      };
+    } else if (currentUser.actorType === 'staff') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: currentUser.sub },
+        select: {
+          id: true,
+          isActive: true,
+        },
+      });
+
+      if (!staff || !staff.isActive) {
+        throw new NotFoundException('Staff not found or inactive');
+      }
+
+      where = {
+        assignedStaffId: staff.id,
+        ...(status ? { status } : {}),
+      };
+    } else {
+      throw new ForbiddenException(
+        'Only user or staff can access this endpoint',
+      );
     }
-
-    const where = {
-      guest: {
-        email: user.email,
-      },
-      ...(status ? { status } : {}),
-    };
 
     const skip = (page - 1) * limit;
 
@@ -350,9 +375,6 @@ export class ViewingRequestsService {
     return this.prisma.appointment.findMany({
       where: {
         assignedStaffId: currentUser.sub,
-        status: {
-          in: [AppointmentStatus.scheduled, AppointmentStatus.confirmed],
-        },
       },
       select: {
         id: true,
