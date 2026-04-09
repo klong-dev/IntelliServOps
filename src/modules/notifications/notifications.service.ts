@@ -73,6 +73,8 @@ export class NotificationsService {
    * Used internally by NotificationTriggers.
    */
   async createAndPush(dto: CreateNotificationDto) {
+    const actionUrl = this.normalizeActionUrl(dto.actionUrl);
+
     // 1. Save to DB
     const notification = await this.prisma.notification.create({
       data: {
@@ -82,7 +84,7 @@ export class NotificationsService {
         channel: dto.channel,
         title: dto.title,
         message: dto.message,
-        actionUrl: dto.actionUrl,
+        actionUrl,
         actionLabel: dto.actionLabel,
         priority: dto.priority ?? 'medium',
         relatedEntityType: dto.relatedEntityType,
@@ -103,7 +105,7 @@ export class NotificationsService {
         {
           notificationId: notification.id,
           type: dto.notificationType ?? 'info',
-          actionUrl: dto.actionUrl ?? '',
+          actionUrl: actionUrl ?? '',
           relatedEntityType: dto.relatedEntityType ?? '',
           relatedEntityId: dto.relatedEntityId ?? '',
         },
@@ -129,7 +131,7 @@ export class NotificationsService {
       });
     }
 
-    return notification;
+    return this.stripNotificationActionUrl(notification);
   }
 
   /**
@@ -239,7 +241,7 @@ export class NotificationsService {
       where.isRead = isRead;
     }
 
-    return this.prisma.notification.findMany({
+    const notifications = await this.prisma.notification.findMany({
       where,
       select: {
         id: true,
@@ -258,6 +260,10 @@ export class NotificationsService {
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
+
+    return notifications.map((notification) =>
+      this.stripNotificationActionUrl(notification),
+    );
   }
 
   async countUnread(currentUser: JwtPayload) {
@@ -316,7 +322,7 @@ export class NotificationsService {
     const where: Prisma.NotificationWhereInput = {};
     if (recipientType) where.recipientType = recipientType;
 
-    return this.prisma.notification.findMany({
+    const notifications = await this.prisma.notification.findMany({
       where,
       select: {
         id: true,
@@ -326,6 +332,8 @@ export class NotificationsService {
         channel: true,
         title: true,
         message: true,
+        actionUrl: true,
+        actionLabel: true,
         isRead: true,
         deliveryStatus: true,
         createdAt: true,
@@ -333,5 +341,45 @@ export class NotificationsService {
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+
+    return notifications.map((notification) =>
+      this.stripNotificationActionUrl(notification),
+    );
+  }
+
+  private normalizeActionUrl(actionUrl?: string | null) {
+    if (!actionUrl) {
+      return undefined;
+    }
+
+    const trimmed = actionUrl.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    try {
+      const absoluteUrl = new URL(trimmed);
+      const normalizedPath = `${absoluteUrl.pathname}${absoluteUrl.search}${absoluteUrl.hash}`;
+      return normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`;
+    } catch {
+      return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    }
+  }
+
+  private mapNotificationActionUrl<T extends { actionUrl?: string | null }>(
+    notification: T,
+  ): T {
+    return {
+      ...notification,
+      actionUrl: this.normalizeActionUrl(notification.actionUrl) ?? null,
+    };
+  }
+
+  private stripNotificationActionUrl<T extends { actionUrl?: string | null }>(
+    notification: T,
+  ): Omit<T, 'actionUrl'> {
+    const normalized = this.mapNotificationActionUrl(notification);
+    const { actionUrl: _actionUrl, ...rest } = normalized;
+    return rest;
   }
 }

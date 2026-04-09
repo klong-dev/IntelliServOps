@@ -130,6 +130,71 @@ export class ApartmentsService {
     }
   }
 
+  private normalizeApartmentMediaUrl(url?: string | null): string | null {
+    if (!url) {
+      return null;
+    }
+
+    const trimmed = url.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const uploadDir = (process.env.LOCAL_UPLOAD_DIR || 'uploads').replace(
+      /^\/+|\/+$/g,
+      '',
+    );
+    const configuredBaseUrl = (process.env.APP_PUBLIC_BASE_URL || '')
+      .trim()
+      .replace(/\/+$/g, '');
+
+    const rewriteUploadPath = (pathname: string) => {
+      const marker = `/${uploadDir}/`;
+      const markerIndex = pathname.indexOf(marker);
+
+      if (markerIndex < 0) {
+        return null;
+      }
+
+      const relativePath = pathname
+        .slice(markerIndex + marker.length)
+        .replace(/^\/+/, '');
+
+      if (!relativePath) {
+        return null;
+      }
+
+      return configuredBaseUrl
+        ? `${configuredBaseUrl}/${uploadDir}/${relativePath}`
+        : `/${uploadDir}/${relativePath}`;
+    };
+
+    try {
+      const parsedUrl = new URL(trimmed);
+      return rewriteUploadPath(parsedUrl.pathname) ?? trimmed;
+    } catch {
+      return rewriteUploadPath(trimmed) ?? trimmed;
+    }
+  }
+
+  private normalizeApartmentMediaFields<
+    T extends { images?: unknown; videoTourUrl?: string | null },
+  >(apartment: T): T {
+    const normalizedImages = Array.isArray(apartment.images)
+      ? apartment.images.map((image) =>
+          typeof image === 'string'
+            ? this.normalizeApartmentMediaUrl(image) ?? image
+            : image,
+        )
+      : apartment.images;
+
+    return {
+      ...apartment,
+      ...(normalizedImages !== undefined ? { images: normalizedImages } : {}),
+      videoTourUrl: this.normalizeApartmentMediaUrl(apartment.videoTourUrl),
+    };
+  }
+
   async getCooperationContractPdfPublic(token: string) {
     const contractId = this.verifyPdfToken(token);
 
@@ -463,7 +528,12 @@ export class ApartmentsService {
   }
 
   private async enrichApartmentsWithWardAddress<
-    T extends { wardCode?: number | null; provinceCode?: number | null },
+    T extends {
+      wardCode?: number | null;
+      provinceCode?: number | null;
+      images?: unknown;
+      videoTourUrl?: string | null;
+    },
   >(
     apartments: T[],
   ): Promise<
@@ -479,7 +549,7 @@ export class ApartmentsService {
   > {
     if (!apartments.length) {
       return apartments.map((apartment) => ({
-        ...apartment,
+        ...this.normalizeApartmentMediaFields(apartment),
         wardName: null,
         districtCode: null,
         districtName: null,
@@ -498,7 +568,7 @@ export class ApartmentsService {
 
     if (uniqueWardCodes.length === 0) {
       return apartments.map((apartment) => ({
-        ...apartment,
+        ...this.normalizeApartmentMediaFields(apartment),
         wardName: null,
         districtCode: null,
         districtName: null,
@@ -528,7 +598,7 @@ export class ApartmentsService {
           : null;
 
       return {
-        ...apartment,
+        ...this.normalizeApartmentMediaFields(apartment),
         wardName: wardAddress?.wardName ?? null,
         districtCode: wardAddress?.districtCode ?? null,
         districtName: wardAddress?.districtName ?? null,
@@ -1042,7 +1112,7 @@ export class ApartmentsService {
       data.owner = { connect: { id: createDto.ownerId } };
     }
 
-    return this.prisma.apartment.create({
+    const apartment = await this.prisma.apartment.create({
       data,
       select: {
         id: true,
@@ -1058,6 +1128,8 @@ export class ApartmentsService {
         updatedAt: true,
       },
     });
+
+    return this.normalizeApartmentMediaFields(apartment);
   }
 
   /**
@@ -1163,7 +1235,7 @@ export class ApartmentsService {
       });
     }
 
-    return apartment;
+    return this.normalizeApartmentMediaFields(apartment);
   }
 
   async uploadCooperationMedia(
@@ -1433,7 +1505,7 @@ export class ApartmentsService {
       await this.validateAmenityIds(updateDto.amenityIds);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedApartment = await this.prisma.$transaction(async (tx) => {
       if (updateDto.amenityIds) {
         await tx.apartmentAmenity.deleteMany({ where: { apartmentId: id } });
       }
@@ -1467,6 +1539,8 @@ export class ApartmentsService {
         },
       });
     });
+
+    return this.normalizeApartmentMediaFields(updatedApartment);
   }
 
   /**

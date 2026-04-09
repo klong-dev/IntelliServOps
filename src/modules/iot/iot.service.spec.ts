@@ -407,6 +407,110 @@ describe('IoTService', () => {
       });
     });
 
+    it('should prefer stored board createdAt over derived device createdAt', async () => {
+      prisma.ioTBoard.findMany.mockResolvedValue([
+        {
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-02T00:00:00.000Z'),
+          apartment: null,
+        },
+      ] as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          createdAt: new Date('2026-03-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-03T00:00:00.000Z'),
+        }),
+      ] as any);
+
+      const result = await service.findAllBoards();
+
+      expect(result[0].createdAt).toEqual(new Date('2026-04-01T00:00:00.000Z'));
+      expect(result[0].updatedAt).toEqual(new Date('2026-04-03T00:00:00.000Z'));
+    });
+
+    it('should unlink apartment from a board and its devices', async () => {
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-02T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice(),
+        mockBoardSourceDevice({ id: 'device-456' }),
+      ] as any);
+      prisma.ioTBoard.updateMany.mockResolvedValue({ count: 1 } as any);
+      prisma.ioTDevice.updateMany.mockResolvedValue({ count: 2 } as any);
+
+      const result = await service.unlinkBoardApartment('ESP_A101');
+
+      expect(prisma.ioTBoard.updateMany).toHaveBeenCalledWith({
+        where: { id: 'ESP_A101' },
+        data: { apartmentId: null },
+      });
+      expect(prisma.ioTDevice.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['device-123', 'device-456'] } },
+        data: { apartmentId: null },
+      });
+      expect(result).toEqual({
+        boardId: 'ESP_A101',
+        boardName: 'A101 Main Board',
+        previousApartmentId: 'apt-123',
+        affectedDevices: 2,
+      });
+    });
+
+    it('should unlink all boards by apartment id', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.ioTBoard.findMany.mockResolvedValue([
+        {
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-02T00:00:00.000Z'),
+          apartment: {
+            id: 'apt-123',
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({ apartmentId: 'apt-123' }),
+      ] as any);
+      prisma.ioTBoard.updateMany.mockResolvedValue({ count: 1 } as any);
+      prisma.ioTDevice.updateMany.mockResolvedValue({ count: 1 } as any);
+
+      const result = await service.unlinkBoardsByApartment('apt-123');
+
+      expect(prisma.ioTBoard.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['ESP_A101'] } },
+        data: { apartmentId: null },
+      });
+      expect(prisma.ioTDevice.updateMany).toHaveBeenCalledWith({
+        where: { apartmentId: 'apt-123' },
+        data: { apartmentId: null },
+      });
+      expect(result).toEqual({
+        apartmentId: 'apt-123',
+        affectedBoards: 1,
+        affectedDevices: 1,
+      });
+    });
+
     it('should reject duplicate board assignments on the same board', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
       prisma.ioTDevice.findMany.mockResolvedValue([] as any);
