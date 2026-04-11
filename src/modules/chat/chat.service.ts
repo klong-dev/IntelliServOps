@@ -5,7 +5,12 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ConversationStatus, MessageType, SenderType } from '@prisma/client';
+import {
+  ConversationStatus,
+  MessageType,
+  Prisma,
+  SenderType,
+} from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import {
   CreateConversationDto,
@@ -56,6 +61,7 @@ export class ChatService {
     senderName?: string,
   ) {
     const guestSessionId = !userId ? dto.guestSessionId || uuidv4() : undefined;
+    const sanitizedMetadata = this.toJsonValue(dto.metadata);
     const existingConversation = await this.findReusableConversation({
       userId,
       guestSessionId,
@@ -91,7 +97,7 @@ export class ChatService {
         guestName: dto.guestName || null,
         guestEmail: dto.guestEmail || null,
         status: ConversationStatus.active,
-        metadata: dto.metadata || undefined,
+        metadata: sanitizedMetadata,
       },
       select: { id: true },
     });
@@ -104,6 +110,27 @@ export class ChatService {
       conversation: await this.getConversation(conversation.id),
       action: 'created' as const,
     };
+  }
+
+  private toJsonValue(
+    value: unknown,
+  ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === null) {
+      return Prisma.JsonNull;
+    }
+
+    try {
+      return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+    } catch (error) {
+      this.logger.warn(
+        `Ignoring invalid chat metadata payload: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      return undefined;
+    }
   }
 
   /**
