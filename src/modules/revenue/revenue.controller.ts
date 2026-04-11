@@ -115,7 +115,7 @@ export class RevenueController {
   }
 
   @Get('partner/me/overview')
-  @Roles(Role.USER)
+  @Roles(Role.USER, Role.ADMIN)
   @ApiOperation({
     summary: 'Partner view own apartment revenue overview',
     description:
@@ -132,7 +132,7 @@ export class RevenueController {
   }
 
   @Get('partner/me/transactions')
-  @Roles(Role.USER)
+  @Roles(Role.USER, Role.ADMIN)
   @ApiOperation({
     summary: 'Partner view own apartment revenue transactions',
     description:
