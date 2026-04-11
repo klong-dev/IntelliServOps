@@ -26,7 +26,6 @@ import { MaintenanceService } from './maintenance.service';
 import {
   CreateMaintenanceDto,
   CreateMaintenanceRequestDto,
-  UpdateMaintenanceDto,
   MaintenanceListItemDto,
   MaintenanceHistoryItemDto,
   MaintenanceHistoryQueryDto,
@@ -259,18 +258,6 @@ export class MaintenanceController {
       body.reason,
       uploadedImageUrls.length ? uploadedImageUrls : body.images,
     );
-  }
-
-  @Patch(':id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Update maintenance request' })
-  @ApiJsonResponse(MaintenanceUpdatedDto, { description: 'Request updated' })
-  @ApiResponse({ status: 404, description: 'Request not found' })
-  async update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateDto: UpdateMaintenanceDto,
-  ) {
-    return this.maintenanceService.update(id, updateDto);
   }
 
   @Patch(':id/complete')

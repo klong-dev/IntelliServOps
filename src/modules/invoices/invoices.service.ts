@@ -1,8 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
-import { InvoiceStatus, InvoiceType, Prisma } from '@prisma/client';
+import { InvoiceStatus, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import axios from 'axios';
 
@@ -287,88 +286,6 @@ export class InvoicesService {
       ...invoice,
       contract: invoice.rentalContract,
     };
-  }
-
-  async create(createDto: CreateInvoiceDto, _currentUser: JwtPayload) {
-    // Verify contract exists
-    const contract = await this.prisma.rentalContract.findUnique({
-      where: { id: createDto.rentalContractId },
-      select: { monthlyRent: true },
-    });
-
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
-
-    // Calculate totals
-    const totalAmount = createDto.items.reduce((sum, item) => {
-      return sum + item.amount * (item.quantity || 1);
-    }, 0);
-
-    // Generate invoice number
-    const invoiceNumber = await this.generateInvoiceNumber();
-
-    const invoiceType = createDto.invoiceType ?? InvoiceType.rent;
-    const normalizedItems: Prisma.InputJsonArray = createDto.items.map(
-      (item) => ({
-        description: item.description,
-        amount: item.amount,
-        quantity: item.quantity || 1,
-        itemType: item.itemType || invoiceType,
-      }),
-    );
-    const invoiceContent: Prisma.InputJsonObject = {
-      title: `Invoice ${invoiceNumber}`,
-      description: `Type: ${invoiceType}`,
-      items: normalizedItems,
-    };
-
-    return this.prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        rentalContract: { connect: { id: createDto.rentalContractId } },
-        dueDate: new Date(createDto.dueDate),
-        issueDate: new Date(),
-        billingPeriodStart: new Date(createDto.billingPeriodStart),
-        billingPeriodEnd: new Date(createDto.billingPeriodEnd),
-        invoiceType,
-        invoiceContent,
-        baseRent: contract.monthlyRent,
-        totalAmount,
-        additionalCharges: normalizedItems,
-        notes: createDto.notes,
-        status: InvoiceStatus.draft,
-      },
-      select: {
-        id: true,
-        invoiceNumber: true,
-        invoiceType: true,
-        totalAmount: true,
-        status: true,
-        dueDate: true,
-      },
-    });
-  }
-
-  async update(id: string, updateDto: UpdateInvoiceDto) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id },
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    return this.prisma.invoice.update({
-      where: { id },
-      data: updateDto,
-      select: {
-        id: true,
-        invoiceNumber: true,
-        status: true,
-        updatedAt: true,
-      },
-    });
   }
 
   async markOverdue() {

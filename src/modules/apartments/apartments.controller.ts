@@ -221,29 +221,6 @@ export class ApartmentsController {
     return this.apartmentsService.findOne(id, currentUser);
   }
 
-  @Get('cooperation-contracts/pdf/view')
-  @Public()
-  @ApiOperation({
-    summary: 'View partner cooperation contract PDF (public token)',
-  })
-  @ApiQuery({ name: 'token', required: true, description: 'Signed PDF token' })
-  @ApiProduces('application/pdf')
-  @ApiResponse({ status: 200, description: 'Cooperation contract PDF file' })
-  async viewCooperationPdfPublic(
-    @Query('token') token: string,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const pdfData =
-      await this.apartmentsService.getCooperationContractPdfPublic(token);
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="cooperation-${pdfData.contractNumber}.pdf"`,
-    });
-
-    return new StreamableFile(pdfData.buffer);
-  }
-
   @Get('cooperation-contracts/:contractId/pdf')
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
@@ -638,21 +615,6 @@ export class ApartmentsController {
   })
   async findByOwner(@Param('ownerId', ParseUUIDPipe) ownerId: string) {
     return this.apartmentsService.findByOwner(ownerId);
-  }
-
-  @Patch(':id/approve')
-  @ApiBearerAuth('JWT-auth')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Approve apartment' })
-  @ApiJsonResponse(ApartmentStatusResultDto, {
-    description: 'Apartment approved',
-  })
-  @ApiResponse({ status: 404, description: 'Apartment not found' })
-  async approve(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    return this.apartmentsService.approve(id, currentUser.sub);
   }
 
   @Patch(':id/approve-cooperation')

@@ -23,11 +23,9 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PaymentsService } from './payments.service';
 import {
-  CreatePaymentDto,
   CreatePayOSPaymentLinkDto,
   PaymentListItemDto,
   PaymentDetailDto,
-  PaymentCreatedDto,
   PayOSPaymentLinkCreatedDto,
   ListDuePartnerMonthlyPayoutsQueryDto,
   PartnerMonthlyPayoutItemDto,
@@ -42,7 +40,6 @@ import { FileUploadPipe } from '../../common/pipes';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { PaymentStatus } from '@prisma/client';
-import type { Webhook } from '@payos/node/lib/resources';
 
 @ApiTags('Payments')
 @ApiBearerAuth('JWT-auth')
@@ -101,21 +98,6 @@ export class PaymentsController {
     return this.paymentsService.findOne(id, currentUser);
   }
 
-  @Post()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
-  @ApiOperation({ summary: 'Create payment' })
-  @ApiJsonResponse(PaymentCreatedDto, {
-    status: 201,
-    description: 'Payment created',
-  })
-  @ApiResponse({ status: 404, description: 'Invoice not found' })
-  async create(
-    @Body() createDto: CreatePaymentDto,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    return this.paymentsService.create(createDto, currentUser);
-  }
-
   @Post('payos/create-link')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create PayOS hosted checkout link from invoice' })
@@ -150,26 +132,6 @@ export class PaymentsController {
       currentUser,
       body.transactionId,
     );
-  }
-
-  @Post(':id/confirm')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Confirm payment' })
-  @ApiResponse({ status: 200, description: 'Payment confirmed' })
-  @ApiResponse({ status: 404, description: 'Payment not found' })
-  async confirm(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { transactionId?: string },
-  ) {
-    return this.paymentsService.confirm(id, body.transactionId);
-  }
-
-  @Post('webhook/payos')
-  @Public()
-  @ApiOperation({ summary: 'PayOS webhook' })
-  @ApiResponse({ status: 200, description: 'Webhook processed' })
-  async handlePayOSWebhook(@Body() body: Webhook) {
-    return this.paymentsService.handlePayOSWebhook(body);
   }
 
   @Get('partner-monthly-payouts/due')

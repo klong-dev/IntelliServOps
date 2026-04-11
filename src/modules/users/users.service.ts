@@ -11,7 +11,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, PartnerRequestStatus } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import {
@@ -30,9 +30,6 @@ import {
   UpdateStaffDto,
   CreateOperatorDto,
   UpdateOperatorDto,
-  CreatePartnerRequestDto,
-  UpdatePartnerRequestDto,
-  ReviewPartnerRequestDto,
 } from './dto';
 
 export type UpdateIdentityCardResult = Prisma.UserGetPayload<{
@@ -1008,7 +1005,8 @@ export class UsersService {
 
     // Merge extracted info from front and back
     const frontInfo =
-      (frontResult ? this.fptAiService.extractUserInfo(frontResult) : null) || {};
+      (frontResult ? this.fptAiService.extractUserInfo(frontResult) : null) ||
+      {};
     const backInfo =
       (backResult ? this.fptAiService.extractUserInfo(backResult) : null) || {};
     const extractedInfo = { ...frontInfo, ...backInfo };
@@ -1232,185 +1230,5 @@ export class UsersService {
       default:
         return this.findOne(sub, currentUser);
     }
-  }
-
-  // ─── Partner Request CRUD (merged from PartnersService) ──────────
-
-  async findAllPartnerRequests(status?: PartnerRequestStatus) {
-    const where: Prisma.PartnerRequestWhereInput = {};
-    if (status) where.status = status;
-
-    return this.prisma.partnerRequest.findMany({
-      where,
-      select: {
-        id: true,
-        propertyType: true,
-        address: true,
-        city: true,
-        district: true,
-        status: true,
-        createdAt: true,
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            companyName: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async findMyPartnerRequests(currentUser: JwtPayload) {
-    return this.prisma.partnerRequest.findMany({
-      where: { userId: currentUser.sub },
-      select: {
-        id: true,
-        propertyType: true,
-        address: true,
-        city: true,
-        district: true,
-        status: true,
-        reviewNotes: true,
-        rejectionReason: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async findOnePartnerRequest(id: string) {
-    const request = await this.prisma.partnerRequest.findUnique({
-      where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            companyName: true,
-            phone: true,
-            email: true,
-          },
-        },
-        reviewedByOperator: {
-          select: { id: true, fullName: true },
-        },
-      },
-    });
-
-    if (!request) {
-      throw new NotFoundException('Partner request not found');
-    }
-
-    return request;
-  }
-
-  async createPartnerRequest(
-    createDto: CreatePartnerRequestDto,
-    currentUser: JwtPayload,
-  ) {
-    return this.prisma.partnerRequest.create({
-      data: {
-        user: { connect: { id: currentUser.sub } },
-        propertyType: createDto.propertyType,
-        address: createDto.address,
-        city: createDto.city,
-        district: createDto.district,
-        totalArea: createDto.totalArea,
-        numberOfUnits: createDto.numberOfUnits,
-        expectedRentPrice: createDto.expectedRentPrice,
-        description: createDto.description,
-        amenities: createDto.amenities,
-      },
-      select: {
-        id: true,
-        propertyType: true,
-        address: true,
-        status: true,
-        createdAt: true,
-      },
-    });
-  }
-
-  async updatePartnerRequest(
-    id: string,
-    updateDto: UpdatePartnerRequestDto,
-    currentUser: JwtPayload,
-  ) {
-    const request = await this.prisma.partnerRequest.findUnique({
-      where: { id },
-    });
-
-    if (!request) {
-      throw new NotFoundException('Partner request not found');
-    }
-
-    if (request.userId !== currentUser.sub) {
-      throw new ForbiddenException('You can only update your own requests');
-    }
-
-    if (request.status !== PartnerRequestStatus.submitted) {
-      throw new BadRequestException('Can only update submitted requests');
-    }
-
-    return this.prisma.partnerRequest.update({
-      where: { id },
-      data: updateDto,
-      select: {
-        id: true,
-        propertyType: true,
-        address: true,
-        status: true,
-        reviewNotes: true,
-        updatedAt: true,
-      },
-    });
-  }
-
-  async reviewPartnerRequest(
-    id: string,
-    reviewDto: ReviewPartnerRequestDto,
-    currentUser: JwtPayload,
-  ) {
-    const request = await this.prisma.partnerRequest.findUnique({
-      where: { id },
-    });
-
-    if (!request) {
-      throw new NotFoundException('Partner request not found');
-    }
-
-    if (request.status !== PartnerRequestStatus.submitted) {
-      throw new BadRequestException('Request is not in submitted status');
-    }
-
-    const data: Prisma.PartnerRequestUpdateInput = {
-      status: reviewDto.status,
-      reviewNotes: reviewDto.reviewNotes,
-      reviewedByOperator: { connect: { id: currentUser.sub } },
-    };
-
-    if (reviewDto.status === PartnerRequestStatus.approved) {
-      data.approvedAt = new Date();
-    }
-
-    if (reviewDto.status === PartnerRequestStatus.rejected) {
-      data.rejectionReason = reviewDto.rejectionReason;
-    }
-
-    return this.prisma.partnerRequest.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        propertyType: true,
-        address: true,
-        status: true,
-        reviewNotes: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
   }
 }
