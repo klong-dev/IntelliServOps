@@ -142,12 +142,6 @@ enum MemberStatus {
   inactive
 }
 
-enum UserRoomStatus {
-  active
-  moved_out
-  inactive
-}
-
 enum UserApartmentStatus {
   active
   moved_out
@@ -217,26 +211,6 @@ enum AppointmentOutcome {
   booked
 }
 
-enum PartnerRequestStatus {
-  submitted
-  under_review
-  approved
-  rejected
-  on_hold
-}
-
-enum PropertyType {
-  apartment
-  house
-  condo
-  studio
-}
-
-enum ContractType {
-  exclusive
-  non_exclusive
-}
-
 // --- Operations Enums ---
 enum TaskType {
   followup
@@ -293,25 +267,6 @@ enum CostCoverage {
   tenant
   insurance
   warranty
-}
-
-enum TicketCategory {
-  billing
-  contract
-  account
-  complaint
-  inquiry
-  documentation
-  other
-}
-
-enum TicketStatus {
-  open
-  in_progress
-  waiting_for_user
-  resolved
-  closed
-  escalated
 }
 
 enum RelatedEntityType {
@@ -409,15 +364,6 @@ enum PolicyType {
   move_in_out_rules
 }
 
-enum DocumentType {
-  contract_template
-  addendum
-  disclosure
-  consent_form
-  inspection_report
-  other
-}
-
 // --- Notification Enums ---
 enum NotificationType {
   info
@@ -509,16 +455,12 @@ model User {
   identity              UserIdentity?
   contractMemberships   UserContractMember[]
   payments              Payment[]
-  tickets               Ticket[]
   maintenanceRequests   MaintenanceRequest[]
-  staffNotes            StaffNote[]
-  userRooms             UserRoom[]
   userApartments        UserApartment[]
   reservations          Reservation[]
   apartmentRatings      ApartmentRating[]
   chatConversations     ChatConversation[]
   apartments            Apartment[]
-  partnerRequests       PartnerRequest[]
   cooperationContracts  PartnerCooperationContract[] @relation("PartnerCooperationContractByPartner")
   partnerMonthlyPayouts PartnerMonthlyPayout[]
   partnerPayoutTransfers PartnerPayoutTransfer[]     @relation("PartnerPayoutTransferByPartner")
@@ -589,11 +531,9 @@ model Staff {
   contracts                  RentalContract[]           @relation("ContractCreatedByStaff")
   processedPayments          Payment[]                  @relation("PaymentProcessedByStaff")
   confirmedPartnerMonthlyPayouts PartnerMonthlyPayout[] @relation("PartnerMonthlyPayoutConfirmedByStaff")
-  assignedTickets            Ticket[]                   @relation("TicketAssignedToStaff")
   utilityReadings            UtilityReading[]           @relation("ReadingByStaff")
   verifiedReadings           UtilityReading[]           @relation("ReadingVerifiedByStaff")
   pendingGuestRegistrations  PendingGuestRegistration[] @relation("PendingRegistrationByStaff")
-  staffNotes                 StaffNote[]
   confirmedPartnerPayoutTransfers PartnerPayoutTransfer[] @relation("PartnerPayoutTransferConfirmedByStaff")
 
   @@index([role])
@@ -619,7 +559,6 @@ model Operator {
   approvedApartments  Apartment[]       @relation("ApartmentApprovedByOperator")
   approvedBookings    BookingRequest[]  @relation("BookingApprovedByOperator")
   approvedCooperationContracts PartnerCooperationContract[] @relation("PartnerCooperationContractApprovedByOperator")
-  reviewedPartnerReqs PartnerRequest[]  @relation("PartnerRequestReviewedByOperator")
 
   @@index([shift])
   @@index([isActive])
@@ -643,7 +582,6 @@ model Admin {
   // Relations
   createdPolicies   Policy[]        @relation("PolicyCreatedByAdmin")
   approvedPolicies  Policy[]        @relation("PolicyApprovedByAdmin")
-  legalDocuments    LegalDocument[] @relation("DocumentCreatedByAdmin")
 
   @@index([roleLevel])
   @@index([isActive])
@@ -862,7 +800,6 @@ model Room {
   apartment         Apartment            @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
   iotDevices        IoTDevice[]
   maintenanceReqs   MaintenanceRequest[]
-  userRooms         UserRoom[]
 
   @@unique([apartmentId, roomNumber])
   @@index([apartmentId])
@@ -918,10 +855,8 @@ model RentalContract {
   reservation         Reservation?
   members             UserContractMember[]
   invoices            Invoice[]
-  tickets             Ticket[]
   maintenanceRequests MaintenanceRequest[]
   utilityReadings     UtilityReading[]
-  userRooms           UserRoom[]
   userApartments      UserApartment[]
   apartmentRatings    ApartmentRating[]
 
@@ -1102,42 +1037,6 @@ model Appointment {
   @@map("appointments")
 }
 
-model PartnerRequest {
-  id                    String               @id @default(uuid())
-  userId                String
-  propertyType          PropertyType         @default(apartment)
-  address               String
-  city                  String
-  district              String
-  totalArea             Decimal?             @db.Decimal(10, 2)
-  numberOfUnits         Int                  @default(1)
-  expectedRentPrice     Decimal?             @db.Decimal(12, 2)
-  propertyImages        Json?
-  propertyDocuments     Json?
-  description           String?
-  amenities             Json?
-  preferredContractType ContractType         @default(exclusive)
-  status                PartnerRequestStatus @default(submitted)
-  reviewedByOperatorId  String?
-  reviewNotes           String?
-  rejectionReason       String?
-  approvedAt            DateTime?
-  createdApartmentIds   Json?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-
-  // Relations
-  user               User      @relation(fields: [userId], references: [id])
-  reviewedByOperator Operator? @relation("PartnerRequestReviewedByOperator", fields: [reviewedByOperatorId], references: [id])
-
-  @@index([userId])
-  @@index([status])
-  @@index([reviewedByOperatorId])
-  @@index([city])
-  @@index([district])
-  @@map("partner_requests")
-}
-
 // ============================================================================
 // OPERATIONS MODELS
 // ============================================================================
@@ -1224,41 +1123,6 @@ model MaintenanceRequest {
   @@index([urgency])
   @@index([createdAt])
   @@map("maintenance_requests")
-}
-
-model Ticket {
-  id                  String       @id @default(uuid())
-  ticketNumber        String       @unique
-  userId              String
-  rentalContractId    String
-  category            TicketCategory
-  subject             String
-  description         String
-  priority            Priority     @default(medium)
-  status              TicketStatus @default(open)
-  assignedToStaffId   String?
-  attachments         Json?
-  resolutionNotes     String?
-  satisfactionRating  Int?
-  satisfactionFeedback String?
-  firstResponseAt     DateTime?
-  resolvedAt          DateTime?
-  closedAt            DateTime?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
-
-  // Relations
-  user           User           @relation(fields: [userId], references: [id])
-  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id])
-  assignedToStaff Staff?        @relation("TicketAssignedToStaff", fields: [assignedToStaffId], references: [id])
-
-  @@index([userId])
-  @@index([rentalContractId])
-  @@index([status])
-  @@index([category])
-  @@index([priority])
-  @@index([assignedToStaffId])
-  @@map("tickets")
 }
 
 // ============================================================================
@@ -1531,67 +1395,6 @@ model Policy {
   @@map("policies")
 }
 
-model LegalDocument {
-  id                 String       @id @default(uuid())
-  documentType       DocumentType
-  title              String
-  description        String?
-  fileUrl            String
-  fileType           String?
-  fileSizeBytes      BigInt?
-  category           String?
-  language           String       @default("vi")
-  version            String?
-  isTemplate         Boolean      @default(false)
-  requiresSignature  Boolean      @default(false)
-  isPublic           Boolean      @default(false)
-  tags               Json?
-  effectiveDate      DateTime?
-  createdByAdminId   String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-
-  // Relations
-  createdByAdmin Admin? @relation("DocumentCreatedByAdmin", fields: [createdByAdminId], references: [id])
-
-  @@index([documentType])
-  @@index([category])
-  @@index([isPublic])
-  @@index([isTemplate])
-  @@index([language])
-  @@map("legal_documents")
-}
-
-// ============================================================================
-// USER-ROOM ASSIGNMENT MODEL
-// ============================================================================
-
-model UserRoom {
-  id               String         @id @default(uuid())
-  userId           String
-  roomId           String
-  rentalContractId String
-  moveInDate       DateTime?
-  moveOutDate      DateTime?
-  isPrimary        Boolean        @default(true)
-  status           UserRoomStatus @default(active)
-  notes            String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-
-  // Relations
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  room           Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  rentalContract RentalContract @relation(fields: [rentalContractId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, roomId, rentalContractId])
-  @@index([userId])
-  @@index([roomId])
-  @@index([rentalContractId])
-  @@index([status])
-  @@map("user_rooms")
-}
-
 // ============================================================================
 // USER-APARTMENT ASSIGNMENT MODEL
 // ============================================================================
@@ -1736,28 +1539,6 @@ model FcmToken {
 
   @@index([actorType, actorId])
   @@map("fcm_tokens")
-}
-
-// ============================================================================
-// STAFF NOTES MODEL
-// ============================================================================
-
-model StaffNote {
-  id        String   @id @default(uuid())
-  staffId   String
-  userId    String
-  content   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  staff Staff @relation(fields: [staffId], references: [id])
-  user  User  @relation(fields: [userId], references: [id])
-
-  @@index([staffId])
-  @@index([userId])
-  @@index([createdAt])
-  @@map("staff_notes")
 }
 
 // ============================================================================

@@ -48,7 +48,7 @@ import {
   SetGlobalCooperationCommissionPhasesResultDto,
 } from './dto';
 import { ContractListQueryDto } from './dto/contract-list-query.dto';
-import { Roles, CurrentUser, Public } from '../../common/decorators';
+import { Roles, CurrentUser } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
 import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
@@ -83,32 +83,6 @@ export class ContractsController {
       page: query.page,
       limit: query.limit,
     });
-  }
-
-  @Get('pdf/view')
-  @Public()
-  @ApiOperation({
-    summary: 'View contract PDF (public with token)',
-    description:
-      'View contract PDF using a signed token. Token is valid for 5 minutes.',
-  })
-  @ApiQuery({ name: 'token', required: true, description: 'Signed PDF token' })
-  @ApiProduces('application/pdf')
-  @ApiResponse({ status: 200, description: 'Contract PDF file' })
-  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
-  @ApiResponse({ status: 404, description: 'Contract or PDF not found' })
-  async viewPdfPublic(
-    @Query('token') token: string,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const pdfData = await this.contractsService.getContractPdfPublic(token);
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="contract-${pdfData.contractNumber}.pdf"`,
-    });
-
-    return new StreamableFile(pdfData.buffer);
   }
 
   @Get(':id')
@@ -449,15 +423,6 @@ export class ContractsController {
     return this.contractsService.update(id, updateDto);
   }
 
-  @Patch(':id/activate')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Activate contract' })
-  @ApiJsonResponse(ContractDetailDto, { description: 'Contract activated' })
-  @ApiResponse({ status: 404, description: 'Contract not found' })
-  async activate(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.activate(id);
-  }
-
   @Patch(':id/activate-paid')
   @Roles(Role.ADMIN, Role.OPERATOR)
   @ApiOperation({
@@ -476,22 +441,6 @@ export class ContractsController {
   })
   async activatePaid(@Param('id', ParseUUIDPipe) id: string) {
     return this.contractsService.activateWhenDepositPaid(id);
-  }
-
-  @Patch(':id/terminate')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Terminate contract' })
-  @ApiJsonResponse(ContractDetailDto, { description: 'Contract terminated' })
-  @ApiResponse({ status: 404, description: 'Contract not found' })
-  async terminate(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { reason: string; terminationFee?: number },
-  ) {
-    return this.contractsService.terminate(
-      id,
-      body.reason,
-      body.terminationFee,
-    );
   }
 
   @Patch(':id/cancel')

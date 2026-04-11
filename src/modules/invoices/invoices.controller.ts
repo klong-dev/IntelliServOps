@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Query,
-  ParseUUIDPipe,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query, ParseUUIDPipe } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -17,13 +8,9 @@ import {
 } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import {
-  CreateInvoiceDto,
-  UpdateInvoiceDto,
   InvoiceListPaginatedDto,
   InvoiceListQueryDto,
   InvoiceDetailDto,
-  InvoiceCreatedDto,
-  InvoiceUpdatedDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
@@ -63,31 +50,5 @@ export class InvoicesController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.invoicesService.findOne(id, currentUser);
-  }
-
-  @Post()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Create invoice' })
-  @ApiJsonResponse(InvoiceCreatedDto, {
-    status: 201,
-    description: 'Invoice created',
-  })
-  async create(
-    @Body() createDto: CreateInvoiceDto,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    return this.invoicesService.create(createDto, currentUser);
-  }
-
-  @Patch(':id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Update invoice' })
-  @ApiJsonResponse(InvoiceUpdatedDto, { description: 'Invoice updated' })
-  @ApiResponse({ status: 404, description: 'Invoice not found' })
-  async update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateDto: UpdateInvoiceDto,
-  ) {
-    return this.invoicesService.update(id, updateDto);
   }
 }

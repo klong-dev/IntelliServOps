@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -1239,10 +1239,10 @@ export class PaymentsService {
           recipientId: memberUserId,
           notificationType: 'info',
           channel: 'in_app',
-          title: 'Kích hoạt hợp đồng thành công',
-          message: `Hóa đơn đặt cọc ${invoiceNumber} đã thanh toán thành công. Mật khẩu cửa nhà: ${apartmentDoorPassword}`,
+          title: 'K├¡ch hoß║ít hß╗úp ─æß╗ông th├ánh c├┤ng',
+          message: `H├│a ─æ╞ín ─æß║╖t cß╗ìc ${invoiceNumber} ─æ├ú thanh to├ín th├ánh c├┤ng. Mß║¡t khß║⌐u cß╗¡a nh├á: ${apartmentDoorPassword}`,
           actionUrl: `/contracts/${rentalContractId}`,
-          actionLabel: 'Xem hợp đồng',
+          actionLabel: 'Xem hß╗úp ─æß╗ông',
           priority: 'high',
           relatedEntityType: 'RentalContract',
           relatedEntityId: rentalContractId,

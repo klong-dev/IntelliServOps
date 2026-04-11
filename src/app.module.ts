@@ -30,15 +30,10 @@ import { ContractsModule } from './modules/contracts';
 import { InvoicesModule } from './modules/invoices';
 import { PaymentsModule } from './modules/payments';
 import { MaintenanceModule } from './modules/maintenance';
-import { TicketsModule } from './modules/tickets';
 import { ViewingRequestsModule } from './modules/viewing-requests';
 import { IoTModule } from './modules/iot';
-import { TasksModule } from './modules/tasks';
 import { NotificationsModule } from './modules/notifications';
-import { PoliciesModule } from './modules/policies';
 import { ActivityLogsModule } from './modules/activity-logs';
-import { StaffNotesModule } from './modules/staff-notes';
-import { UserRoomsModule } from './modules/user-rooms';
 import { UserApartmentsModule } from './modules/user-apartments';
 import { ApartmentPoliciesModule } from './modules/apartment-policies';
 import { ReservationsModule } from './modules/reservations';
@@ -83,15 +78,10 @@ import { AppService } from './app.service';
     InvoicesModule,
     PaymentsModule,
     MaintenanceModule,
-    TicketsModule,
     ViewingRequestsModule,
     IoTModule,
-    TasksModule,
     NotificationsModule,
-    PoliciesModule,
     ActivityLogsModule,
-    StaffNotesModule,
-    UserRoomsModule,
     UserApartmentsModule,
     ApartmentPoliciesModule,
     ReservationsModule,

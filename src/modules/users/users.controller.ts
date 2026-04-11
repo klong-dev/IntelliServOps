@@ -45,12 +45,6 @@ import {
   CreateOperatorDto,
   UpdateOperatorDto,
   SearchOperatorDto,
-  CreatePartnerRequestDto,
-  UpdatePartnerRequestDto,
-  ReviewPartnerRequestDto,
-  PartnerRequestListItemDto,
-  PartnerRequestDetailDto,
-  PartnerRequestMutationResultDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
@@ -340,84 +334,5 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'User not found' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.remove(id);
-  }
-
-  // ─── Partner Requests (merged from PartnersController) ────────────
-
-  @Get('partner-requests/all')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'List all partner requests' })
-  @ApiJsonResponse(PartnerRequestListItemDto, {
-    isArray: true,
-    description: 'All partner requests',
-  })
-  async findAllPartnerRequests() {
-    return this.usersService.findAllPartnerRequests();
-  }
-
-  @Get('partner-requests/my')
-  @Roles(Role.USER)
-  @ApiOperation({ summary: 'List own partner requests' })
-  @ApiJsonResponse(PartnerRequestListItemDto, {
-    isArray: true,
-    description: 'Current user partner requests',
-  })
-  async findMyPartnerRequests(@CurrentUser() currentUser: JwtPayload) {
-    return this.usersService.findMyPartnerRequests(currentUser);
-  }
-
-  @Get('partner-requests/:id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
-  @ApiOperation({ summary: 'Get partner request details' })
-  @ApiJsonResponse(PartnerRequestDetailDto, {
-    description: 'Partner request details',
-  })
-  @ApiResponse({ status: 404, description: 'Request not found' })
-  async findOnePartnerRequest(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.findOnePartnerRequest(id);
-  }
-
-  @Post('partner-requests')
-  @Roles(Role.USER)
-  @ApiOperation({ summary: 'Submit partner request' })
-  @ApiJsonResponse(PartnerRequestMutationResultDto, {
-    status: 201,
-    description: 'Partner request submitted',
-  })
-  async createPartnerRequest(
-    @Body() createDto: CreatePartnerRequestDto,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    return this.usersService.createPartnerRequest(createDto, currentUser);
-  }
-
-  @Patch('partner-requests/:id')
-  @Roles(Role.USER)
-  @ApiOperation({ summary: 'Update partner request' })
-  @ApiJsonResponse(PartnerRequestMutationResultDto, {
-    description: 'Partner request updated',
-  })
-  @ApiResponse({ status: 404, description: 'Request not found' })
-  async updatePartnerRequest(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateDto: UpdatePartnerRequestDto,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    return this.usersService.updatePartnerRequest(id, updateDto, currentUser);
-  }
-
-  @Patch('partner-requests/:id/review')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Review partner request (approve/reject)' })
-  @ApiJsonResponse(PartnerRequestMutationResultDto, {
-    description: 'Partner request reviewed',
-  })
-  @ApiResponse({ status: 404, description: 'Request not found' })
-  async reviewPartnerRequest(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() reviewDto: ReviewPartnerRequestDto,
-    @CurrentUser() currentUser: JwtPayload,
-  ) {
-    return this.usersService.reviewPartnerRequest(id, reviewDto, currentUser);
   }
 }

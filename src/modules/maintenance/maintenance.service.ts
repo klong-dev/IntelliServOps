@@ -6,11 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  CreateMaintenanceDto,
-  UpdateMaintenanceDto,
-  MaintenanceHistoryQueryDto,
-} from './dto';
+import { CreateMaintenanceDto, MaintenanceHistoryQueryDto } from './dto';
 import {
   MaintenanceStatus,
   Urgency,
@@ -534,52 +530,6 @@ export class MaintenanceService {
     });
 
     return created;
-  }
-
-  async update(id: string, updateDto: UpdateMaintenanceDto) {
-    const request = await this.prisma.maintenanceRequest.findUnique({
-      where: { id },
-    });
-
-    if (!request) {
-      throw new NotFoundException('Maintenance request not found');
-    }
-
-    const data: any = {};
-
-    if (updateDto.status) {
-      data.status = updateDto.status;
-    }
-
-    if (updateDto.priority) {
-      data.urgency = updateDto.priority;
-    }
-
-    if (updateDto.scheduledDate) {
-      data.preferredDate = new Date(updateDto.scheduledDate);
-    }
-
-    if (updateDto.completedAt) {
-      data.completedAt = new Date(updateDto.completedAt);
-    }
-
-    if (updateDto.resolutionNotes) {
-      data.completionNotes = updateDto.resolutionNotes;
-    }
-
-    if (updateDto.cost !== undefined) {
-      data.actualCost = updateDto.cost;
-    }
-
-    return this.prisma.maintenanceRequest.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        title: true,
-        status: true,
-      },
-    });
   }
 
   async accept(id: string, currentUser: JwtPayload, note?: string) {

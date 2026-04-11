@@ -183,7 +183,7 @@ export class ApartmentsService {
     const normalizedImages = Array.isArray(apartment.images)
       ? apartment.images.map((image) =>
           typeof image === 'string'
-            ? this.normalizeApartmentMediaUrl(image) ?? image
+            ? (this.normalizeApartmentMediaUrl(image) ?? image)
             : image,
         )
       : apartment.images;
@@ -192,32 +192,6 @@ export class ApartmentsService {
       ...apartment,
       ...(normalizedImages !== undefined ? { images: normalizedImages } : {}),
       videoTourUrl: this.normalizeApartmentMediaUrl(apartment.videoTourUrl),
-    };
-  }
-
-  async getCooperationContractPdfPublic(token: string) {
-    const contractId = this.verifyPdfToken(token);
-
-    const contract = await this.prisma.partnerCooperationContract.findUnique({
-      where: { id: contractId },
-      select: {
-        id: true,
-        contractNumber: true,
-        contractPdfData: true,
-      },
-    });
-
-    if (!contract) {
-      throw new NotFoundException('Cooperation contract not found');
-    }
-
-    if (!contract.contractPdfData) {
-      throw new NotFoundException('Cooperation contract PDF not found');
-    }
-
-    return {
-      buffer: Buffer.from(contract.contractPdfData),
-      contractNumber: contract.contractNumber,
     };
   }
 
@@ -1709,26 +1683,6 @@ export class ApartmentsService {
         id: true,
         apartmentNumber: true,
         status: true,
-      },
-    });
-  }
-
-  /**
-   * Approve apartment (by operator)
-   */
-  async approve(id: string, operatorId: string) {
-    return this.prisma.apartment.update({
-      where: { id },
-      data: {
-        status: ApartmentStatus.available,
-        approvedByOperator: { connect: { id: operatorId } },
-        approvedAt: new Date(),
-      },
-      select: {
-        id: true,
-        apartmentNumber: true,
-        status: true,
-        approvedAt: true,
       },
     });
   }
