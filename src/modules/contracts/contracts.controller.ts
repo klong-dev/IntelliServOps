@@ -48,7 +48,7 @@ import {
   SetGlobalCooperationCommissionPhasesResultDto,
 } from './dto';
 import { ContractListQueryDto } from './dto/contract-list-query.dto';
-import { Roles, CurrentUser } from '../../common/decorators';
+import { Roles, CurrentUser, Public } from '../../common/decorators';
 import { FileUploadPipe } from '../../common/pipes';
 import { ApiJsonResponse } from '../../common/dto';
 import { Role } from '../../common/enums/role.enum';
@@ -95,6 +95,39 @@ export class ContractsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.contractsService.findOne(id, currentUser);
+  }
+
+  @Get('pdf/view')
+  @Public()
+  @ApiOperation({
+    summary: 'View contract PDF by signed token',
+    description:
+      'Public endpoint to view contract PDF using a short-lived signed token.',
+  })
+  @ApiQuery({
+    name: 'token',
+    required: true,
+    type: String,
+    example:
+      'ZWZmNTFjNGQtOGQwZS00Yzc4LTg5NTktOTI3ZWRhZDllYTIyOjE3NzU5ODkxNTEyOTY6OTM5ZTc1ZWI5ZGNmZWMxZGE3ODA0YzI0OTdjMDA4NDg0YWMzMjYxMDMxNGQwNGU1NTdjYmQ5Yzk0ZTczZjA2Mw',
+    description: 'Signed token returned in contract publicPdfUrl',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'Contract PDF file' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired PDF token' })
+  @ApiResponse({ status: 404, description: 'Contract or PDF not found' })
+  async viewPdfByToken(
+    @Query('token') token: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfData = await this.contractsService.getContractPdfByToken(token);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="contract-${pdfData.contractNumber}.pdf"`,
+    });
+
+    return new StreamableFile(pdfData.buffer);
   }
 
   @Get(':id/pdf')

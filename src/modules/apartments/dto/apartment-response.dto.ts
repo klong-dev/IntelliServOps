@@ -15,10 +15,23 @@ class OwnerSummaryDto {
   id: string;
 
   @ApiProperty({ example: 'Công ty Đầu tư Hoàng Gia' })
-  companyName: string;
+  companyName: string | null;
 
   @ApiProperty({ example: 'Trương Thị Đầu Tư' })
   fullName: string;
+
+  @ApiProperty({ example: 'owner@example.com' })
+  email: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: '0901234567' })
+  phone: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'https://cdn.example.com/users/owner-avatar.jpg',
+  })
+  profileImageUrl: string | null;
 }
 
 // ─── Room DTO (nested in ApartmentDetailDto) ────────────────────────
