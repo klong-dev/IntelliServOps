@@ -26,6 +26,7 @@ import { MaintenanceService } from './maintenance.service';
 import {
   CreateMaintenanceDto,
   CreateMaintenanceRequestDto,
+  UpdateMaintenanceDto,
   MaintenanceListItemDto,
   MaintenanceHistoryItemDto,
   MaintenanceHistoryQueryDto,
@@ -211,6 +212,22 @@ export class MaintenanceController {
       },
       currentUser,
     );
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({ summary: 'Update maintenance request' })
+  @ApiJsonResponse(MaintenanceUpdatedDto, {
+    description: 'Request updated',
+  })
+  @ApiResponse({ status: 404, description: 'Request not found' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateMaintenanceDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+    return this.maintenanceService.updateRequest(id, currentUser, body);
   }
 
   @Patch(':id/accept')
