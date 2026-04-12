@@ -691,6 +691,16 @@ export class ApartmentsService {
       videoTourUrl: true,
       createdAt: true,
       updatedAt: true,
+      owner: {
+        select: {
+          id: true,
+          companyName: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          profileImageUrl: true,
+        },
+      },
       wardCode: true,
       provinceCode: true,
       streetAddress: true,
@@ -781,6 +791,9 @@ export class ApartmentsService {
               id: true,
               companyName: true,
               fullName: true,
+              email: true,
+              phone: true,
+              profileImageUrl: true,
             },
           },
           iotDevices: {
@@ -1562,6 +1575,9 @@ export class ApartmentsService {
             id: true,
             companyName: true,
             fullName: true,
+            email: true,
+            phone: true,
+            profileImageUrl: true,
           },
         },
         iotDevices: {
