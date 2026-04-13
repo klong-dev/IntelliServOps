@@ -1,11 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
+  Matches,
   IsOptional,
   IsString,
-  IsUrl,
   IsUUID,
   MaxLength,
 } from 'class-validator';
+
+const PAYOS_REDIRECT_URL_PATTERN =
+  /^(https?:\/\/[^\s]+|[a-z][a-z0-9+.-]*:\/\/[^\s]+)$/i;
 
 export class CreatePayOSPaymentLinkDto {
   @ApiProperty({ description: 'Invoice ID to create PayOS payment link for' })
@@ -13,19 +17,29 @@ export class CreatePayOSPaymentLinkDto {
   invoiceId: string;
 
   @ApiPropertyOptional({
-    description: 'Return URL after successful payment',
+    description:
+      'Return URL after successful payment. Supports both web URLs and app deep links such as homeiq://payment/success',
     example: 'https://app.intelliservops.com/payment/success',
   })
   @IsOptional()
-  @IsUrl({ require_tld: false })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Matches(PAYOS_REDIRECT_URL_PATTERN, {
+    message:
+      'returnUrl must be a valid http/https URL or app URI scheme (e.g. homeiq://...)',
+  })
   returnUrl?: string;
 
   @ApiPropertyOptional({
-    description: 'Cancel URL when customer cancels payment',
+    description:
+      'Cancel URL when customer cancels payment. Supports both web URLs and app deep links such as homeiq://payment/cancel',
     example: 'https://app.intelliservops.com/payment/cancel',
   })
   @IsOptional()
-  @IsUrl({ require_tld: false })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Matches(PAYOS_REDIRECT_URL_PATTERN, {
+    message:
+      'cancelUrl must be a valid http/https URL or app URI scheme (e.g. homeiq://...)',
+  })
   cancelUrl?: string;
 
   @ApiPropertyOptional({
