@@ -27,8 +27,16 @@ import {
   type MqttBinaryAction,
   type MqttDeviceTopic,
 } from './iot-mqtt.types';
-import { IoTDeviceType, IoTStatus, MeterStatus, Prisma } from '@prisma/client';
+import {
+  IoTDeviceType,
+  IoTStatus,
+  MeterStatus,
+  MeterType,
+  Prisma,
+} from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+
+type UtilityMqttTopic = Extract<MqttDeviceTopic, 'electric' | 'water'>;
 
 @Injectable()
 export class IoTService {
@@ -99,6 +107,67 @@ export class IoTService {
     return board;
   }
 
+  async findUtilityMeters(
+    boardId?: string,
+    apartmentId?: string,
+    status?: MeterStatus,
+  ) {
+    let resolvedApartmentId = apartmentId ?? null;
+    let resolvedBoardId = boardId ?? null;
+
+    if (!resolvedApartmentId && resolvedBoardId) {
+      const board = await this.findOneBoard(resolvedBoardId);
+      resolvedApartmentId = board.apartment?.id ?? null;
+    }
+
+    if (!resolvedApartmentId) {
+      return {
+        boardId: resolvedBoardId,
+        apartmentId: null,
+        electric: null,
+        water: null,
+      };
+    }
+
+    const where: Prisma.UtilityMeterWhereInput = {
+      apartmentId: resolvedApartmentId,
+      meterType: { in: [MeterType.electricity, MeterType.water] },
+    };
+
+    if (status) {
+      where.status = status;
+    }
+
+    const meters = await this.prisma.utilityMeter.findMany({
+      where,
+      select: {
+        id: true,
+        meterNumber: true,
+        meterType: true,
+        currentReading: true,
+        previousReading: true,
+        ratePerUnit: true,
+        unitOfMeasurement: true,
+        readingDate: true,
+        status: true,
+        apartmentId: true,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const electric =
+      meters.find((meter) => meter.meterType === MeterType.electricity) ?? null;
+    const water =
+      meters.find((meter) => meter.meterType === MeterType.water) ?? null;
+
+    return {
+      boardId: resolvedBoardId,
+      apartmentId: resolvedApartmentId,
+      electric: this.toBoardMeterItem(electric),
+      water: this.toBoardMeterItem(water),
+    };
+  }
+
   async createBoard(createDto: CreateIoTBoardDto) {
     const boardId = this.normalizeBoardId(createDto);
     const boardName =
@@ -126,7 +195,7 @@ export class IoTService {
     }
 
     if (devices.length > 0) {
-      await this.prisma.$transaction(
+      const createdDevices = await this.prisma.$transaction(
         devices.map((device) =>
           this.prisma.ioTDevice.create({
             data: this.buildCreateBoardDeviceData(
@@ -137,6 +206,18 @@ export class IoTService {
             ),
             select: { id: true },
           }),
+        ),
+      );
+
+      await Promise.all(
+        devices.map((device, index) =>
+          this.syncUtilityMeterForBoardDevice(
+            boardId,
+            boardName,
+            createDto.apartmentId,
+            createdDevices[index].id,
+            device,
+          ),
         ),
       );
     }
@@ -175,6 +256,20 @@ export class IoTService {
         },
         data: { apartmentId: updateDto.apartmentId },
       });
+
+      await Promise.all(
+        board.devices.map((device) =>
+          this.syncUtilityMeterForExistingBoardDevice(
+            boardId,
+            board.name,
+            updateDto.apartmentId,
+            device.id,
+            device.topic,
+            device.deviceId,
+            device.deviceName,
+          ),
+        ),
+      );
     }
 
     return this.findOneBoard(boardId);
@@ -284,6 +379,14 @@ export class IoTService {
       select: { id: true },
     });
 
+    await this.syncUtilityMeterForBoardDevice(
+      boardId,
+      board.name,
+      board.apartment?.id,
+      created.id,
+      normalizedDevice,
+    );
+
     return this.findOneDevice(created.id);
   }
 
@@ -300,9 +403,9 @@ export class IoTService {
     }
 
     const targetTopic =
-      updateDto.topic ?? boardDevice.mqttTopic ?? undefined;
+      updateDto.topic ?? boardDevice.topic ?? undefined;
     const targetDeviceId =
-      updateDto.deviceId ?? boardDevice.mqttDeviceId ?? undefined;
+      updateDto.deviceId ?? boardDevice.deviceId ?? undefined;
 
     if (targetTopic && targetDeviceId) {
       this.assertBoardAssignmentAvailable(
@@ -318,6 +421,16 @@ export class IoTService {
       boardId,
       board.apartment?.id,
       updateDto,
+    );
+
+    await this.syncUtilityMeterForExistingBoardDevice(
+      boardId,
+      board.name,
+      board.apartment?.id,
+      deviceId,
+      targetTopic,
+      targetDeviceId,
+      updateDto.deviceName ?? boardDevice.deviceName,
     );
 
     return this.findOneDevice(deviceId);
@@ -425,7 +538,13 @@ export class IoTService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return devices.map((device) => this.toDeviceListItem(device));
+    const utilityLookup = await this.findUtilityMeterLookup(
+      this.extractApartmentIds(devices),
+    );
+
+    return devices.map((device) =>
+      this.toDeviceListItem(device, utilityLookup),
+    );
   }
 
   async findOneDevice(id: string) {
@@ -470,7 +589,11 @@ export class IoTService {
       throw new NotFoundException('IoT device not found');
     }
 
-    return this.toDeviceDetail(device);
+    const utilityLookup = await this.findUtilityMeterLookup(
+      this.extractApartmentIds([device]),
+    );
+
+    return this.toDeviceDetail(device, utilityLookup);
   }
 
   async findDevicesByApartment(apartmentId: string, currentUser?: JwtPayload) {
@@ -525,7 +648,11 @@ export class IoTService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return devices.map((device) => this.toDeviceListItem(device));
+    const utilityLookup = await this.findUtilityMeterLookup([apartmentId]);
+
+    return devices.map((device) =>
+      this.toDeviceListItem(device, utilityLookup),
+    );
   }
 
   async createDevice(createDto: CreateIoTDeviceDto) {
@@ -915,6 +1042,7 @@ export class IoTService {
         previousReadingValue: meter.currentReading ?? undefined,
         consumption,
         readingType: createDto.readingType ?? 'manual',
+        isBillingSnapshot: false,
         readByStaff:
           currentUser?.actorType === 'staff'
             ? { connect: { id: currentUser.sub } }
@@ -1269,6 +1397,7 @@ export class IoTService {
         previousReadingValue: meter.currentReading ?? undefined,
         consumption,
         readingType: 'automatic',
+        isBillingSnapshot: false,
         notes: `Auto-synced from MQTT telemetry ${event.espId}`,
       },
       select: { id: true },
@@ -1492,6 +1621,109 @@ export class IoTService {
     };
   }
 
+  private extractApartmentIds(
+    items: Array<{ apartment?: { id: string } | null }>,
+  ): string[] {
+    return Array.from(
+      new Set(
+        items
+          .map((item) => item.apartment?.id)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+  }
+
+  private async findUtilityMeterLookup(apartmentIds: string[]) {
+    if (apartmentIds.length === 0) {
+      return new Map<string, any>();
+    }
+
+    const meters = await this.prisma.utilityMeter.findMany({
+      where: {
+        apartmentId: { in: apartmentIds },
+        meterType: { in: [MeterType.electricity, MeterType.water] },
+      },
+      select: {
+        id: true,
+        apartmentId: true,
+        meterNumber: true,
+        meterType: true,
+        currentReading: true,
+        previousReading: true,
+        ratePerUnit: true,
+        unitOfMeasurement: true,
+        readingDate: true,
+        status: true,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    return new Map(
+      meters.map((meter) => [
+        this.getUtilityLookupKey(meter.apartmentId, meter.meterType),
+        meter,
+      ]),
+    );
+  }
+
+  private getUtilityLookupKey(apartmentId: string, meterType: MeterType) {
+    return `${apartmentId}:${meterType}`;
+  }
+
+  private findUtilityMeterForDevice(
+    apartmentId?: string | null,
+    topic?: MqttDeviceTopic,
+    utilityLookup?: Map<string, any>,
+  ) {
+    if (!apartmentId || !this.isUtilityTopic(topic) || !utilityLookup) {
+      return null;
+    }
+
+    return (
+      utilityLookup.get(
+        this.getUtilityLookupKey(
+          apartmentId,
+          this.mapUtilityTopicToMeterType(topic),
+        ),
+      ) ?? null
+    );
+  }
+
+  private toUtilityMeterMetadata(utilityMeter: any) {
+    if (!utilityMeter) {
+      return undefined;
+    }
+
+    return {
+      isUtilityMeter: true,
+      utilityMeterId: utilityMeter.id,
+      utilityMeterType: utilityMeter.meterType,
+      currentReading: utilityMeter.currentReading?.toString() ?? null,
+      previousReading: utilityMeter.previousReading?.toString() ?? null,
+      ratePerUnit: utilityMeter.ratePerUnit?.toString() ?? null,
+      unitOfMeasurement: utilityMeter.unitOfMeasurement ?? null,
+      readingDate: utilityMeter.readingDate ?? null,
+    };
+  }
+
+  private toBoardMeterItem(utilityMeter: any) {
+    if (!utilityMeter) {
+      return null;
+    }
+
+    return {
+      id: utilityMeter.id,
+      meterNumber: utilityMeter.meterNumber,
+      meterType: utilityMeter.meterType,
+      currentReading: utilityMeter.currentReading?.toString() ?? null,
+      previousReading: utilityMeter.previousReading?.toString() ?? null,
+      ratePerUnit: utilityMeter.ratePerUnit?.toString() ?? null,
+      unitOfMeasurement: utilityMeter.unitOfMeasurement ?? null,
+      readingDate: utilityMeter.readingDate ?? null,
+      status: utilityMeter.status,
+    };
+  }
+
   private toDeviceListItem(device: {
     configuration: unknown;
     deviceType: string;
@@ -1502,13 +1734,18 @@ export class IoTService {
     } | null;
     room: { id: string; roomNumber: string; roomType: string } | null;
     [key: string]: any;
-  }) {
+  }, utilityLookup?: Map<string, any>) {
     const metadata = this.extractMqttMetadata(
       device.configuration,
       device.deviceType,
     );
     const { configuration: _configuration, ...rest } = device;
     void _configuration;
+    const utilityMeter = this.findUtilityMeterForDevice(
+      device.apartment?.id,
+      metadata.topic,
+      utilityLookup,
+    );
 
     return {
       ...rest,
@@ -1518,6 +1755,7 @@ export class IoTService {
       mqttTopic: metadata.topic ?? null,
       mqttDeviceId: metadata.deviceId ?? null,
       mqttState: metadata.state ?? null,
+      ...this.toUtilityMeterMetadata(utilityMeter),
     };
   }
 
@@ -1531,7 +1769,7 @@ export class IoTService {
     } | null;
     room: { id: string; roomNumber: string; roomType: string } | null;
     [key: string]: any;
-  }) {
+  }, utilityLookup?: Map<string, any>) {
     let mqttConfig: DeviceMqttControlConfig | null = null;
 
     try {
@@ -1540,23 +1778,30 @@ export class IoTService {
       mqttConfig = null;
     }
 
+    const metadata = this.extractMqttMetadata(
+      device.configuration,
+      device.deviceType,
+    );
+    const utilityMeter = this.findUtilityMeterForDevice(
+      device.apartment?.id,
+      metadata.topic,
+      utilityLookup,
+    );
+
     return {
       ...device,
       apartment: this.toApartmentSummary(device.apartment),
       room: this.toRoomSummary(device.room),
       mqttEspId: mqttConfig?.espId ?? null,
-      mqttBoardName:
-        this.extractMqttMetadata(device.configuration, device.deviceType)
-          .boardName ?? null,
+      mqttBoardName: metadata.boardName ?? null,
       mqttTopic: mqttConfig?.topic ?? null,
       mqttDeviceId: mqttConfig?.deviceId ?? null,
       mqttDoorPasswordDeviceId: mqttConfig?.doorPasswordDeviceId ?? null,
-      mqttState:
-        this.extractMqttMetadata(device.configuration, device.deviceType)
-          .state ?? null,
+      mqttState: metadata.state ?? null,
       mqttControlType: mqttConfig?.topic ?? null,
       mqttChannelId: mqttConfig?.deviceId ?? null,
       mqttDoorPasswordChannelId: mqttConfig?.doorPasswordDeviceId ?? null,
+      ...this.toUtilityMeterMetadata(utilityMeter),
     };
   }
 
@@ -1809,6 +2054,87 @@ export class IoTService {
     };
   }
 
+  private async syncUtilityMeterForBoardDevice(
+    boardId: string,
+    boardName: string,
+    apartmentId: string | undefined,
+    deviceRecordId: string,
+    device: {
+      topic: MqttDeviceTopic;
+      deviceId: number;
+      deviceName: string;
+    },
+  ) {
+    if (!this.isUtilityTopic(device.topic)) {
+      return;
+    }
+
+    if (!apartmentId) {
+      throw new BadRequestException(
+        'Utility device requires the board to be linked to an apartment',
+      );
+    }
+
+    const meterType = this.mapUtilityTopicToMeterType(device.topic);
+    const existingMeter = await this.prisma.utilityMeter.findFirst({
+      where: {
+        apartmentId,
+        meterType,
+        status: { not: MeterStatus.replaced },
+      },
+      select: { id: true },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    if (existingMeter) {
+      return;
+    }
+
+    await this.prisma.utilityMeter.create({
+      data: {
+        meterNumber: this.buildUtilityMeterNumber(
+          boardId,
+          device.topic,
+          device.deviceId,
+        ),
+        meterType,
+        apartmentId,
+        installationDate: new Date(),
+        unitOfMeasurement: device.topic === 'electric' ? 'kWh' : 'm3',
+        isDigital: true,
+        status: MeterStatus.active,
+        notes: `Auto-created from board ${boardName} (${boardId}) for device ${device.deviceName} [${deviceRecordId}]`,
+      },
+      select: { id: true },
+    });
+  }
+
+  private async syncUtilityMeterForExistingBoardDevice(
+    boardId: string,
+    boardName: string,
+    apartmentId: string | undefined,
+    deviceRecordId: string,
+    topic?: string | null,
+    mqttDeviceId?: number | null,
+    deviceName?: string,
+  ) {
+    if (!this.isUtilityTopic(topic) || !mqttDeviceId) {
+      return;
+    }
+
+    await this.syncUtilityMeterForBoardDevice(
+      boardId,
+      boardName,
+      apartmentId,
+      deviceRecordId,
+      {
+        topic,
+        deviceId: mqttDeviceId,
+        deviceName: deviceName ?? `Utility ${mqttDeviceId}`,
+      },
+    );
+  }
+
   private async findBoardSourceDevices(where: Prisma.IoTDeviceWhereInput = {}) {
     return this.prisma.ioTDevice.findMany({
       where,
@@ -1876,22 +2202,11 @@ export class IoTService {
         devices: Array<{
           id: string;
           deviceName: string;
-          deviceType: string;
+          deviceId: number;
           status: IoTStatus;
-          isControllableByTenant: boolean;
           icon: string | null;
-          mqttTopic: string | null;
-          mqttDeviceId: number | null;
-          mqttDoorPasswordDeviceId: number | null;
-          mqttState: string | null;
-          mqttControlType: string | null;
-          mqttChannelId: number | null;
-          mqttDoorPasswordChannelId: number | null;
-          room: {
-            id: string;
-            roomNumber: string;
-            roomType: string;
-          } | null;
+          topic: string | null;
+          state: string | null;
         }>;
       }
     >();
@@ -1903,6 +2218,10 @@ export class IoTService {
       );
 
       if (!metadata.espId) {
+        continue;
+      }
+
+      if (this.isUtilityTopic(metadata.topic)) {
         continue;
       }
 
@@ -1938,22 +2257,14 @@ export class IoTService {
       ) {
         board.lastOnlineAt = device.lastOnlineAt;
       }
-
       board.devices.push({
         id: device.id,
         deviceName: device.deviceName,
-        deviceType: device.deviceType,
+        deviceId: metadata.deviceId ?? 1,
         status: device.status,
-        isControllableByTenant: device.isControllableByTenant,
         icon: this.readString(this.toPlainObject(device.configuration).icon) ?? null,
-        mqttTopic: metadata.topic ?? null,
-        mqttDeviceId: metadata.deviceId ?? null,
-        mqttDoorPasswordDeviceId: metadata.doorPasswordDeviceId ?? null,
-        mqttState: this.normalizeBoardDeviceState(metadata.state) ?? null,
-        mqttControlType: metadata.topic ?? null,
-        mqttChannelId: metadata.deviceId ?? null,
-        mqttDoorPasswordChannelId: metadata.doorPasswordDeviceId ?? null,
-        room: this.toRoomSummary(device.room),
+        topic: metadata.topic ?? null,
+        state: this.normalizeBoardDeviceState(metadata.state) ?? null,
       });
 
       boards.set(metadata.espId, board);
@@ -1967,8 +2278,8 @@ export class IoTService {
         ),
         deviceCount: board.devices.length,
         devices: board.devices.sort((left, right) => {
-          const leftChannel = left.mqttDeviceId ?? Number.MAX_SAFE_INTEGER;
-          const rightChannel = right.mqttDeviceId ?? Number.MAX_SAFE_INTEGER;
+          const leftChannel = left.deviceId ?? Number.MAX_SAFE_INTEGER;
+          const rightChannel = right.deviceId ?? Number.MAX_SAFE_INTEGER;
 
           if (leftChannel !== rightChannel) {
             return leftChannel - rightChannel;
@@ -2007,22 +2318,11 @@ export class IoTService {
       devices: Array<{
         id: string;
         deviceName: string;
-        deviceType: string;
+        deviceId: number;
         status: IoTStatus;
-        isControllableByTenant: boolean;
         icon: string | null;
-        mqttTopic: string | null;
-        mqttDeviceId: number | null;
-        mqttDoorPasswordDeviceId: number | null;
-        mqttState: string | null;
-        mqttControlType: string | null;
-        mqttChannelId: number | null;
-        mqttDoorPasswordChannelId: number | null;
-        room: {
-          id: string;
-          roomNumber: string;
-          roomType: string;
-        } | null;
+        topic: string | null;
+        state: string | null;
       }>;
       createdAt: Date;
       updatedAt: Date;
@@ -2179,8 +2479,10 @@ export class IoTService {
   private assertBoardAssignmentAvailable(
     devices: Array<{
       id: string;
-      mqttTopic: string | null;
-      mqttDeviceId: number | null;
+      topic?: string | null;
+      deviceId?: number | null;
+      mqttTopic?: string | null;
+      mqttDeviceId?: number | null;
     }>,
     topic?: string | null,
     deviceId?: number | null,
@@ -2195,8 +2497,10 @@ export class IoTService {
     const conflict = devices.find(
       (device) =>
         device.id !== excludedDeviceId &&
-        this.buildBoardAssignmentKey(device.mqttTopic, device.mqttDeviceId) ===
-          assignmentKey,
+        this.buildBoardAssignmentKey(
+          device.topic ?? device.mqttTopic,
+          device.deviceId ?? device.mqttDeviceId,
+        ) === assignmentKey,
     );
 
     if (conflict) {
@@ -2254,7 +2558,9 @@ export class IoTService {
       value === 'light' ||
       value === 'alarm' ||
       value === 'door' ||
-      value === 'curtain'
+      value === 'curtain' ||
+      value === 'electric' ||
+      value === 'water'
     ) {
       return value;
     }
@@ -2272,6 +2578,8 @@ export class IoTService {
         return 'alarm';
       case 'smart_lock':
         return 'door';
+      case 'sensor':
+        return undefined;
       default:
         return undefined;
     }
@@ -2286,8 +2594,31 @@ export class IoTService {
       case 'door':
         return IoTDeviceType.smart_lock;
       case 'curtain':
+      case 'electric':
+      case 'water':
         return IoTDeviceType.sensor;
     }
+  }
+
+  private isUtilityTopic(topic?: string | null): topic is UtilityMqttTopic {
+    return topic === 'electric' || topic === 'water';
+  }
+
+  private mapUtilityTopicToMeterType(topic: UtilityMqttTopic): MeterType {
+    switch (topic) {
+      case 'electric':
+        return MeterType.electricity;
+      case 'water':
+        return MeterType.water;
+    }
+  }
+
+  private buildUtilityMeterNumber(
+    boardId: string,
+    topic: UtilityMqttTopic,
+    deviceId: number,
+  ) {
+    return `UTILITY-${boardId}-${topic}-${deviceId}`;
   }
 
   private normalizeBoardId(input: { id?: string; boardId?: string }) {

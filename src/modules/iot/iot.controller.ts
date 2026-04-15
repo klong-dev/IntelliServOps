@@ -12,31 +12,23 @@ import {
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IoTService } from './iot.service';
 import {
-  CreateUtilityMeterDto,
-  CreateUtilityReadingDto,
   CreateIoTBoardDeviceDto,
   CreateIoTBoardDto,
   DirectMqttControlDto,
   IoTBoardDeleteResultDto,
+  IoTBoardDeviceDeleteResultDto,
   IoTBoardDetailDto,
   IoTBoardListItemDto,
+  IoTBoardMetersDto,
   IoTBoardUnlinkResultDto,
   IoTApartmentBoardsUnlinkResultDto,
-  IoTGatewayStatusDto,
   IoTMqttCommandResultDto,
   IoTMqttSignalResultDto,
-  IoTTestSequenceResponseDto,
-  SetDoorPasswordDto,
-  TestSequenceDto,
-  UpdateUtilityMeterDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
-  UtilityMeterDetailDto,
-  UtilityMeterListItemDto,
-  UtilityReadingDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
-import { CurrentUser, Public, Roles } from '../../common/decorators';
+import { Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import { IoTStatus, MeterStatus } from '@prisma/client';
 
@@ -44,42 +36,6 @@ import { IoTStatus, MeterStatus } from '@prisma/client';
 @Controller('iot')
 export class IoTController {
   constructor(private readonly iotService: IoTService) {}
-
-  @Get('online')
-  @Public()
-  @ApiOperation({ summary: 'Check MQTT gateway availability' })
-  @ApiJsonResponse(IoTGatewayStatusDto, {
-    description: 'IoT MQTT gateway status',
-  })
-  getGatewayStatus() {
-    return this.iotService.getGatewayStatus();
-  }
-
-  @Post('devices/:espId/config-door-password/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Send door password directly to MQTT device' })
-  @ApiJsonResponse(IoTMqttCommandResultDto, {
-    description: 'Door password published to MQTT broker',
-  })
-  configureDoorPassword(
-    @Param('espId') espId: string,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: SetDoorPasswordDto,
-  ) {
-    return this.iotService.configureDoorPassword(espId, id, body.password);
-  }
-
-  @Post('devices/:espId/get-telemetry')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Request telemetry from MQTT board' })
-  @ApiJsonResponse(IoTMqttSignalResultDto, {
-    description: 'Telemetry request published to MQTT broker',
-  })
-  requestTelemetry(@Param('espId') espId: string) {
-    return this.iotService.requestTelemetry(espId);
-  }
 
   @Get('devices/:espId/check-health')
   @Public()
@@ -92,19 +48,6 @@ export class IoTController {
     return this.iotService.checkHealth(espId);
   }
 
-  @Post('devices/:espId/test-sequence')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Run MQTT device test sequence' })
-  @ApiJsonResponse(IoTTestSequenceResponseDto, {
-    description: 'MQTT test sequence completed',
-  })
-  runTestSequence(
-    @Param('espId') espId: string,
-    @Body() body: TestSequenceDto,
-  ) {
-    return this.iotService.runDeviceTestSequence(espId, body.holdMs);
-  }
 
   @Post('devices/:espId/:deviceId')
   @Public()
@@ -156,6 +99,28 @@ export class IoTController {
   @ApiResponse({ status: 404, description: 'IoT board not found' })
   async findOneBoard(@Param('boardId') boardId: string) {
     return this.iotService.findOneBoard(boardId);
+  }
+
+  @Get('meter')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary:
+      'Get utility meters separated from board devices (electric and water)',
+  })
+  @ApiQuery({ name: 'boardId', required: false })
+  @ApiQuery({ name: 'apartmentId', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
+  @ApiJsonResponse(IoTBoardMetersDto, {
+    description:
+      'Returns electric/water utility meters for the given apartment or board',
+  })
+  async findUtilityMeters(
+    @Query('boardId') boardId?: string,
+    @Query('apartmentId') apartmentId?: string,
+    @Query('status') status?: MeterStatus,
+  ) {
+    return this.iotService.findUtilityMeters(boardId, apartmentId, status);
   }
 
   @Post('boards')
@@ -222,7 +187,10 @@ export class IoTController {
   @Post('boards/:boardId/devices')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Add a child device to an IoT board' })
+  @ApiOperation({
+    summary:
+      'Add a child device to an IoT board (topics: light, alarm, door, curtain)',
+  })
   @ApiJsonResponse(IoTBoardDetailDto, {
     status: 201,
     description: 'Child device created successfully',
@@ -253,7 +221,7 @@ export class IoTController {
   @Public()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Deactivate a child device from an IoT board' })
-  @ApiJsonResponse(IoTBoardDetailDto, {
+  @ApiJsonResponse(IoTBoardDeviceDeleteResultDto, {
     description: 'Child device deactivated successfully',
   })
   async removeBoardDevice(
@@ -263,102 +231,4 @@ export class IoTController {
     return this.iotService.removeBoardDevice(boardId, deviceId);
   }
 
-  @Get('meters')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'List utility meters' })
-  @ApiQuery({ name: 'apartmentId', required: false })
-  @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
-  @ApiJsonResponse(UtilityMeterListItemDto, {
-    isArray: true,
-    description: 'List of utility meters',
-  })
-  async findAllMeters(
-    @Query('apartmentId') apartmentId?: string,
-    @Query('status') status?: MeterStatus,
-  ) {
-    return this.iotService.findAllMeters(apartmentId, status);
-  }
-
-  @Get('meters/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Get utility meter details' })
-  @ApiJsonResponse(UtilityMeterDetailDto, {
-    description: 'Utility meter details',
-  })
-  async findOneMeter(@Param('id') id: string) {
-    return this.iotService.findOneMeter(id);
-  }
-
-  @Post('meters')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Create utility meter' })
-  @ApiJsonResponse(UtilityMeterDetailDto, {
-    status: 201,
-    description: 'Utility meter created successfully',
-  })
-  async createMeter(@Body() createDto: CreateUtilityMeterDto) {
-    return this.iotService.createMeter(createDto);
-  }
-
-  @Patch('meters/:id')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Update utility meter' })
-  @ApiJsonResponse(UtilityMeterDetailDto, {
-    description: 'Utility meter updated successfully',
-  })
-  async updateMeter(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateUtilityMeterDto,
-  ) {
-    return this.iotService.updateMeter(id, updateDto);
-  }
-
-  @Post('readings')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Create utility meter reading' })
-  @ApiJsonResponse(UtilityReadingDto, {
-    status: 201,
-    description: 'Utility reading created successfully',
-  })
-  async createReading(
-    @Body() createDto: CreateUtilityReadingDto,
-    @CurrentUser() currentUser?: any,
-  ) {
-    return this.iotService.createReading(createDto, currentUser);
-  }
-
-  @Get('meters/:meterId/readings')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'List readings of a utility meter' })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiJsonResponse(UtilityReadingDto, {
-    isArray: true,
-    description: 'Utility meter readings',
-  })
-  async getReadings(
-    @Param('meterId') meterId: string,
-    @Query('limit') limit?: number,
-  ) {
-    return this.iotService.getReadings(meterId, limit);
-  }
-
-  @Patch('readings/:id/verify')
-  @Public()
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Verify utility reading' })
-  @ApiJsonResponse(UtilityReadingDto, {
-    description: 'Utility reading verified successfully',
-  })
-  async verifyReading(
-    @Param('id') id: string,
-    @CurrentUser() currentUser?: any,
-  ) {
-    return this.iotService.verifyReading(id, currentUser?.actorType === 'staff' ? currentUser.sub : undefined);
-  }
 }

@@ -13,17 +13,6 @@ class IoTBoardApartmentSummaryDto {
   address: string;
 }
 
-class IoTBoardRoomSummaryDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty({ example: 'R01' })
-  roomNumber: string;
-
-  @ApiProperty({ example: 'bedroom' })
-  roomType: string;
-}
-
 export class IoTBoardDeviceItemDto {
   @ApiProperty()
   id: string;
@@ -31,60 +20,24 @@ export class IoTBoardDeviceItemDto {
   @ApiProperty({ example: 'Front Door Lock' })
   deviceName: string;
 
-  @ApiProperty({ example: 'smart_lock' })
-  deviceType: string;
-
-  @ApiProperty({ enum: IoTStatus, example: IoTStatus.active })
-  status: IoTStatus;
-
-  @ApiProperty()
-  isControllableByTenant: boolean;
+  @ApiProperty({ example: 1 })
+  deviceId: number;
 
   @ApiPropertyOptional({ type: String, nullable: true, example: 'door-lock' })
   icon: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true, example: 'door' })
-  mqttTopic: string | null;
-
-  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
-  mqttDeviceId: number | null;
-
-  @ApiPropertyOptional({ type: Number, nullable: true, example: 1 })
-  mqttDoorPasswordDeviceId: number | null;
+  topic: string | null;
 
   @ApiPropertyOptional({
     enum: BOARD_DEVICE_STATES,
     nullable: true,
     example: 'OFF',
   })
-  mqttState: BoardDeviceState | null;
+  state: BoardDeviceState | null;
 
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    example: 'door',
-    deprecated: true,
-  })
-  mqttControlType: string | null;
-
-  @ApiPropertyOptional({
-    type: Number,
-    nullable: true,
-    example: 1,
-    deprecated: true,
-  })
-  mqttChannelId: number | null;
-
-  @ApiPropertyOptional({
-    type: Number,
-    nullable: true,
-    example: 1,
-    deprecated: true,
-  })
-  mqttDoorPasswordChannelId: number | null;
-
-  @ApiPropertyOptional({ type: IoTBoardRoomSummaryDto, nullable: true })
-  room: IoTBoardRoomSummaryDto | null;
+  @ApiProperty({ enum: IoTStatus, example: IoTStatus.active })
+  status: IoTStatus;
 }
 
 export class IoTBoardListItemDto {
@@ -132,6 +85,17 @@ export class IoTBoardDeleteResultDto {
   status: IoTStatus;
 }
 
+export class IoTBoardDeviceDeleteResultDto {
+  @ApiProperty({ example: '36ed4722-82e2-49e9-8175-4d099e80102d' })
+  id: string;
+
+  @ApiProperty({ example: 'Tmp Light 2' })
+  deviceName: string;
+
+  @ApiProperty({ enum: IoTStatus, example: IoTStatus.inactive })
+  status: IoTStatus;
+}
+
 export class IoTBoardUnlinkResultDto {
   @ApiProperty({ example: 'ESP_A101' })
   boardId: string;
@@ -159,4 +123,55 @@ export class IoTApartmentBoardsUnlinkResultDto {
 
   @ApiProperty({ example: 5 })
   affectedDevices: number;
+}
+
+export class IoTUtilityMeterItemDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'MTR-001' })
+  meterNumber: string;
+
+  @ApiProperty({ example: 'electricity' })
+  meterType: string;
+
+  @ApiPropertyOptional({ example: '1250.00', nullable: true })
+  currentReading: string | null;
+
+  @ApiPropertyOptional({ example: '1100.00', nullable: true })
+  previousReading: string | null;
+
+  @ApiPropertyOptional({ example: '3500.00', nullable: true })
+  ratePerUnit: string | null;
+
+  @ApiPropertyOptional({ example: 'kWh', nullable: true })
+  unitOfMeasurement: string | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  readingDate: Date | null;
+
+  @ApiProperty({ example: 'active' })
+  status: string;
+}
+
+export class IoTBoardMetersDto {
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'ESP_A101',
+  })
+  boardId: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+  })
+  apartmentId: string | null;
+
+  @ApiPropertyOptional({ type: IoTUtilityMeterItemDto, nullable: true })
+  electric: IoTUtilityMeterItemDto | null;
+
+  @ApiPropertyOptional({ type: IoTUtilityMeterItemDto, nullable: true })
+  water: IoTUtilityMeterItemDto | null;
 }
