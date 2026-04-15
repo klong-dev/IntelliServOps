@@ -115,6 +115,18 @@ export class RevenueOverviewDto {
 
   @ApiProperty({ example: 85000000 })
   totalPartnerNetPayout: number;
+
+  @ApiProperty({ type: [RevenueTransactionDto] })
+  invoices: RevenueTransactionDto[];
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ example: 2 })
+  totalPages: number;
 }
 
 export class PartnerRevenueSummaryItemDto {
