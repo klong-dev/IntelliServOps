@@ -290,6 +290,27 @@ export class ContractsService {
         status: ContractStatus.expired,
       },
     });
+
+    // Contracts that passed activation date but still have no paid deposit
+    // are treated as overdue and must expire.
+    await this.prisma.rentalContract.updateMany({
+      where: {
+        status: {
+          in: [ContractStatus.pending, ContractStatus.signed],
+        },
+        startDate: { lt: todayStart },
+        endDate: { gte: todayStart },
+        invoices: {
+          none: {
+            invoiceType: InvoiceType.contractDeposit,
+            status: InvoiceStatus.paid,
+          },
+        },
+      },
+      data: {
+        status: ContractStatus.expired,
+      },
+    });
   }
 
   private computeMonthlyBillingPeriod(

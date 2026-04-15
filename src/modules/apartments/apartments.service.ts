@@ -229,6 +229,30 @@ export class ApartmentsService {
     };
   }
 
+  async getCooperationContractPdfByToken(token: string) {
+    if (!token || !token.trim()) {
+      throw new BadRequestException('PDF token is required');
+    }
+
+    const contractId = this.verifyPdfToken(token.trim());
+    const contract = await this.prisma.partnerCooperationContract.findUnique({
+      where: { id: contractId },
+      select: {
+        contractNumber: true,
+        contractPdfData: true,
+      },
+    });
+
+    if (!contract || !contract.contractPdfData) {
+      throw new NotFoundException('Cooperation contract or PDF not found');
+    }
+
+    return {
+      buffer: Buffer.from(contract.contractPdfData),
+      contractNumber: contract.contractNumber,
+    };
+  }
+
   async getCooperationContractByApartment(
     apartmentId: string,
     currentUser: JwtPayload,
