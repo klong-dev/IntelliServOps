@@ -11,7 +11,13 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { MQTT_DEVICE_TOPICS } from '../iot-mqtt.types';
+
+export const BOARD_MQTT_DEVICE_TOPICS = [
+  'light',
+  'alarm',
+  'door',
+  'curtain',
+] as const;
 
 export const BOARD_DEVICE_STATES = ['ON', 'OFF'] as const;
 export type BoardDeviceState = (typeof BOARD_DEVICE_STATES)[number];
@@ -72,10 +78,10 @@ export class CreateIoTBoardDeviceDto {
   icon?: string;
 
   @ApiProperty({
-    enum: MQTT_DEVICE_TOPICS,
+    enum: BOARD_MQTT_DEVICE_TOPICS,
     example: 'door',
     description:
-      "MQTT topic configured on the ESP board for this child device. Legacy field 'mqttTopic' is also accepted.",
+      "MQTT topic configured on the ESP board for this child device. Allowed values: light, alarm, door, curtain. Legacy field 'mqttTopic' is also accepted.",
   })
   @Transform(({ value, obj }) => {
     const rawValue: unknown = value ?? readObjectValue(obj, 'mqttTopic');
@@ -84,8 +90,8 @@ export class CreateIoTBoardDeviceDto {
       ? rawValue.trim().toLowerCase()
       : rawValue;
   })
-  @IsIn(MQTT_DEVICE_TOPICS)
-  topic: (typeof MQTT_DEVICE_TOPICS)[number];
+  @IsIn(BOARD_MQTT_DEVICE_TOPICS)
+  topic: (typeof BOARD_MQTT_DEVICE_TOPICS)[number];
 
   @ApiPropertyOptional({
     enum: BOARD_DEVICE_STATES,

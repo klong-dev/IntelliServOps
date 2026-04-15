@@ -126,6 +126,7 @@ describe('IoTService', () => {
 
     service = module.get<IoTService>(IoTService);
     jest.clearAllMocks();
+    prisma.utilityMeter.findMany.mockResolvedValue([] as any);
   });
 
   describe('gateway helpers', () => {
@@ -200,18 +201,21 @@ describe('IoTService', () => {
         expect.arrayContaining([
           expect.objectContaining({
             id: 'device-123',
-            mqttTopic: 'door',
-            mqttDeviceId: 1,
-            mqttState: 'OFF',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
           }),
           expect.objectContaining({
             id: 'device-456',
-            mqttTopic: 'light',
-            mqttDeviceId: 2,
-            mqttState: 'OFF',
+            topic: 'light',
+            deviceId: 2,
+            state: 'OFF',
           }),
         ]),
       );
+      expect(result[0].devices[0]).not.toHaveProperty('mqttControlType');
+      expect(result[0].devices[0]).not.toHaveProperty('mqttChannelId');
+      expect(result[0].devices[0]).not.toHaveProperty('room');
     });
 
     it('should create a board and propagate board metadata to child devices', async () => {
@@ -334,6 +338,215 @@ describe('IoTService', () => {
       );
       expect(prisma.ioTDevice.create).not.toHaveBeenCalled();
       expect(result).toMatchObject({ id: 'ESP_A101', deviceCount: 0 });
+    });
+
+    it('should create an electricity utility meter when adding an electric utility board device', async () => {
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany
+        .mockResolvedValueOnce([] as any)
+        .mockResolvedValueOnce([
+          mockBoardSourceDevice({
+            id: 'device-electricity',
+            deviceName: 'Electricity Meter',
+            deviceType: 'sensor',
+            configuration: {
+              mqtt: {
+                espId: 'ESP_A101',
+                boardName: 'A101 Main Board',
+                topic: 'electric',
+                deviceId: 5,
+                state: 'ON',
+              },
+            },
+          }),
+        ] as any);
+      prisma.ioTDevice.create.mockResolvedValue({ id: 'device-electricity' } as any);
+      prisma.utilityMeter.findFirst.mockResolvedValue(null as any);
+      prisma.utilityMeter.create.mockResolvedValue({ id: 'meter-electricity' } as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue(
+        mockDeviceDetail({
+          id: 'device-electricity',
+          deviceName: 'Electricity Meter',
+          deviceType: 'sensor',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'electric',
+              deviceId: 5,
+              state: 'ON',
+            },
+          },
+        }) as any,
+      );
+      prisma.utilityMeter.findMany.mockResolvedValue([
+        mockMeter({
+          id: 'meter-electricity',
+          meterType: 'electricity',
+          meterNumber: 'UTILITY-ESP_A101-electric-5',
+          currentReading: 1200,
+        }),
+      ] as any);
+
+      const result = await service.createBoardDevice('ESP_A101', {
+        deviceName: 'Electricity Meter',
+        topic: 'electric' as any,
+        deviceId: 5,
+        state: 'ON',
+      });
+
+      expect(prisma.utilityMeter.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            apartmentId: 'apt-123',
+            meterType: 'electricity',
+            meterNumber: 'UTILITY-ESP_A101-electric-5',
+          }),
+        }),
+      );
+      expect(result).toMatchObject({
+        id: 'device-electricity',
+        mqttTopic: 'electric',
+        isUtilityMeter: true,
+        utilityMeterId: 'meter-electricity',
+      });
+    });
+
+    it('should exclude utility devices from board devices response', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'device-door',
+          deviceName: 'Front Door Lock',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+            },
+          },
+        }),
+        mockBoardSourceDevice({
+          id: 'device-electric',
+          deviceName: 'Electric Meter',
+          deviceType: 'sensor',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'electric',
+              deviceId: 5,
+              state: 'ON',
+            },
+          },
+        }),
+      ] as any);
+
+      const result = await service.findAllBoards();
+
+      expect(result[0].devices).toHaveLength(1);
+      expect(result[0].devices[0]).toMatchObject({
+        id: 'device-door',
+        deviceName: 'Front Door Lock',
+        topic: 'door',
+        deviceId: 1,
+        state: 'OFF',
+      });
+      expect(result[0].devices.find((device) => device.id === 'device-electric')).toBeUndefined();
+    });
+
+    it('should return electric and water meters separately for an apartment', async () => {
+      prisma.utilityMeter.findMany.mockResolvedValue([
+        mockMeter({
+          id: 'meter-electricity',
+          meterType: 'electricity',
+          meterNumber: 'UTILITY-ESP_A101-electric-5',
+          currentReading: 1200,
+          previousReading: 1100,
+          ratePerUnit: 3500,
+          unitOfMeasurement: 'kWh',
+          readingDate: new Date('2026-04-15T00:00:00.000Z'),
+        }),
+        mockMeter({
+          id: 'meter-water',
+          meterType: 'water',
+          meterNumber: 'UTILITY-ESP_A101-water-6',
+          currentReading: 80,
+          previousReading: 75,
+          ratePerUnit: 12000,
+          unitOfMeasurement: 'm3',
+          readingDate: new Date('2026-04-15T00:00:00.000Z'),
+        }),
+      ] as any);
+
+      const result = await service.findUtilityMeters(undefined, 'apt-123');
+
+      expect(result).toMatchObject({
+        boardId: null,
+        apartmentId: 'apt-123',
+        electric: {
+          id: 'meter-electricity',
+          meterType: 'electricity',
+          currentReading: '1200',
+        },
+        water: {
+          id: 'meter-water',
+          meterType: 'water',
+          currentReading: '80',
+        },
+      });
+    });
+
+    it('should resolve apartment from board id when listing utility meters', async () => {
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'device-door',
+          deviceName: 'Front Door Lock',
+        }),
+      ] as any);
+      prisma.utilityMeter.findMany.mockResolvedValue([
+        mockMeter({
+          id: 'meter-electricity',
+          meterType: 'electricity',
+          meterNumber: 'UTILITY-ESP_A101-electric-5',
+        }),
+      ] as any);
+
+      const result = await service.findUtilityMeters('ESP_A101');
+
+      expect(result.boardId).toBe('ESP_A101');
+      expect(result.apartmentId).toBe('apt-123');
+      expect(result.electric).toMatchObject({
+        id: 'meter-electricity',
+        meterType: 'electricity',
+      });
+      expect(result.water).toBeNull();
     });
 
     it('should accept legacy device name field when creating a board', async () => {
