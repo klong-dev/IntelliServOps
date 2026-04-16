@@ -1169,6 +1169,153 @@ describe('IoTService', () => {
       ).resolves.toMatchObject({ success: true });
     });
 
+    it('should unlock door with valid PIN', async () => {
+      const user = mockUserJwtPayload();
+      const pinHash = await bcrypt.hash('258036', 4);
+
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'door-device-1',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              pinHash,
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'door-device-1',
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
+            pinHash,
+          },
+        },
+        deviceType: 'smart_lock',
+      } as any);
+      prisma.userApartment.findFirst.mockResolvedValue({
+        id: 'ua-1',
+        isPrimaryTenant: true,
+      } as any);
+      mqttService.controlDeviceAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          brokerUrl: 'mqtt://broker.hivemq.com:1883',
+          topic: 'ESP_A101/door',
+          payload: 'ON_1',
+          espId: 'ESP_A101',
+          deviceTopic: 'door',
+          deviceId: 1,
+          action: 'ON',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'DOOR_1_OPEN',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'device_state',
+          deviceTopic: 'door',
+          deviceId: 1,
+          state: 'OPEN',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
+      });
+
+      await expect(
+        service.unlockDoor('ESP_A101', 1, '258036', user),
+      ).resolves.toMatchObject({ success: true });
+      expect(mqttService.controlDeviceAndWaitForAck).toHaveBeenCalledWith(
+        'ESP_A101',
+        'ON',
+        1,
+        'door',
+        7000,
+      );
+    });
+
+    it('should not unlock door when PIN is invalid', async () => {
+      const user = mockUserJwtPayload();
+      const pinHash = await bcrypt.hash('258036', 4);
+
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'door-device-1',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              pinHash,
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'door-device-1',
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
+            pinHash,
+          },
+        },
+        deviceType: 'smart_lock',
+      } as any);
+      prisma.userApartment.findFirst.mockResolvedValue({
+        id: 'ua-1',
+        isPrimaryTenant: true,
+      } as any);
+
+      await expect(
+        service.unlockDoor('ESP_A101', 1, '000000', user),
+      ).resolves.toEqual({
+        success: false,
+        message: 'Invalid door PIN.',
+      });
+      expect(mqttService.controlDeviceAndWaitForAck).not.toHaveBeenCalled();
+    });
+
     it('should update door PIN for primary tenant when board ack succeeds', async () => {
       const user = mockUserJwtPayload();
       const pinHash = await bcrypt.hash('258036', 4);

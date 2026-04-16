@@ -570,6 +570,36 @@ export class IoTService {
     return this.controlBoardDevice(boardId, deviceId, 'door', mqttAction);
   }
 
+  async unlockDoor(
+    boardId: string,
+    deviceId: number,
+    pin: string,
+    currentUser: JwtPayload,
+  ) {
+    this.assertValidDoorPin(pin, 'pin');
+
+    const { doorDevice, boardDoorDeviceId } = await this.assertDoorAccess(
+      boardId,
+      currentUser,
+    );
+    this.assertDoorDeviceMatch(boardDoorDeviceId, deviceId);
+
+    const existingPinHash = this.readDoorPinHash(doorDevice.configuration);
+    if (!existingPinHash) {
+      throw new BadRequestException('Door PIN is not configured yet');
+    }
+
+    const matches = await bcrypt.compare(pin, existingPinHash);
+    if (!matches) {
+      return {
+        success: false,
+        message: 'Invalid door PIN.',
+      };
+    }
+
+    return this.controlBoardDevice(boardId, deviceId, 'door', 'ON');
+  }
+
   async updateDoorPin(
     boardId: string,
     deviceId: number,
@@ -1920,7 +1950,10 @@ export class IoTService {
     }
   }
 
-  private assertValidDoorPin(value: string, fieldName: 'oldPin' | 'newPin') {
+  private assertValidDoorPin(
+    value: string,
+    fieldName: 'pin' | 'oldPin' | 'newPin',
+  ) {
     if (!/^\d{6}$/.test(value)) {
       throw new BadRequestException(`${fieldName} must be exactly 6 digits`);
     }
