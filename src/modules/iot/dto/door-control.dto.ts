@@ -40,6 +40,18 @@ export class UpdateDoorPinDto {
   newPin: string;
 }
 
+export class UnlockDoorDto {
+  @ApiProperty({
+    example: '290304',
+    description: 'Current 6-digit PIN used to unlock the smart door',
+  })
+  @IsString()
+  @Matches(/^\d{6}$/, {
+    message: 'pin must be exactly 6 digits',
+  })
+  pin: string;
+}
+
 export class ResetDoorPinDto {
   @ApiProperty({
     example: '290304',
@@ -51,4 +63,3 @@ export class ResetDoorPinDto {
   })
   newPin: string;
 }
-

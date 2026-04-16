@@ -25,6 +25,7 @@ import {
   IoTHealthCheckResultDto,
   IoTApartmentBoardsUnlinkResultDto,
   IoTMqttSignalResultDto,
+  UnlockDoorDto,
   ResetDoorPinDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
@@ -210,6 +211,25 @@ export class IoTController {
     return this.iotService.createBoardDevice(boardId, createDto);
   }
 
+
+  @Post('doors/:boardId/:deviceId/unlock')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @ApiOperation({
+    summary: 'Unlock smart door with a 6-digit PIN and wait for board acknowledgement',
+  })
+  @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
+    status: 201,
+    description: 'Returns success only when the board confirms the door unlock action',
+  })
+  async unlockDoor(
+    @Param('boardId') boardId: string,
+    @Param('deviceId', ParseIntPipe) deviceId: number,
+    @Body() body: UnlockDoorDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.iotService.unlockDoor(boardId, deviceId, body.pin, currentUser);
+  }
 
   @Patch('doors/:boardId/:deviceId/pin')
   @ApiBearerAuth('JWT-auth')
