@@ -3,6 +3,8 @@ export const MQTT_DEVICE_TOPICS = [
   'alarm',
   'door',
   'curtain',
+  'electric',
+  'water',
 ] as const;
 export const MQTT_CONTROL_TYPES = MQTT_DEVICE_TOPICS;
 export const MQTT_BINARY_ACTIONS = ['ON', 'OFF'] as const;
