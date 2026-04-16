@@ -200,7 +200,9 @@ describe('IoTMqttService', () => {
   });
 
   it('should auto-send fallback door password when board requests it', () => {
-    const { client, eventEmitter } = createService();
+    const { client, eventEmitter } = createService({
+      MQTT_ALLOW_DEFAULT_DOOR_PASSWORD_FALLBACK: 'true',
+    });
 
     client.handlers.message(
       'HOMEIQ/ESP_A101/status',
@@ -216,6 +218,42 @@ describe('IoTMqttService', () => {
       expect.objectContaining({
         espId: 'ESP_A101',
         type: 'door_password_requested',
+      }),
+    );
+  });
+
+  it('should parse door PIN update ACK from status messages', () => {
+    const { client, eventEmitter } = createService();
+
+    client.handlers.message(
+      'HOMEIQ/ESP_A101/status',
+      Buffer.from('{"event":"PIN_UPDATED","deviceId":1,"result":"success"}'),
+    );
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'iot.mqtt.status',
+      expect.objectContaining({
+        espId: 'ESP_A101',
+        type: 'door_pin_update',
+        deviceTopic: 'door',
+        deviceId: 1,
+        pinUpdateResult: 'success',
+      }),
+    );
+  });
+
+  it('should parse legacy plain-text PWD_UPDATED status as door PIN update success', () => {
+    const { client, eventEmitter } = createService();
+
+    client.handlers.message('HOMEIQ/ESP_A101/status', Buffer.from('PWD_UPDATED'));
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'iot.mqtt.status',
+      expect.objectContaining({
+        espId: 'ESP_A101',
+        type: 'door_pin_update',
+        deviceTopic: 'door',
+        pinUpdateResult: 'success',
       }),
     );
   });

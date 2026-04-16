@@ -8,6 +8,7 @@ export * from './create-utility-reading.dto';
 export * from './control-device.dto';
 export * from './device-action.dto';
 export * from './set-door-password.dto';
+export * from './door-control.dto';
 export * from './test-sequence.dto';
 export * from './iot-response.dto';
 export * from './iot-board-response.dto';

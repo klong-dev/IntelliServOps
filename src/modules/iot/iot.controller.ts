@@ -9,7 +9,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IoTService } from './iot.service';
 import {
   CreateIoTBoardDeviceDto,
@@ -17,20 +17,24 @@ import {
   DirectMqttControlDto,
   IoTBoardDeleteResultDto,
   IoTBoardDeviceDeleteResultDto,
+  IoTBoardDeviceControlResultDto,
   IoTBoardDetailDto,
   IoTBoardListItemDto,
   IoTBoardMetersDto,
   IoTBoardUnlinkResultDto,
+  IoTHealthCheckResultDto,
   IoTApartmentBoardsUnlinkResultDto,
-  IoTMqttCommandResultDto,
   IoTMqttSignalResultDto,
+  ResetDoorPinDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
+  UpdateDoorPinDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
-import { Public, Roles } from '../../common/decorators';
+import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import { IoTStatus, MeterStatus } from '@prisma/client';
+import type { JwtPayload } from '../auth/auth.service';
 
 @ApiTags('IoT')
 @Controller('iot')
@@ -40,11 +44,13 @@ export class IoTController {
   @Get('devices/:espId/check-health')
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Send health check signal to MQTT board' })
-  @ApiJsonResponse(IoTMqttSignalResultDto, {
-    description: 'Health check signal published to MQTT broker',
+  @ApiOperation({
+    summary: 'Check whether board is online (based on latest status seen)',
   })
-  checkHealth(@Param('espId') espId: string) {
+  @ApiJsonResponse(IoTHealthCheckResultDto, {
+    description: 'Returns current online/offline state for the board',
+  })
+  async checkHealth(@Param('espId') espId: string) {
     return this.iotService.checkHealth(espId);
   }
 
@@ -53,13 +59,15 @@ export class IoTController {
   @Public()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({
-    summary: 'Publish a generic MQTT device command by topic and device id',
+    summary:
+      'Control a board device directly by espId/topic/deviceId and wait for board acknowledgement',
   })
-  @ApiJsonResponse(IoTMqttCommandResultDto, {
+  @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
     status: 201,
-    description: 'Generic MQTT command published to MQTT broker',
+    description:
+      'Returns success only when the board responds with the expected state for this device',
   })
-  controlDeviceByTopic(
+  async controlDeviceByTopic(
     @Param('espId') espId: string,
     @Param('deviceId', ParseIntPipe) deviceId: number,
     @Body() body: DirectMqttControlDto,
@@ -200,6 +208,54 @@ export class IoTController {
     @Body() createDto: CreateIoTBoardDeviceDto,
   ) {
     return this.iotService.createBoardDevice(boardId, createDto);
+  }
+
+
+  @Patch('doors/:boardId/:deviceId/pin')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @ApiOperation({
+    summary: 'Update smart door PIN with old PIN verification and board acknowledgement',
+  })
+  @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
+    description: 'Returns success only when the board confirms the PIN update',
+  })
+  async updateDoorPin(
+    @Param('boardId') boardId: string,
+    @Param('deviceId', ParseIntPipe) deviceId: number,
+    @Body() body: UpdateDoorPinDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.iotService.updateDoorPin(
+      boardId,
+      deviceId,
+      body.oldPin,
+      body.newPin,
+      currentUser,
+    );
+  }
+
+  @Patch('doors/:boardId/:deviceId/pin/reset')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @ApiOperation({
+    summary: 'Reset smart door PIN by staff/operator/admin and wait for board acknowledgement',
+  })
+  @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
+    description: 'Returns success only when the board confirms the PIN reset',
+  })
+  async resetDoorPin(
+    @Param('boardId') boardId: string,
+    @Param('deviceId', ParseIntPipe) deviceId: number,
+    @Body() body: ResetDoorPinDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.iotService.resetDoorPin(
+      boardId,
+      deviceId,
+      body.newPin,
+      currentUser,
+    );
   }
 
   @Patch('boards/:boardId/devices/:deviceId')

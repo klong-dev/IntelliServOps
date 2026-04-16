@@ -55,6 +55,7 @@ export interface IoTMqttStatusEvent {
   receivedAt: Date;
   type:
     | 'door_password_requested'
+    | 'door_pin_update'
     | 'fire'
     | 'fire_ack'
     | 'online'
@@ -63,6 +64,7 @@ export interface IoTMqttStatusEvent {
   deviceTopic?: MqttDeviceTopic;
   deviceId?: number;
   state?: string;
+  pinUpdateResult?: 'success' | 'failed';
 }
 
 export interface IoTMqttTelemetryEvent {
@@ -73,4 +75,11 @@ export interface IoTMqttTelemetryEvent {
   waterTotal?: number;
   energyTotal?: number;
   parsedPayload?: Record<string, unknown>;
+}
+
+export interface IoTMqttControlAckResult {
+  dispatch: IoTMqttPublishResult;
+  statusEvent: IoTMqttStatusEvent | null;
+  timeoutMs: number;
+  timedOut: boolean;
 }

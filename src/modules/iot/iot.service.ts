@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -37,6 +38,9 @@ import {
 import type { JwtPayload } from '../auth/auth.service';
 
 type UtilityMqttTopic = Extract<MqttDeviceTopic, 'electric' | 'water'>;
+const BOARD_ONLINE_WINDOW_MS = 30_000;
+const BOARD_CONTROL_ACK_TIMEOUT_MS = 7000;
+const DOOR_PIN_HASH_BCRYPT_ROUNDS = 12;
 
 @Injectable()
 export class IoTService {
@@ -60,12 +64,16 @@ export class IoTService {
     };
   }
 
-  checkHealth(espId: string) {
-    const details = this.ioTMqttService.checkOnline(espId);
+  async checkHealth(espId: string) {
+    this.ioTMqttService.checkOnline(espId);
+    const snapshot = await this.getBoardHealthSnapshot(espId);
+
     return {
-      success: true,
-      message: 'Health check signal sent',
-      details: this.toSignalDetails(details),
+      espId,
+      online:
+        !!snapshot.lastSeenAt &&
+        Date.now() - snapshot.lastSeenAt.getTime() <= BOARD_ONLINE_WINDOW_MS,
+      lastSeenAt: snapshot.lastSeenAt,
     };
   }
 
@@ -479,24 +487,196 @@ export class IoTService {
     return this.ioTMqttService.runTestSequence(espId, holdMs);
   }
 
-  controlDeviceByTopic(
+  async controlDeviceByTopic(
     espId: string,
     deviceId: number,
     topic: MqttDeviceTopic,
     action: string,
   ) {
     const normalizedAction = this.normalizeDeviceAction(topic, action);
-    const details = this.ioTMqttService.controlDevice(
+    const expectedState = normalizedAction;
+    const ack = await this.ioTMqttService.controlDeviceAndWaitForAck(
       espId,
       normalizedAction,
       deviceId,
       topic,
+      BOARD_CONTROL_ACK_TIMEOUT_MS,
     );
+    const actualState =
+      this.normalizeBoardDeviceState(ack.statusEvent?.state ?? null) ?? null;
+    const success = !ack.timedOut && actualState === expectedState;
+
+    return {
+      success,
+      message: this.buildBoardControlMessage(
+        success,
+        expectedState,
+        actualState,
+        ack.timeoutMs,
+      ),
+    };
+  }
+
+  async controlBoardDevice(
+    boardId: string,
+    deviceId: number,
+    topic: MqttDeviceTopic,
+    action: string,
+  ) {
+    const board = await this.findOneBoard(boardId);
+    const assignment = board.devices.find(
+      (device) => device.deviceId === deviceId && device.topic === topic,
+    );
+
+    if (!assignment) {
+      throw new NotFoundException(
+        'Board device assignment not found for the given topic and deviceId',
+      );
+    }
+
+    const normalizedAction = this.normalizeDeviceAction(topic, action);
+    const expectedState = normalizedAction;
+    const ack = await this.ioTMqttService.controlDeviceAndWaitForAck(
+      boardId,
+      normalizedAction,
+      deviceId,
+      topic,
+      BOARD_CONTROL_ACK_TIMEOUT_MS,
+    );
+
+    const actualState =
+      this.normalizeBoardDeviceState(ack.statusEvent?.state ?? null) ?? null;
+    const success = !ack.timedOut && actualState === expectedState;
+
+    return {
+      success,
+      message: this.buildBoardControlMessage(
+        success,
+        expectedState,
+        actualState,
+        ack.timeoutMs,
+      ),
+    };
+  }
+
+  async controlDoor(
+    boardId: string,
+    deviceId: number,
+    action: 'LOCK' | 'UNLOCK',
+    currentUser: JwtPayload,
+  ) {
+    await this.assertDoorAccess(boardId, currentUser);
+    const mqttAction = action === 'UNLOCK' ? 'ON' : 'OFF';
+    return this.controlBoardDevice(boardId, deviceId, 'door', mqttAction);
+  }
+
+  async updateDoorPin(
+    boardId: string,
+    deviceId: number,
+    oldPin: string,
+    newPin: string,
+    currentUser: JwtPayload,
+  ) {
+    this.assertValidDoorPin(oldPin, 'oldPin');
+    this.assertValidDoorPin(newPin, 'newPin');
+
+    if (oldPin === newPin) {
+      throw new BadRequestException('newPin must be different from oldPin');
+    }
+
+    const { board, doorDevice, boardDoorDeviceId } = await this.assertDoorAccess(
+      boardId,
+      currentUser,
+      true,
+    );
+    this.assertDoorDeviceMatch(boardDoorDeviceId, deviceId);
+
+    const existingPinHash = this.readDoorPinHash(doorDevice.configuration);
+    if (existingPinHash) {
+      const matches = await bcrypt.compare(oldPin, existingPinHash);
+      if (!matches) {
+        throw new BadRequestException('oldPin is incorrect');
+      }
+    }
+
+    const details = this.ioTMqttService.sendDoorPassword(boardId, deviceId, newPin);
+    const pinUpdateAck = await this.waitForDoorPinUpdateAck(boardId, deviceId);
+
+    if (!pinUpdateAck.success) {
+      return {
+        success: false,
+        message: pinUpdateAck.message,
+      };
+    }
+
+    const pinHash = await bcrypt.hash(newPin, DOOR_PIN_HASH_BCRYPT_ROUNDS);
+    const updatedConfiguration = this.mergeDoorPinHashIntoConfiguration(
+      doorDevice.configuration,
+      pinHash,
+      pinUpdateAck.receivedAt ?? undefined,
+    );
+
+    await this.prisma.ioTDevice.update({
+      where: { id: doorDevice.id },
+      data: {
+        configuration: updatedConfiguration as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+
+    await this.logDoorPinUpdate(board.apartment?.id, boardId, currentUser);
 
     return {
       success: true,
-      message: `${topic} ${deviceId} has been ${normalizedAction}`,
-      details: this.toPublishDetails(details),
+      message: 'Door PIN updated successfully.',
+    };
+  }
+
+  async resetDoorPin(
+    boardId: string,
+    deviceId: number,
+    newPin: string,
+    currentUser: JwtPayload,
+  ) {
+    this.assertValidDoorPin(newPin, 'newPin');
+    this.assertStaffLevelActor(currentUser);
+
+    const { board, doorDevice, boardDoorDeviceId } = await this.assertDoorAccess(
+      boardId,
+      currentUser,
+    );
+    this.assertDoorDeviceMatch(boardDoorDeviceId, deviceId);
+
+    const details = this.ioTMqttService.sendDoorPassword(boardId, deviceId, newPin);
+    const pinUpdateAck = await this.waitForDoorPinUpdateAck(boardId, deviceId);
+
+    if (!pinUpdateAck.success) {
+      return {
+        success: false,
+        message: pinUpdateAck.message,
+      };
+    }
+
+    const pinHash = await bcrypt.hash(newPin, DOOR_PIN_HASH_BCRYPT_ROUNDS);
+    const updatedConfiguration = this.mergeDoorPinHashIntoConfiguration(
+      doorDevice.configuration,
+      pinHash,
+      pinUpdateAck.receivedAt ?? undefined,
+    );
+
+    await this.prisma.ioTDevice.update({
+      where: { id: doorDevice.id },
+      data: {
+        configuration: updatedConfiguration as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+
+    await this.logDoorPinUpdate(board.apartment?.id, boardId, currentUser);
+
+    return {
+      success: true,
+      message: 'Door PIN updated successfully.',
     };
   }
 
@@ -1281,6 +1461,7 @@ export class IoTService {
         id: true,
         apartmentId: true,
         deviceType: true,
+        lastOnlineAt: true,
         configuration: true,
       },
     });
@@ -1346,11 +1527,11 @@ export class IoTService {
     readingValue: number,
     event: IoTMqttTelemetryEvent,
   ) {
-    const meter = await this.prisma.utilityMeter.findFirst({
+    let meter = await this.prisma.utilityMeter.findFirst({
       where: {
         apartmentId,
         meterType,
-        status: MeterStatus.active,
+        status: { not: MeterStatus.replaced },
       },
       select: {
         id: true,
@@ -1360,10 +1541,11 @@ export class IoTService {
     });
 
     if (!meter) {
-      this.logger.warn(
-        `No active ${meterType} meter found for apartment ${apartmentId} while processing telemetry from ${event.espId}`,
+      meter = await this.createUtilityMeterFromTelemetry(
+        apartmentId,
+        meterType,
+        event,
       );
-      return;
     }
 
     const normalizedReading = Number(readingValue.toFixed(2));
@@ -1687,6 +1869,231 @@ export class IoTService {
         ),
       ) ?? null
     );
+  }
+
+  private async assertDoorAccess(
+    boardId: string,
+    currentUser: JwtPayload,
+    requirePrimaryTenant = false,
+  ) {
+    const board = await this.findOneBoard(boardId);
+    const boardDoorDevice = board.devices.find((device) => device.topic === 'door');
+
+    if (!boardDoorDevice) {
+      throw new NotFoundException('Door device not found on this board');
+    }
+
+    const doorDevice = await this.findDoorDeviceRecord(boardId, boardDoorDevice.id);
+
+    if (currentUser.actorType === 'user') {
+      if (!board.apartment?.id) {
+        throw new ForbiddenException('Board is not assigned to an apartment');
+      }
+
+      const membership = await this.prisma.userApartment.findFirst({
+        where: {
+          userId: currentUser.sub,
+          apartmentId: board.apartment.id,
+          status: 'active',
+        },
+        select: {
+          id: true,
+          isPrimaryTenant: true,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException('No active apartment membership');
+      }
+
+      if (requirePrimaryTenant && !membership.isPrimaryTenant) {
+        throw new ForbiddenException('Only primary tenant can update door PIN');
+      }
+    }
+
+    return { board, doorDevice, boardDoorDeviceId: boardDoorDevice.deviceId };
+  }
+
+  private assertDoorDeviceMatch(actualDeviceId: number, expectedDeviceId: number) {
+    if (actualDeviceId !== expectedDeviceId) {
+      throw new NotFoundException('Door device id mismatch for this board');
+    }
+  }
+
+  private assertValidDoorPin(value: string, fieldName: 'oldPin' | 'newPin') {
+    if (!/^\d{6}$/.test(value)) {
+      throw new BadRequestException(`${fieldName} must be exactly 6 digits`);
+    }
+  }
+
+  private assertStaffLevelActor(currentUser: JwtPayload) {
+    if (
+      currentUser.actorType !== 'staff' &&
+      currentUser.actorType !== 'operator' &&
+      currentUser.actorType !== 'admin'
+    ) {
+      throw new ForbiddenException('Only staff/operator/admin can reset door PIN');
+    }
+  }
+
+  private readDoorPinHash(configuration: unknown): string | undefined {
+    const root = this.toPlainObject(configuration);
+    const mqtt = this.toPlainObject(root.mqtt);
+    return this.readString(mqtt.pinHash);
+  }
+
+  private mergeDoorPinHashIntoConfiguration(
+    existingConfiguration: unknown,
+    pinHash: string,
+    receivedAt?: Date,
+  ) {
+    const root = this.toPlainObject(existingConfiguration);
+    const mqtt = this.toPlainObject(root.mqtt);
+
+    return {
+      ...root,
+      mqtt: {
+        ...mqtt,
+        pinHash,
+        ...(receivedAt ? { pinUpdatedAt: receivedAt.toISOString() } : {}),
+      },
+    };
+  }
+
+  private async waitForDoorPinUpdateAck(boardId: string, deviceId: number) {
+    const statusEvent = await this.ioTMqttService.waitForStatusEvent(
+      (event) =>
+        event.espId === boardId &&
+        event.deviceTopic === 'door' &&
+        (event.deviceId === undefined || event.deviceId === deviceId) &&
+        event.type === 'door_pin_update',
+      BOARD_CONTROL_ACK_TIMEOUT_MS,
+    );
+
+    if (!statusEvent) {
+      return {
+        success: false,
+        message: `No door PIN update acknowledgement within ${BOARD_CONTROL_ACK_TIMEOUT_MS}ms.`,
+        receivedAt: null as Date | null,
+      };
+    }
+
+    if (statusEvent.pinUpdateResult !== 'success') {
+      return {
+        success: false,
+        message: 'Board reported door PIN update failed.',
+        receivedAt: statusEvent.receivedAt,
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Door PIN updated successfully.',
+      receivedAt: statusEvent.receivedAt,
+    };
+  }
+
+  private async logDoorPinUpdate(
+    apartmentId: string | null | undefined,
+    boardId: string,
+    currentUser: JwtPayload,
+  ) {
+    try {
+      await this.prisma.activityLog.create({
+        data: {
+          actorType: currentUser.actorType,
+          actorId: currentUser.sub,
+          action: 'IOT_DOOR_PIN_UPDATED',
+          entityType: 'IoTBoard',
+          entityId: boardId,
+          description: `Door PIN was updated for board ${boardId}`,
+          metadata: {
+            apartmentId,
+          },
+          status: 'success',
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to write activity log for door PIN update on ${boardId}: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
+  }
+
+  private async findDoorDeviceRecord(boardId: string, deviceRecordId: string) {
+    const device = await this.prisma.ioTDevice.findUnique({
+      where: { id: deviceRecordId },
+      select: {
+        id: true,
+        configuration: true,
+        deviceType: true,
+      },
+    });
+
+    if (!device) {
+      throw new NotFoundException(`Door device record not found for board ${boardId}`);
+    }
+
+    return {
+      id: device.id,
+      configuration: device.configuration,
+      deviceType: device.deviceType,
+    };
+  }
+
+  private async createUtilityMeterFromTelemetry(
+    apartmentId: string,
+    meterType: MeterType,
+    event: IoTMqttTelemetryEvent,
+  ) {
+    const meterNumber = this.buildTelemetryMeterNumber(
+      event.espId,
+      apartmentId,
+      meterType,
+    );
+
+    try {
+      return await this.prisma.utilityMeter.create({
+        data: {
+          meterNumber,
+          meterType,
+          apartmentId,
+          installationDate: event.receivedAt,
+          unitOfMeasurement: meterType === MeterType.electricity ? 'kWh' : 'm3',
+          isDigital: true,
+          status: MeterStatus.active,
+          notes: `Auto-created from MQTT telemetry ${event.espId}`,
+        },
+        select: {
+          id: true,
+          currentReading: true,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const existing = await this.prisma.utilityMeter.findFirst({
+          where: {
+            apartmentId,
+            meterType,
+            status: { not: MeterStatus.replaced },
+          },
+          select: {
+            id: true,
+            currentReading: true,
+          },
+          orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+        });
+
+        if (existing) {
+          return existing;
+        }
+      }
+
+      throw error;
+    }
   }
 
   private toUtilityMeterMetadata(utilityMeter: any) {
@@ -2553,6 +2960,57 @@ export class IoTService {
     return undefined;
   }
 
+  private readDate(value: unknown): Date | undefined {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value;
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async getBoardHealthSnapshot(espId: string) {
+    const [storedBoard, devices] = await Promise.all([
+      this.findStoredBoard(espId),
+      this.findDevicesByEspId(espId),
+    ]);
+
+    let lastSeenAt: Date | null = storedBoard?.lastOnlineAt ?? null;
+    for (const device of devices) {
+      if (device.lastOnlineAt && (!lastSeenAt || device.lastOnlineAt > lastSeenAt)) {
+        lastSeenAt = device.lastOnlineAt;
+      }
+
+      const rootConfig = this.toPlainObject(device.configuration);
+      const mqttConfig = this.toPlainObject(rootConfig.mqtt);
+      const deviceLastStatusAt = this.readDate(mqttConfig.lastMessageAt);
+      const deviceLastTelemetryAt = this.readDate(mqttConfig.lastTelemetryAt);
+
+      if (deviceLastStatusAt) {
+        if (!lastSeenAt || deviceLastStatusAt > lastSeenAt) {
+          lastSeenAt = deviceLastStatusAt;
+        }
+      }
+
+      if (deviceLastTelemetryAt) {
+        if (!lastSeenAt || deviceLastTelemetryAt > lastSeenAt) {
+          lastSeenAt = deviceLastTelemetryAt;
+        }
+      }
+    }
+
+    return {
+      espId,
+      lastSeenAt,
+    };
+  }
+
   private readDeviceTopic(value: unknown): MqttDeviceTopic | undefined {
     if (
       value === 'light' ||
@@ -2621,6 +3079,15 @@ export class IoTService {
     return `UTILITY-${boardId}-${topic}-${deviceId}`;
   }
 
+  private buildTelemetryMeterNumber(
+    espId: string,
+    apartmentId: string,
+    meterType: MeterType,
+  ) {
+    const typeLabel = meterType === MeterType.electricity ? 'electric' : 'water';
+    return `AUTO-${espId}-${apartmentId}-${typeLabel}`;
+  }
+
   private normalizeBoardId(input: { id?: string; boardId?: string }) {
     const boardId = this.readString(input.id) ?? this.readString(input.boardId);
 
@@ -2678,5 +3145,22 @@ export class IoTService {
     }
 
     return undefined;
+  }
+
+  private buildBoardControlMessage(
+    success: boolean,
+    expectedState: string,
+    actualState: string | null,
+    timeoutMs: number,
+  ) {
+    if (success) {
+      return 'Board acknowledged the requested state.';
+    }
+
+    if (actualState === null) {
+      return `No status response from board within ${timeoutMs}ms.`;
+    }
+
+    return `Board responded with ${actualState}, expected ${expectedState}.`;
   }
 }

@@ -13,6 +13,7 @@ import {
   MQTT_BINARY_ACTIONS,
   MQTT_DEVICE_TOPICS,
   type IoTMqttGatewayStatus,
+  type IoTMqttControlAckResult,
   type IoTMqttPublishResult,
   type IoTMqttSignalResult,
   type IoTMqttStatusEvent,
@@ -26,6 +27,8 @@ const MQTT_TELEMETRY_TOPIC_DEFAULT = 'HOMEIQ/+/telemetry';
 const MQTT_RECONNECT_PERIOD_MS = 2000;
 const MQTT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_TEST_HOLD_MS = 2000;
+const DEFAULT_CONTROL_ACK_TIMEOUT_MS = 5000;
+const MQTT_ALLOW_DEFAULT_DOOR_PASSWORD_FALLBACK = 'MQTT_ALLOW_DEFAULT_DOOR_PASSWORD_FALLBACK';
 
 const MQTT_GET_DOOR_PASSWORD_TOPIC = 'get/door-password';
 const MQTT_GET_TELEMETRY_TOPIC = 'get/telemetry';
@@ -44,6 +47,7 @@ export class IoTMqttService implements OnModuleDestroy {
   private readonly statusTopic: string;
   private readonly telemetryTopic: string;
   private readonly defaultDoorPassword: string | null;
+  private readonly allowDefaultDoorPasswordFallback: boolean;
   private readonly runningTestSequences = new Set<string>();
   private client: MqttClient | null = null;
 
@@ -60,6 +64,9 @@ export class IoTMqttService implements OnModuleDestroy {
       MQTT_TELEMETRY_TOPIC_DEFAULT;
     this.defaultDoorPassword =
       this.configService.get<string>('DEFAULT_DOOR_PASSWORD')?.trim() || null;
+    this.allowDefaultDoorPasswordFallback =
+      this.configService.get<string>(MQTT_ALLOW_DEFAULT_DOOR_PASSWORD_FALLBACK) ===
+      'true';
 
     if (!this.brokerUrl) {
       this.logger.warn(
@@ -136,6 +143,106 @@ export class IoTMqttService implements OnModuleDestroy {
       normalizedDeviceId,
       normalizedAction,
     );
+  }
+
+  async controlDeviceAndWaitForAck(
+    espId: string,
+    action: string,
+    deviceId: number,
+    topic: MqttDeviceTopic,
+    timeoutMs = DEFAULT_CONTROL_ACK_TIMEOUT_MS,
+  ): Promise<IoTMqttControlAckResult> {
+    const normalizedEspId = this.normalizeEspId(espId);
+    const normalizedTopic = this.normalizeDeviceTopic(topic);
+    const normalizedAction = this.normalizeBinaryAction(action);
+    const normalizedDeviceId = this.normalizeDeviceId(deviceId);
+
+    return new Promise<IoTMqttControlAckResult>((resolve, reject) => {
+      let dispatch: IoTMqttPublishResult;
+      let timer: NodeJS.Timeout | null = null;
+
+      const handler = (event: IoTMqttStatusEvent) => {
+        if (
+          event.espId !== normalizedEspId ||
+          event.deviceTopic !== normalizedTopic ||
+          event.deviceId !== normalizedDeviceId
+        ) {
+          return;
+        }
+
+        cleanup();
+        resolve({
+          dispatch,
+          statusEvent: event,
+          timeoutMs,
+          timedOut: false,
+        });
+      };
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+        this.eventEmitter.off('iot.mqtt.status', handler);
+      };
+
+      this.eventEmitter.on('iot.mqtt.status', handler);
+
+      try {
+        dispatch = this.publishDeviceCommand(
+          normalizedEspId,
+          normalizedTopic,
+          normalizedDeviceId,
+          normalizedAction,
+        );
+      } catch (error) {
+        cleanup();
+        reject(error);
+        return;
+      }
+
+      timer = setTimeout(() => {
+        cleanup();
+        resolve({
+          dispatch,
+          statusEvent: null,
+          timeoutMs,
+          timedOut: true,
+        });
+      }, timeoutMs);
+    });
+  }
+
+  waitForStatusEvent(
+    matcher: (event: IoTMqttStatusEvent) => boolean,
+    timeoutMs = DEFAULT_CONTROL_ACK_TIMEOUT_MS,
+  ): Promise<IoTMqttStatusEvent | null> {
+    return new Promise<IoTMqttStatusEvent | null>((resolve) => {
+      let timer: NodeJS.Timeout | null = null;
+
+      const handler = (event: IoTMqttStatusEvent) => {
+        if (!matcher(event)) {
+          return;
+        }
+
+        cleanup();
+        resolve(event);
+      };
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+        this.eventEmitter.off('iot.mqtt.status', handler);
+      };
+
+      this.eventEmitter.on('iot.mqtt.status', handler);
+
+      timer = setTimeout(() => {
+        cleanup();
+        resolve(null);
+      }, timeoutMs);
+    });
   }
 
   triggerLight(
@@ -322,7 +429,10 @@ export class IoTMqttService implements OnModuleDestroy {
         this.logger.log(
           `[${statusEvent.espId}] requested door password from MQTT status topic`,
         );
-        if (this.defaultDoorPassword) {
+        if (
+          this.allowDefaultDoorPasswordFallback &&
+          this.defaultDoorPassword
+        ) {
           try {
             this.sendDoorPassword(
               statusEvent.espId,
@@ -407,6 +517,18 @@ export class IoTMqttService implements OnModuleDestroy {
     const espId = this.extractEspIdFromTopic(topic);
     const normalizedMessage = message.trim();
     const upperMessage = normalizedMessage.toUpperCase();
+
+    const doorPinUpdate = this.parseDoorPinUpdateStatusMessage(normalizedMessage);
+    if (doorPinUpdate) {
+      return {
+        espId,
+        rawTopic: topic,
+        message: normalizedMessage,
+        receivedAt,
+        type: 'door_pin_update',
+        ...doorPinUpdate,
+      };
+    }
 
     if (upperMessage === MQTT_MESSAGE_GET_DOOR_PASSWORD) {
       return {
@@ -575,6 +697,122 @@ export class IoTMqttService implements OnModuleDestroy {
       ...(deviceIdToken ? { deviceId: Number(deviceIdToken) } : {}),
       ...(state ? { state } : {}),
     };
+  }
+
+  private parseDoorPinUpdateStatusMessage(message: string): {
+    deviceTopic: 'door';
+    deviceId?: number;
+    state: string;
+    pinUpdateResult: 'success' | 'failed';
+  } | null {
+    const parsedJson = this.tryParseJsonObject(message);
+
+    if (parsedJson) {
+      const rawEvent = [
+        parsedJson.event,
+        parsedJson.action,
+        parsedJson.type,
+        parsedJson.status,
+        parsedJson.message,
+      ]
+        .filter((value) => typeof value === 'string')
+        .join('_')
+        .toUpperCase();
+
+      const mentionsDoorPin =
+        rawEvent.includes('PIN') ||
+        rawEvent.includes('PASSWORD') ||
+        rawEvent.includes('CHANGE_PIN') ||
+        rawEvent.includes('SET_PIN');
+
+      if (!mentionsDoorPin) {
+        return null;
+      }
+
+      const deviceId = this.readPositiveIntegerFromUnknown(
+        parsedJson.deviceId ??
+          parsedJson.id ??
+          parsedJson.channelId ??
+          parsedJson.doorId,
+      );
+      const normalizedResult = this.normalizeDoorPinUpdateResult(
+        parsedJson.result ?? parsedJson.status ?? parsedJson.message ?? rawEvent,
+      );
+
+      if (!normalizedResult) {
+        return null;
+      }
+
+      return {
+        deviceTopic: 'door',
+        ...(deviceId !== undefined ? { deviceId } : {}),
+        state:
+          normalizedResult === 'success'
+            ? 'PIN_UPDATED'
+            : 'PIN_UPDATE_FAILED',
+        pinUpdateResult: normalizedResult,
+      };
+    }
+
+    const upperMessage = message.trim().toUpperCase();
+    const mentionsDoorPin =
+      upperMessage.includes('PIN') ||
+      upperMessage.includes('PASSWORD') ||
+      upperMessage.includes('PWD');
+    if (!mentionsDoorPin) {
+      return null;
+    }
+
+    const normalizedResult = this.normalizeDoorPinUpdateResult(upperMessage);
+    if (!normalizedResult) {
+      return null;
+    }
+
+    const deviceIdMatch = upperMessage.match(/(?:DOOR|ID|DEVICE|CHANNEL)[_\s:-]?(\d+)/);
+
+    return {
+      deviceTopic: 'door',
+      ...(deviceIdMatch ? { deviceId: Number(deviceIdMatch[1]) } : {}),
+      state:
+        normalizedResult === 'success' ? 'PIN_UPDATED' : 'PIN_UPDATE_FAILED',
+      pinUpdateResult: normalizedResult,
+    };
+  }
+
+  private normalizeDoorPinUpdateResult(
+    value: unknown,
+  ): 'success' | 'failed' | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim().toUpperCase();
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (
+      normalized.includes('SUCCESS') ||
+      normalized.includes('UPDATED') ||
+      normalized.includes('CHANGED') ||
+      normalized.includes('SET_OK') ||
+      normalized.includes('PIN_OK') ||
+      normalized.includes('PASSWORD_OK') ||
+      normalized.includes('OK')
+    ) {
+      return 'success';
+    }
+
+    if (
+      normalized.includes('FAIL') ||
+      normalized.includes('ERROR') ||
+      normalized.includes('INVALID') ||
+      normalized.includes('DENIED')
+    ) {
+      return 'failed';
+    }
+
+    return undefined;
   }
 
   private tryParseJsonObject(
