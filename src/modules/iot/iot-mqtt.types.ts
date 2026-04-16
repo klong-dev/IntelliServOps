@@ -3,6 +3,8 @@ export const MQTT_DEVICE_TOPICS = [
   'alarm',
   'door',
   'curtain',
+  'electric',
+  'water',
 ] as const;
 export const MQTT_CONTROL_TYPES = MQTT_DEVICE_TOPICS;
 export const MQTT_BINARY_ACTIONS = ['ON', 'OFF'] as const;
@@ -53,6 +55,7 @@ export interface IoTMqttStatusEvent {
   receivedAt: Date;
   type:
     | 'door_password_requested'
+    | 'door_pin_update'
     | 'fire'
     | 'fire_ack'
     | 'online'
@@ -61,6 +64,7 @@ export interface IoTMqttStatusEvent {
   deviceTopic?: MqttDeviceTopic;
   deviceId?: number;
   state?: string;
+  pinUpdateResult?: 'success' | 'failed';
 }
 
 export interface IoTMqttTelemetryEvent {
@@ -71,4 +75,11 @@ export interface IoTMqttTelemetryEvent {
   waterTotal?: number;
   energyTotal?: number;
   parsedPayload?: Record<string, unknown>;
+}
+
+export interface IoTMqttControlAckResult {
+  dispatch: IoTMqttPublishResult;
+  statusEvent: IoTMqttStatusEvent | null;
+  timeoutMs: number;
+  timedOut: boolean;
 }

@@ -15,6 +15,7 @@ import {
   mockUserJwtPayload,
 } from '../../test-utils';
 import { IoTStatus, MeterStatus } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 describe('IoTService', () => {
   let service: IoTService;
@@ -25,6 +26,8 @@ describe('IoTService', () => {
     getTelemetry: jest.fn(),
     checkOnline: jest.fn(),
     controlDevice: jest.fn(),
+    controlDeviceAndWaitForAck: jest.fn(),
+    waitForStatusEvent: jest.fn(),
     sendDoorPassword: jest.fn(),
     runTestSequence: jest.fn(),
   };
@@ -142,7 +145,8 @@ describe('IoTService', () => {
       });
     });
 
-    it('should request telemetry and health checks through MQTT service', () => {
+    it('should request telemetry and return simple online status for health checks', async () => {
+      const now = Date.now();
       mqttService.getTelemetry.mockReturnValue({
         brokerUrl: 'mqtt://broker.hivemq.com:1883',
         topic: 'ESP_A101/get/telemetry',
@@ -157,14 +161,83 @@ describe('IoTService', () => {
         espId: 'ESP_A101',
         publishedAt: new Date('2026-03-30T00:00:00.000Z'),
       });
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: new Date(now - 10_000),
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-30T00:00:00.000Z'),
+        apartment: null,
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          lastOnlineAt: new Date(now - 5_000),
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              lastMessage: 'ONLINE',
+              lastMessageAt: new Date(now - 4_000).toISOString(),
+              lastTelemetryMessage: '{"energy_total":12.5}',
+              lastTelemetryAt: new Date(now - 3_000).toISOString(),
+            },
+          },
+        }),
+      ] as any);
 
       expect(service.requestTelemetry('ESP_A101')).toMatchObject({
         success: true,
         message: 'Telemetry request sent',
       });
-      expect(service.checkHealth('ESP_A101')).toMatchObject({
-        success: true,
-        message: 'Health check signal sent',
+      await expect(service.checkHealth('ESP_A101')).resolves.toMatchObject({
+        espId: 'ESP_A101',
+        online: true,
+        lastSeenAt: expect.any(Date),
+      });
+    });
+
+    it('should return offline when board has not been seen recently', async () => {
+      mqttService.checkOnline.mockReturnValue({
+        brokerUrl: 'mqtt://broker.hivemq.com:1883',
+        topic: 'HOMEIQ/ESP_A101/status',
+        payload: 'ARE_YOU_OK',
+        espId: 'ESP_A101',
+        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+      });
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: new Date(Date.now() - 120_000),
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-30T00:00:00.000Z'),
+        apartment: null,
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          lastOnlineAt: new Date(Date.now() - 120_000),
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              lastMessage: 'ONLINE',
+              lastMessageAt: new Date(Date.now() - 120_000).toISOString(),
+            },
+          },
+        }),
+      ] as any);
+
+      await expect(service.checkHealth('ESP_A101')).resolves.toMatchObject({
+        espId: 'ESP_A101',
+        online: false,
+        lastSeenAt: expect.any(Date),
       });
     });
   });
@@ -1020,26 +1093,444 @@ describe('IoTService', () => {
   });
 
   describe('direct MQTT wrappers', () => {
-    it('should publish light command through generic MQTT service', () => {
-      mqttService.controlDevice.mockReturnValue({
-        topic: 'ESP_A101/light',
-        payload: 'ON_1',
-        espId: 'ESP_A101',
-        deviceTopic: 'light',
-        deviceId: 1,
-        action: 'ON',
-        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+    it('should unlock door for authorized tenant via board door route', async () => {
+      const user = mockUserJwtPayload();
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'door-device-1',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'door-device-1',
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
+          },
+        },
+        deviceType: 'smart_lock',
+      } as any);
+      prisma.userApartment.findFirst.mockResolvedValue({
+        id: 'ua-1',
+        isPrimaryTenant: true,
+      } as any);
+      mqttService.controlDeviceAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          brokerUrl: 'mqtt://broker.hivemq.com:1883',
+          topic: 'ESP_A101/door',
+          payload: 'ON_1',
+          espId: 'ESP_A101',
+          deviceTopic: 'door',
+          deviceId: 1,
+          action: 'ON',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'DOOR_1_OPEN',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'device_state',
+          deviceTopic: 'door',
+          deviceId: 1,
+          state: 'OPEN',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
       });
 
-      const result = service.triggerLight('ESP_A101', 1, 'ON');
+      await expect(
+        service.controlDoor('ESP_A101', 1, 'UNLOCK', user),
+      ).resolves.toMatchObject({ success: true });
+    });
 
-      expect(mqttService.controlDevice).toHaveBeenCalledWith(
+    it('should update door PIN for primary tenant when board ack succeeds', async () => {
+      const user = mockUserJwtPayload();
+      const pinHash = await bcrypt.hash('258036', 4);
+
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'door-device-1',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              pinHash,
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'door-device-1',
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
+            pinHash,
+          },
+        },
+        deviceType: 'smart_lock',
+      } as any);
+      prisma.userApartment.findFirst.mockResolvedValue({
+        id: 'ua-1',
+        isPrimaryTenant: true,
+      } as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'door-device-1' } as any);
+      prisma.activityLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      mqttService.sendDoorPassword.mockReturnValue({
+        brokerUrl: 'mqtt://broker.hivemq.com:1883',
+        topic: 'ESP_A101/get/door-password',
+        payload: '290304',
+        espId: 'ESP_A101',
+        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+        doorId: 1,
+        password: '290304',
+      });
+      mqttService.waitForStatusEvent.mockResolvedValue({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'PIN_UPDATED_OK_DOOR_1',
+        receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+        type: 'door_pin_update',
+        deviceTopic: 'door',
+        deviceId: 1,
+        state: 'PIN_UPDATED',
+        pinUpdateResult: 'success',
+      });
+
+      await expect(
+        service.updateDoorPin('ESP_A101', 1, '258036', '290304', user),
+      ).resolves.toMatchObject({ success: true });
+      expect(mqttService.sendDoorPassword).toHaveBeenCalledWith(
         'ESP_A101',
-        'ON',
         1,
-        'light',
+        '290304',
       );
-      expect(result.success).toBe(true);
+    });
+
+    it('should accept door PIN ack without deviceId (legacy PWD_UPDATED format)', async () => {
+      const user = mockUserJwtPayload();
+      const pinHash = await bcrypt.hash('258036', 4);
+
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'door-device-1',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              pinHash,
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'door-device-1',
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
+            pinHash,
+          },
+        },
+        deviceType: 'smart_lock',
+      } as any);
+      prisma.userApartment.findFirst.mockResolvedValue({
+        id: 'ua-1',
+        isPrimaryTenant: true,
+      } as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'door-device-1' } as any);
+      prisma.activityLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      mqttService.sendDoorPassword.mockReturnValue({
+        brokerUrl: 'mqtt://broker.hivemq.com:1883',
+        topic: 'ESP_A101/get/door-password',
+        payload: '290304',
+        espId: 'ESP_A101',
+        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+        doorId: 1,
+        password: '290304',
+      });
+      mqttService.waitForStatusEvent.mockResolvedValue({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'PWD_UPDATED',
+        receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+        type: 'door_pin_update',
+        deviceTopic: 'door',
+        state: 'PIN_UPDATED',
+        pinUpdateResult: 'success',
+      });
+
+      await expect(
+        service.updateDoorPin('ESP_A101', 1, '258036', '290304', user),
+      ).resolves.toMatchObject({ success: true });
+    });
+
+    it('should reject door PIN update when old PIN does not match', async () => {
+      const user = mockUserJwtPayload();
+      const pinHash = await bcrypt.hash('258036', 4);
+
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'door-device-1',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              pinHash,
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'door-device-1',
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
+            pinHash,
+          },
+        },
+        deviceType: 'smart_lock',
+      } as any);
+      prisma.userApartment.findFirst.mockResolvedValue({
+        id: 'ua-1',
+        isPrimaryTenant: true,
+      } as any);
+
+      await expect(
+        service.updateDoorPin('ESP_A101', 1, '000000', '290304', user),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should return success only when board ack state matches requested action', async () => {
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: null,
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'device-light-1',
+          deviceName: 'Light 1',
+          deviceType: 'light',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'light',
+              deviceId: 1,
+              state: 'OFF',
+            },
+          },
+          apartment: null,
+        }),
+      ] as any);
+      mqttService.controlDeviceAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          brokerUrl: 'mqtt://broker.hivemq.com:1883',
+          topic: 'ESP_A101/light',
+          payload: 'ON_1',
+          espId: 'ESP_A101',
+          deviceTopic: 'light',
+          deviceId: 1,
+          action: 'ON',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'LIGHT_1_ON',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'device_state',
+          deviceTopic: 'light',
+          deviceId: 1,
+          state: 'ON',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
+      });
+
+      await expect(
+        service.controlBoardDevice('ESP_A101', 1, 'light', 'ON'),
+      ).resolves.toMatchObject({
+        success: true,
+      });
+    });
+
+    it('should return failure when board does not respond with expected state', async () => {
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: null,
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'device-light-1',
+          deviceName: 'Light 1',
+          deviceType: 'light',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'light',
+              deviceId: 1,
+              state: 'OFF',
+            },
+          },
+          apartment: null,
+        }),
+      ] as any);
+      mqttService.controlDeviceAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          brokerUrl: 'mqtt://broker.hivemq.com:1883',
+          topic: 'ESP_A101/light',
+          payload: 'ON_1',
+          espId: 'ESP_A101',
+          deviceTopic: 'light',
+          deviceId: 1,
+          action: 'ON',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'LIGHT_1_OFF',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'device_state',
+          deviceTopic: 'light',
+          deviceId: 1,
+          state: 'OFF',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
+      });
+
+      await expect(
+        service.controlBoardDevice('ESP_A101', 1, 'light', 'ON'),
+      ).resolves.toMatchObject({
+        success: false,
+      });
+    });
+
+    it('should publish light command through generic MQTT service', () => {
+      mqttService.controlDeviceAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          topic: 'ESP_A101/light',
+          payload: 'ON_1',
+          espId: 'ESP_A101',
+          deviceTopic: 'light',
+          deviceId: 1,
+          action: 'ON',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'LIGHT_1_ON',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'device_state',
+          deviceTopic: 'light',
+          deviceId: 1,
+          state: 'ON',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
+      });
+
+      return expect(service.triggerLight('ESP_A101', 1, 'ON')).resolves.toMatchObject({
+        success: true,
+      });
     });
 
     it('should proxy test sequence execution', async () => {
@@ -1193,6 +1684,57 @@ describe('IoTService', () => {
           data: expect.objectContaining({
             readingType: 'automatic',
             readingValue: 120.5,
+          }),
+        }),
+      );
+    });
+
+    it('should auto-create a utility meter from telemetry when the apartment has none', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        {
+          id: 'device-123',
+          apartmentId: 'apt-123',
+          deviceType: 'light',
+          configuration: {
+            mqtt: { espId: 'ESP_A101', topic: 'light', deviceId: 1 },
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.utilityMeter.findFirst
+        .mockResolvedValueOnce(null as any)
+        .mockResolvedValueOnce({ id: 'meter-auto', currentReading: null } as any);
+      prisma.utilityMeter.create.mockResolvedValue({
+        id: 'meter-auto',
+        currentReading: null,
+      } as any);
+      prisma.utilityReading.create.mockResolvedValue({ id: 'reading-1' } as any);
+      prisma.utilityMeter.update.mockResolvedValue({ id: 'meter-auto' } as any);
+
+      await service.onMqttTelemetryEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/telemetry',
+        message: '{"energy_total":0.056}',
+        receivedAt: new Date('2026-04-16T08:55:41.000Z'),
+        energyTotal: 0.056,
+      });
+
+      expect(prisma.utilityMeter.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            apartmentId: 'apt-123',
+            meterType: 'electricity',
+            meterNumber: 'AUTO-ESP_A101-apt-123-electric',
+            unitOfMeasurement: 'kWh',
+            isDigital: true,
+          }),
+        }),
+      );
+      expect(prisma.utilityReading.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            readingType: 'automatic',
+            readingValue: 0.06,
           }),
         }),
       );

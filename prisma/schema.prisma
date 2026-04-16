@@ -1338,6 +1338,7 @@ model UtilityReading {
   previousReadingValue Decimal?    @db.Decimal(12, 2)
   consumption          Decimal?    @db.Decimal(12, 2)
   readingType          ReadingType @default(manual)
+  isBillingSnapshot    Boolean     @default(false)
   readByStaffId        String?
   images               Json?
   notes                String?
@@ -1356,6 +1357,7 @@ model UtilityReading {
   @@index([utilityMeterId])
   @@index([rentalContractId])
   @@index([readingDate])
+  @@index([isBillingSnapshot])
   @@index([readByStaffId])
   @@map("utility_readings")
 }

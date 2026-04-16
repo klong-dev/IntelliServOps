@@ -123,6 +123,46 @@ export class IoTDeviceListItemDto {
   @ApiPropertyOptional({ type: String, nullable: true, example: 'ON' })
   mqttState: string | null;
 
+  @ApiPropertyOptional({ example: true, nullable: true })
+  isUtilityMeter?: boolean | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  utilityMeterId?: string | null;
+
+  @ApiPropertyOptional({ example: true, nullable: true })
+  utilityMeterShared?: boolean | null;
+
+  @ApiPropertyOptional({ example: 'apartment', nullable: true })
+  utilityMeterScope?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '5f17591f-4a37-4ee6-a4eb-e5b5af2857cc',
+  })
+  utilityMeterSharedApartmentId?: string | null;
+
+  @ApiPropertyOptional({ example: 'electricity', nullable: true })
+  utilityMeterType?: string | null;
+
+  @ApiPropertyOptional({ example: 'UTILITY-ESP_A101-electric-5', nullable: true })
+  utilityMeterNumber?: string | null;
+
+  @ApiPropertyOptional({ example: '1250.00', nullable: true })
+  currentReading?: string | null;
+
+  @ApiPropertyOptional({ example: '1100.00', nullable: true })
+  previousReading?: string | null;
+
+  @ApiPropertyOptional({ example: '3500.00', nullable: true })
+  ratePerUnit?: string | null;
+
+  @ApiPropertyOptional({ example: 'kWh', nullable: true })
+  unitOfMeasurement?: string | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  readingDate?: Date | null;
+
   @ApiProperty()
   createdAt: Date;
 
@@ -208,6 +248,46 @@ export class IoTDeviceDetailDto {
 
   @ApiPropertyOptional({ type: String, nullable: true, example: 'CLOSED' })
   mqttState: string | null;
+
+  @ApiPropertyOptional({ example: true, nullable: true })
+  isUtilityMeter?: boolean | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  utilityMeterId?: string | null;
+
+  @ApiPropertyOptional({ example: true, nullable: true })
+  utilityMeterShared?: boolean | null;
+
+  @ApiPropertyOptional({ example: 'apartment', nullable: true })
+  utilityMeterScope?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '5f17591f-4a37-4ee6-a4eb-e5b5af2857cc',
+  })
+  utilityMeterSharedApartmentId?: string | null;
+
+  @ApiPropertyOptional({ example: 'electricity', nullable: true })
+  utilityMeterType?: string | null;
+
+  @ApiPropertyOptional({ example: 'UTILITY-ESP_A101-electric-5', nullable: true })
+  utilityMeterNumber?: string | null;
+
+  @ApiPropertyOptional({ example: '1250.00', nullable: true })
+  currentReading?: string | null;
+
+  @ApiPropertyOptional({ example: '1100.00', nullable: true })
+  previousReading?: string | null;
+
+  @ApiPropertyOptional({ example: '3500.00', nullable: true })
+  ratePerUnit?: string | null;
+
+  @ApiPropertyOptional({ example: 'kWh', nullable: true })
+  unitOfMeasurement?: string | null;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  readingDate?: Date | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -319,6 +399,22 @@ export class IoTMqttSignalResultDto {
 
   @ApiProperty({ type: IoTMqttPublishDetailsDto })
   details: IoTMqttPublishDetailsDto;
+}
+
+export class IoTHealthCheckResultDto {
+  @ApiProperty({ example: 'ESP_A101' })
+  espId: string;
+
+  @ApiProperty({ example: true })
+  online: boolean;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  lastSeenAt: Date | null;
+}
+
+export class IoTBoardDeviceControlResultDto {
+  @ApiProperty({ example: false })
+  success: boolean;
 }
 
 export class IoTTestSequenceStepDto {
