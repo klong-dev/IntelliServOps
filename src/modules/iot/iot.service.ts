@@ -1252,7 +1252,6 @@ export class IoTService {
         previousReadingValue: meter.currentReading ?? undefined,
         consumption,
         readingType: createDto.readingType ?? 'manual',
-        isBillingSnapshot: false,
         readByStaff:
           currentUser?.actorType === 'staff'
             ? { connect: { id: currentUser.sub } }
@@ -1609,7 +1608,6 @@ export class IoTService {
         previousReadingValue: meter.currentReading ?? undefined,
         consumption,
         readingType: 'automatic',
-        isBillingSnapshot: false,
         notes: `Auto-synced from MQTT telemetry ${event.espId}`,
       },
       select: { id: true },
