@@ -422,6 +422,16 @@ export class IoTMqttService implements OnModuleDestroy {
       return;
     }
 
+    // Ignore backend-originated health-check probes that are published to the
+    // same status topic we subscribe to. Only board replies should affect
+    // online/offline state.
+    if (message.trim().toUpperCase() === MQTT_MESSAGE_HEALTH_CHECK) {
+      this.logger.debug(
+        `Ignoring self-published health check probe on ${topic}: ${message}`,
+      );
+      return;
+    }
+
     const statusEvent = this.buildStatusEvent(topic, message, receivedAt);
 
     switch (statusEvent.type) {
