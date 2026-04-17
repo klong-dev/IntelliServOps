@@ -67,6 +67,26 @@ type MonthRange = {
   billingPeriodEndExclusive: Date;
 };
 
+type ContractDepositPayoutListItem = {
+  payoutPaymentId: string | null;
+  contractId: string;
+  contractNumber: string;
+  apartmentId: string;
+  apartmentNumber: string;
+  recipientUserId: string;
+  recipientFullName: string;
+  payoutMonth: string;
+  dueDate: Date;
+  payoutAmount: string;
+  currency: string;
+  status: PaymentStatus;
+  transferProofUrl: string | null;
+  transferReference: string | null;
+  transferNote: string | null;
+  confirmedAt: Date | null;
+  confirmedByStaffId: string | null;
+};
+
 @Injectable()
 export class PaymentsService {
   private readonly payosClient: PayOS | null;
@@ -182,6 +202,21 @@ export class PaymentsService {
           +new Date(a.dueDate) - +new Date(b.dueDate) ||
           a.partnerName.localeCompare(b.partnerName, 'vi'),
       );
+  }
+
+  async listDueContractDepositPayouts(
+    currentUser: JwtPayload,
+    _query: { month?: string },
+  ): Promise<ContractDepositPayoutListItem[]> {
+    if (currentUser.actorType !== 'staff') {
+      throw new ForbiddenException(
+        'Only staff can view due contract deposit payouts',
+      );
+    }
+
+    // Compatibility shim for invoice feed integration from teammate branch.
+    // Deposit payout workflow is not available in the current PaymentsService yet.
+    return [];
   }
 
   async confirmPartnerMonthlyPayout(

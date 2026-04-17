@@ -386,6 +386,9 @@ export class MonthlyUtilityInvoiceDto {
   @ApiProperty({ example: 'paid' })
   status: string;
 
+  @ApiPropertyOptional({ example: '2026-01', nullable: true })
+  billingMonth: string | null;
+
   @ApiProperty()
   billingPeriodStart: Date;
 

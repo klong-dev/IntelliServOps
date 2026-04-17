@@ -455,6 +455,7 @@ model User {
   identity              UserIdentity?
   contractMemberships   UserContractMember[]
   payments              Payment[]
+  receivedPayments      Payment[]             @relation("PaymentReceiverUser")
   maintenanceRequests   MaintenanceRequest[]
   userApartments        UserApartment[]
   reservations          Reservation[]
@@ -1135,6 +1136,7 @@ model Invoice {
   rentalContractId   String
   invoiceType        InvoiceType   @default(rent)
   invoiceContent     Json?
+  billingMonth       String?
   billingPeriodStart DateTime
   billingPeriodEnd   DateTime
   issueDate          DateTime
@@ -1163,8 +1165,12 @@ model Invoice {
 
   @@index([rentalContractId])
   @@index([invoiceType])
+  @@index([invoiceType, status])
   @@index([status])
   @@index([dueDate])
+  @@index([dueDate, status])
+  @@index([paidAt])
+  @@index([billingMonth])
   @@index([billingPeriodStart])
   @@index([billingPeriodEnd])
   @@map("invoices")
@@ -1175,6 +1181,7 @@ model Payment {
   paymentReference     String           @unique
   invoiceId            String
   userId               String
+  receiverUserId       String?
   amount               Decimal          @db.Decimal(12, 2)
   currency             String           @default("VND")
   paymentMethod        PaymentMethodType
@@ -1196,10 +1203,13 @@ model Payment {
   // Relations
   invoice         Invoice @relation(fields: [invoiceId], references: [id])
   user            User    @relation(fields: [userId], references: [id])
+  receiverUser    User?   @relation("PaymentReceiverUser", fields: [receiverUserId], references: [id])
   processedByStaff Staff?  @relation("PaymentProcessedByStaff", fields: [processedByStaffId], references: [id])
 
   @@index([invoiceId])
   @@index([userId])
+  @@index([receiverUserId])
+  @@index([receiverUserId, status])
   @@index([status])
   @@index([paymentDate])
   @@index([transactionId])
@@ -1338,7 +1348,6 @@ model UtilityReading {
   previousReadingValue Decimal?    @db.Decimal(12, 2)
   consumption          Decimal?    @db.Decimal(12, 2)
   readingType          ReadingType @default(manual)
-  isBillingSnapshot    Boolean     @default(false)
   readByStaffId        String?
   images               Json?
   notes                String?
@@ -1357,7 +1366,6 @@ model UtilityReading {
   @@index([utilityMeterId])
   @@index([rentalContractId])
   @@index([readingDate])
-  @@index([isBillingSnapshot])
   @@index([readByStaffId])
   @@map("utility_readings")
 }

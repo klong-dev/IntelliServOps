@@ -11,6 +11,8 @@ import {
   InvoiceListPaginatedDto,
   InvoiceListQueryDto,
   InvoiceDetailDto,
+  InvoiceMeListDto,
+  InvoiceMeQueryDto,
   MonthlyUtilityInvoiceListDto,
   MonthlyUtilityQueryDto,
 } from './dto';
@@ -25,6 +27,23 @@ import { InvoiceStatus } from '@prisma/client';
 @Controller('invoices')
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
+
+  @Get('me')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({
+    summary: 'Unified invoice feed for staff, user and partner',
+    description:
+      'Role-aware endpoint. Staff gets payout worklist, user gets payable invoices, partner gets receivable invoices with payout breakdown.',
+  })
+  @ApiJsonResponse(InvoiceMeListDto, {
+    description: 'Role-aware invoice feed',
+  })
+  async findMe(
+    @CurrentUser() currentUser: JwtPayload,
+    @Query() query: InvoiceMeQueryDto,
+  ): Promise<InvoiceMeListDto> {
+    return this.invoicesService.findMe(currentUser, query);
+  }
 
   @Get()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)

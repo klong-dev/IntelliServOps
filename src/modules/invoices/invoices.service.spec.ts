@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InvoicesService } from './invoices.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PaymentsService } from '../payments/payments.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
@@ -14,6 +15,7 @@ import { NotFoundException } from '@nestjs/common';
 describe('InvoicesService', () => {
   let service: InvoicesService;
   let prisma: ReturnType<typeof createPrismaMock>;
+  let paymentsService: { getPartnerPayoutDueBreakdown: jest.Mock };
 
   const mockInvoice = (overrides = {}) => ({
     id: 'invoice-123',
@@ -32,11 +34,15 @@ describe('InvoicesService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    paymentsService = {
+      getPartnerPayoutDueBreakdown: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InvoicesService,
         { provide: PrismaService, useValue: prisma },
+        { provide: PaymentsService, useValue: paymentsService },
       ],
     }).compile();
 
@@ -198,6 +204,7 @@ describe('InvoicesService', () => {
           invoiceNumber: 'UTIL-202601-T2-1505',
           invoiceType: InvoiceType.utility,
           status: InvoiceStatus.paid,
+          billingMonth: '2026-01',
           billingPeriodStart: new Date('2026-01-01T00:00:00.000Z'),
           billingPeriodEnd: new Date('2026-01-31T23:59:59.999Z'),
           issueDate: new Date('2026-02-01T00:00:00.000Z'),
@@ -250,6 +257,7 @@ describe('InvoicesService', () => {
           invoiceId: 'utility-invoice-1',
           invoiceNumber: 'UTIL-202601-T2-1505',
           status: InvoiceStatus.paid,
+          billingMonth: '2026-01',
           apartment: {
             id: 'apt-123',
             apartmentNumber: 'T2-1505',
