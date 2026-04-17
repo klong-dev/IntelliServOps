@@ -8,7 +8,7 @@ import {
   mockOperatorJwtPayload,
 } from '../../test-utils';
 import { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
-import { InvoiceStatus } from '@prisma/client';
+import { InvoiceStatus, InvoiceType, Prisma } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 
 describe('InvoicesService', () => {
@@ -184,6 +184,112 @@ describe('InvoicesService', () => {
 
       await expect(service.findOne('non-existent', admin)).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('findMonthlyUtilityUsage', () => {
+    it('should list utility invoices for the current user only', async () => {
+      const user = mockUserJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.invoice.findMany.mockResolvedValue([
+        {
+          id: 'utility-invoice-1',
+          invoiceNumber: 'UTIL-202601-T2-1505',
+          invoiceType: InvoiceType.utility,
+          status: InvoiceStatus.paid,
+          billingPeriodStart: new Date('2026-01-01T00:00:00.000Z'),
+          billingPeriodEnd: new Date('2026-01-31T23:59:59.999Z'),
+          issueDate: new Date('2026-02-01T00:00:00.000Z'),
+          dueDate: new Date('2026-02-05T00:00:00.000Z'),
+          paidAt: new Date('2026-02-03T00:00:00.000Z'),
+          totalAmount: new Prisma.Decimal('900000.00'),
+          utilityCharges: {
+            electricity: {
+              previousReading: 1100,
+              currentReading: 1250,
+              consumption: 150,
+              unit: 'kWh',
+              ratePerUnit: 3500,
+              amount: 525000,
+            },
+            water: {
+              previousReading: 100,
+              currentReading: 125,
+              consumption: 25,
+              unit: 'm3',
+              ratePerUnit: 15000,
+              amount: 375000,
+            },
+            totalUtilityAmount: 900000,
+          },
+          rentalContract: {
+            id: 'contract-123',
+            contractNumber: 'HD-2026-00001',
+            apartment: {
+              id: 'apt-123',
+              apartmentNumber: 'T2-1505',
+            },
+          },
+        },
+      ] as any);
+      prisma.invoice.count.mockResolvedValue(1 as any);
+
+      const result = await service.findMonthlyUtilityUsage(user);
+
+      expect(prisma.invoice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            invoiceType: InvoiceType.utility,
+            rentalContract: { members: { some: { userId: user.sub } } },
+          },
+        }),
+      );
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          invoiceId: 'utility-invoice-1',
+          invoiceNumber: 'UTIL-202601-T2-1505',
+          status: InvoiceStatus.paid,
+          apartment: {
+            id: 'apt-123',
+            apartmentNumber: 'T2-1505',
+          },
+          contract: {
+            id: 'contract-123',
+            contractNumber: 'HD-2026-00001',
+          },
+          electricity: expect.objectContaining({
+            previousReading: '1100.00',
+            currentReading: '1250.00',
+            consumption: '150.00',
+            amount: '525000.00',
+          }),
+          water: expect.objectContaining({
+            previousReading: '100.00',
+            currentReading: '125.00',
+            consumption: '25.00',
+            amount: '375000.00',
+          }),
+          totalUtilityAmount: '900000.00',
+        }),
+      );
+    });
+
+    it('should paginate utility invoices and sort by billing period descending', async () => {
+      const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.invoice.findMany.mockResolvedValue([] as any);
+      prisma.invoice.count.mockResolvedValue(0 as any);
+
+      await service.findMonthlyUtilityUsage(admin, { page: 2, limit: 5 });
+
+      expect(prisma.invoice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { invoiceType: InvoiceType.utility },
+          orderBy: [{ billingPeriodStart: 'desc' }, { createdAt: 'desc' }],
+          skip: 5,
+          take: 5,
+        }),
       );
     });
   });
