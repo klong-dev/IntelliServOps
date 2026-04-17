@@ -339,3 +339,97 @@ export class InvoiceUpdatedDto {
   @ApiProperty()
   updatedAt: Date;
 }
+
+export class MonthlyUtilityBreakdownDto {
+  @ApiPropertyOptional({ example: '1100.00', nullable: true })
+  previousReading: string | null;
+
+  @ApiPropertyOptional({ example: '1250.00', nullable: true })
+  currentReading: string | null;
+
+  @ApiPropertyOptional({ example: '150.00', nullable: true })
+  consumption: string | null;
+
+  @ApiPropertyOptional({ example: 'kWh', nullable: true })
+  unit: string | null;
+
+  @ApiPropertyOptional({ example: '3500.00', nullable: true })
+  ratePerUnit: string | null;
+
+  @ApiPropertyOptional({ example: '525000.00', nullable: true })
+  amount: string | null;
+}
+
+export class MonthlyUtilityApartmentDto {
+  @ApiProperty({ example: 'apt-123' })
+  id: string;
+
+  @ApiProperty({ example: 'T2-1505' })
+  apartmentNumber: string;
+}
+
+export class MonthlyUtilityContractDto {
+  @ApiProperty({ example: 'contract-123' })
+  id: string;
+
+  @ApiProperty({ example: 'HD-2026-00001' })
+  contractNumber: string;
+}
+
+export class MonthlyUtilityInvoiceDto {
+  @ApiProperty({ example: 'invoice-utility-202601' })
+  invoiceId: string;
+
+  @ApiProperty({ example: 'UTIL-202601-T2-1505' })
+  invoiceNumber: string;
+
+  @ApiProperty({ example: 'paid' })
+  status: string;
+
+  @ApiProperty()
+  billingPeriodStart: Date;
+
+  @ApiProperty()
+  billingPeriodEnd: Date;
+
+  @ApiProperty()
+  issueDate: Date;
+
+  @ApiProperty()
+  dueDate: Date;
+
+  @ApiPropertyOptional({ type: Date, nullable: true })
+  paidAt: Date | null;
+
+  @ApiProperty({ type: MonthlyUtilityApartmentDto })
+  apartment: MonthlyUtilityApartmentDto;
+
+  @ApiProperty({ type: MonthlyUtilityContractDto })
+  contract: MonthlyUtilityContractDto;
+
+  @ApiPropertyOptional({ type: MonthlyUtilityBreakdownDto, nullable: true })
+  electricity: MonthlyUtilityBreakdownDto | null;
+
+  @ApiPropertyOptional({ type: MonthlyUtilityBreakdownDto, nullable: true })
+  water: MonthlyUtilityBreakdownDto | null;
+
+  @ApiProperty({ example: '900000.00' })
+  totalUtilityAmount: string;
+}
+
+export class MonthlyUtilityInvoiceListDto {
+  @ApiProperty({ type: [MonthlyUtilityInvoiceDto] })
+  items: MonthlyUtilityInvoiceDto[];
+
+  @ApiProperty({ example: 10 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 12 })
+  limit: number;
+
+  @ApiProperty({ example: 1 })
+  totalPages: number;
+}

@@ -11,6 +11,8 @@ import {
   InvoiceListPaginatedDto,
   InvoiceListQueryDto,
   InvoiceDetailDto,
+  MonthlyUtilityInvoiceListDto,
+  MonthlyUtilityQueryDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
@@ -38,6 +40,22 @@ export class InvoicesController {
     @Query() query: InvoiceListQueryDto,
   ) {
     return this.invoicesService.findAll(currentUser, query);
+  }
+
+  @Get('utility/monthly')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
+  @ApiOperation({ summary: 'List monthly utility invoices' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiJsonResponse(MonthlyUtilityInvoiceListDto, {
+    description:
+      'Paginated list of monthly utility invoices with electricity and water usage details',
+  })
+  async findMonthlyUtilityUsage(
+    @CurrentUser() currentUser: JwtPayload,
+    @Query() query: MonthlyUtilityQueryDto,
+  ) {
+    return this.invoicesService.findMonthlyUtilityUsage(currentUser, query);
   }
 
   @Get(':id')

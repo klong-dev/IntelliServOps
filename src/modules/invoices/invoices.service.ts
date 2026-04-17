@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { InvoiceStatus, Prisma } from '@prisma/client';
+import { InvoiceStatus, InvoiceType, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+import type { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
 import axios from 'axios';
 
 type WardLookupResponse = {
@@ -13,6 +14,15 @@ type WardLookupResponse = {
 type WardAddressInfo = {
   wardName: string | null;
   provinceName: string | null;
+};
+
+type UtilityBreakdown = {
+  previousReading: string | null;
+  currentReading: string | null;
+  consumption: string | null;
+  unit: string | null;
+  ratePerUnit: string | null;
+  amount: string | null;
 };
 
 @Injectable()
@@ -288,6 +298,169 @@ export class InvoicesService {
     };
   }
 
+  async create(dto: CreateInvoiceDto, _currentUser: JwtPayload) {
+    const rentalContract = await this.prisma.rentalContract.findUnique({
+      where: { id: dto.rentalContractId },
+      select: {
+        id: true,
+        monthlyRent: true,
+      },
+    });
+
+    if (!rentalContract) {
+      throw new NotFoundException('Rental contract not found');
+    }
+
+    const invoiceNumber = await this.generateInvoiceNumber();
+    const items = dto.items ?? [];
+    const itemsTotal = items.reduce(
+      (sum, item) => sum + Number(item.amount ?? 0) * Number(item.quantity ?? 1),
+      0,
+    );
+    const baseRent = new Prisma.Decimal(rentalContract.monthlyRent.toString());
+    const totalAmount = new Prisma.Decimal(itemsTotal.toFixed(2));
+
+    return this.prisma.invoice.create({
+      data: {
+        invoiceNumber,
+        rentalContractId: dto.rentalContractId,
+        invoiceType: dto.invoiceType ?? InvoiceType.rent,
+        invoiceContent: {
+          items,
+        } as unknown as Prisma.InputJsonValue,
+        billingPeriodStart: new Date(dto.billingPeriodStart),
+        billingPeriodEnd: new Date(dto.billingPeriodEnd),
+        issueDate: new Date(),
+        dueDate: new Date(dto.dueDate),
+        baseRent,
+        additionalCharges: items as unknown as Prisma.InputJsonValue,
+        totalAmount,
+        status: InvoiceStatus.draft,
+        notes: dto.notes ?? null,
+      },
+    });
+  }
+
+  async update(id: string, dto: UpdateInvoiceDto) {
+    const existing = await this.prisma.invoice.findUnique({ where: { id } });
+
+    if (!existing) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    return this.prisma.invoice.update({
+      where: { id },
+      data: {
+        ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+      },
+    });
+  }
+
+  async findMonthlyUtilityUsage(
+    currentUser: JwtPayload,
+    query?: { page?: number; limit?: number },
+  ) {
+    await this.markOverdue();
+
+    const { page = 1, limit = 12 } = query ?? {};
+    const safeLimit = Math.min(limit, 100);
+    const skip = (page - 1) * safeLimit;
+
+    const where: Prisma.InvoiceWhereInput = {
+      invoiceType: InvoiceType.utility,
+    };
+
+    if (currentUser.actorType === 'user') {
+      where.rentalContract = {
+        members: { some: { userId: currentUser.sub } },
+      };
+    }
+
+    const [invoices, total] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where,
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          billingPeriodStart: true,
+          billingPeriodEnd: true,
+          issueDate: true,
+          dueDate: true,
+          paidAt: true,
+          totalAmount: true,
+          utilityCharges: true,
+          rentalContract: {
+            select: {
+              id: true,
+              contractNumber: true,
+              apartment: {
+                select: {
+                  id: true,
+                  apartmentNumber: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ billingPeriodStart: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take: safeLimit,
+      }),
+      this.prisma.invoice.count({ where }),
+    ]);
+
+    const items = invoices.map((invoice) => {
+      const utilityCharges = this.toJsonObject(invoice.utilityCharges);
+      const electricity = this.readUtilityBreakdown(
+        utilityCharges,
+        ['electricity', 'electric', 'electricMeter'],
+        'kWh',
+      );
+      const water = this.readUtilityBreakdown(
+        utilityCharges,
+        ['water', 'waterMeter'],
+        'm3',
+      );
+
+      return {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+        billingPeriodStart: invoice.billingPeriodStart,
+        billingPeriodEnd: invoice.billingPeriodEnd,
+        issueDate: invoice.issueDate,
+        dueDate: invoice.dueDate,
+        paidAt: invoice.paidAt,
+        apartment: {
+          id: invoice.rentalContract.apartment.id,
+          apartmentNumber: invoice.rentalContract.apartment.apartmentNumber,
+        },
+        contract: {
+          id: invoice.rentalContract.id,
+          contractNumber: invoice.rentalContract.contractNumber,
+        },
+        electricity,
+        water,
+        totalUtilityAmount: this.resolveUtilityTotalAmount(
+          utilityCharges,
+          electricity,
+          water,
+          invoice.totalAmount,
+        ),
+      };
+    });
+
+    return {
+      items,
+      total,
+      page,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    };
+  }
+
   async markOverdue() {
     const now = new Date();
     return this.prisma.invoice.updateMany({
@@ -304,6 +477,114 @@ export class InvoicesService {
       },
       data: { status: InvoiceStatus.overdue },
     });
+  }
+
+  private toJsonObject(value: Prisma.JsonValue | null): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private readUtilityBreakdown(
+    utilityCharges: Record<string, unknown>,
+    keys: string[],
+    defaultUnit: string,
+  ): UtilityBreakdown | null {
+    const source = keys
+      .map((key) => utilityCharges[key])
+      .find((value) => value && typeof value === 'object' && !Array.isArray(value));
+
+    if (!source) {
+      return null;
+    }
+
+    const breakdown = source as Record<string, unknown>;
+
+    return {
+      previousReading: this.readDecimalString(
+        breakdown.previousReading ?? breakdown.oldReading,
+      ),
+      currentReading: this.readDecimalString(
+        breakdown.currentReading ?? breakdown.newReading,
+      ),
+      consumption: this.readDecimalString(
+        breakdown.consumption ?? breakdown.used,
+      ),
+      unit:
+        this.readStringValue(breakdown.unit ?? breakdown.unitOfMeasurement) ??
+        defaultUnit,
+      ratePerUnit: this.readDecimalString(
+        breakdown.ratePerUnit ?? breakdown.rate,
+      ),
+      amount: this.readDecimalString(breakdown.amount),
+    };
+  }
+
+  private resolveUtilityTotalAmount(
+    utilityCharges: Record<string, unknown>,
+    electricity: UtilityBreakdown | null,
+    water: UtilityBreakdown | null,
+    fallbackInvoiceTotal: Prisma.Decimal,
+  ): string {
+    const explicit = this.readDecimalString(
+      utilityCharges.totalUtilityAmount ?? utilityCharges.total,
+    );
+
+    if (explicit) {
+      return explicit;
+    }
+
+    const electricityAmount = this.toNumber(electricity?.amount ?? null);
+    const waterAmount = this.toNumber(water?.amount ?? null);
+    if (electricityAmount !== null || waterAmount !== null) {
+      return ((electricityAmount ?? 0) + (waterAmount ?? 0)).toFixed(2);
+    }
+
+    return fallbackInvoiceTotal.toString();
+  }
+
+  private readDecimalString(value: unknown): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value.toFixed(2) : null;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      const asDecimal = (value as { toString?: () => string }).toString?.();
+      if (typeof asDecimal === 'string' && asDecimal.trim().length > 0) {
+        return asDecimal;
+      }
+    }
+
+    return null;
+  }
+
+  private readStringValue(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private toNumber(value: string | null): number | null {
+    if (!value) {
+      return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private async generateInvoiceNumber(): Promise<string> {
