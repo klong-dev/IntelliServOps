@@ -24,12 +24,14 @@ import {
   ContractStatus,
   ActorType,
   ApartmentStatus,
+  MeterType,
   MemberStatus,
   PartnerCooperationContractStatus,
   UserApartmentStatus,
   ReservationStatus,
   InvoiceStatus,
   InvoiceType,
+  MeterStatus,
   PaymentMethodType,
   MemberType,
   Prisma,
@@ -49,6 +51,29 @@ type WardLookupResponse = {
 type WardAddressInfo = {
   wardName: string | null;
   provinceName: string | null;
+};
+
+type UtilityChargeItem = {
+  description: string;
+  amount: number;
+  quantity: number;
+  itemType: string;
+  meterType: string;
+  meterNumber: string;
+  unitPrice: number;
+  oldReading: number;
+  newReading: number;
+  consumption: number;
+  readingDate: string;
+  readingId: string;
+};
+
+type MeterReadingSnapshot = {
+  id: string;
+  readingDate: Date;
+  readingValue: number;
+  previousReadingValue: number | null;
+  consumption: number | null;
 };
 
 @Injectable()
@@ -363,8 +388,230 @@ export class ContractsService {
     return `${prefix}-${String(count + 1).padStart(5, '0')}`;
   }
 
+  private parseUtilityBoolean(
+    value: Prisma.JsonValue | undefined,
+    key: string,
+  ): boolean {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const raw = (value as Record<string, unknown>)[key];
+    return raw === true;
+  }
+
+  private parseUtilityRate(
+    value: Prisma.JsonValue | undefined,
+    key: string,
+  ): number | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const raw = (value as Record<string, unknown>)[key];
+    const parsed = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+
+    return Number(parsed.toFixed(2));
+  }
+
+  private roundTo2(value: number): number {
+    return Number(value.toFixed(2));
+  }
+
+  private normalizeReadingSnapshot(
+    reading: {
+      id: string;
+      readingDate: Date;
+      readingValue: Prisma.Decimal | number;
+      previousReadingValue: Prisma.Decimal | number | null;
+      consumption: Prisma.Decimal | number | null;
+    } | null,
+  ): MeterReadingSnapshot | null {
+    if (!reading) {
+      return null;
+    }
+
+    return {
+      id: reading.id,
+      readingDate: reading.readingDate,
+      readingValue: Number(reading.readingValue),
+      previousReadingValue:
+        reading.previousReadingValue !== null
+          ? Number(reading.previousReadingValue)
+          : null,
+      consumption:
+        reading.consumption !== null ? Number(reading.consumption) : null,
+    };
+  }
+
+  private async resolveBillingSnapshot(params: {
+    utilityMeterId: string;
+    boundaryDate: Date;
+    mode: 'start' | 'end';
+  }): Promise<MeterReadingSnapshot | null> {
+    const boundaryOperator = params.mode === 'start' ? 'gte' : 'lte';
+    const reading = await this.prisma.utilityReading.findFirst({
+      where: {
+        utilityMeterId: params.utilityMeterId,
+        readingDate: {
+          [boundaryOperator]: params.boundaryDate,
+        },
+      },
+      orderBy:
+        params.mode === 'start'
+          ? [{ readingDate: 'asc' }, { createdAt: 'asc' }]
+          : [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        readingDate: true,
+        readingValue: true,
+        previousReadingValue: true,
+        consumption: true,
+      },
+    });
+
+    return this.normalizeReadingSnapshot(reading);
+  }
+
+  private async ensureBillingSnapshot(params: {
+    utilityMeterId: string;
+    boundaryDate: Date;
+    mode: 'start' | 'end';
+  }): Promise<MeterReadingSnapshot | null> {
+    return this.resolveBillingSnapshot(params);
+  }
+
+  private async buildUtilityChargeItems(params: {
+    contractId: string;
+    apartmentId: string;
+    periodStart: Date;
+    periodEnd: Date;
+    utilitiesIncluded?: Prisma.JsonValue | null;
+    utilitiesCharges?: Prisma.JsonValue | null;
+  }): Promise<UtilityChargeItem[]> {
+    const meters = await this.prisma.utilityMeter.findMany({
+      where: {
+        apartmentId: params.apartmentId,
+        status: MeterStatus.active,
+        meterType: { in: [MeterType.electricity, MeterType.water] },
+      },
+      select: {
+        id: true,
+        meterType: true,
+        meterNumber: true,
+        ratePerUnit: true,
+        readings: { select: { id: true } },
+      },
+    });
+
+    const utilityItems: UtilityChargeItem[] = [];
+
+    for (const meter of meters) {
+      const typeKey = meter.meterType;
+      if (this.parseUtilityBoolean(params.utilitiesIncluded ?? undefined, typeKey)) {
+        continue;
+      }
+
+      if (!meter.readings.length) {
+        continue;
+      }
+
+      const startSnapshot = await this.ensureBillingSnapshot({
+        utilityMeterId: meter.id,
+        boundaryDate: params.periodStart,
+        mode: 'start',
+      });
+      const endSnapshot = await this.ensureBillingSnapshot({
+        utilityMeterId: meter.id,
+        boundaryDate: params.periodEnd,
+        mode: 'end',
+      });
+
+      if (!startSnapshot || !endSnapshot) {
+        continue;
+      }
+
+      const newReading = endSnapshot.readingValue;
+      let oldReading = startSnapshot.readingValue;
+      let consumption = newReading - oldReading;
+
+      if (consumption < 0) {
+        const fallbackConsumption =
+          endSnapshot.consumption ??
+          (endSnapshot.previousReadingValue !== null
+            ? endSnapshot.readingValue - endSnapshot.previousReadingValue
+            : 0);
+        if (Number.isFinite(fallbackConsumption) && fallbackConsumption > 0) {
+          consumption = fallbackConsumption;
+          oldReading = newReading - fallbackConsumption;
+        }
+      }
+
+      if (!Number.isFinite(consumption) || consumption < 0) {
+        consumption = 0;
+      }
+
+      if (consumption <= 0) {
+        continue;
+      }
+
+      if (oldReading === null) {
+        oldReading = newReading - consumption;
+      }
+
+      const contractRate = this.parseUtilityRate(
+        params.utilitiesCharges ?? undefined,
+        typeKey,
+      );
+      const meterRate =
+        meter.ratePerUnit !== null ? Number(meter.ratePerUnit) : null;
+      const unitPrice = contractRate ?? meterRate;
+
+      if (!unitPrice || !Number.isFinite(unitPrice) || unitPrice <= 0) {
+        continue;
+      }
+
+      const normalizedConsumption = this.roundTo2(consumption);
+      const amount = this.roundTo2(normalizedConsumption * unitPrice);
+      const meterTypeLabel =
+        typeKey === MeterType.electricity ? 'Electricity' : 'Water';
+
+      utilityItems.push({
+        description: `${meterTypeLabel} (${meter.meterNumber})`,
+        amount,
+        quantity: normalizedConsumption,
+        itemType: `utility_${typeKey}`,
+        meterType: typeKey,
+        meterNumber: meter.meterNumber,
+        unitPrice: this.roundTo2(unitPrice),
+        oldReading: this.roundTo2(oldReading),
+        newReading: this.roundTo2(newReading),
+        consumption: normalizedConsumption,
+        readingDate: endSnapshot.readingDate.toISOString(),
+        readingId: endSnapshot.id,
+      });
+
+      await this.prisma.utilityReading.updateMany({
+        where: {
+          utilityMeterId: meter.id,
+          rentalContractId: null,
+          id: { in: [startSnapshot.id, endSnapshot.id] },
+        },
+        data: {
+          rentalContractId: params.contractId,
+        },
+      });
+    }
+
+    return utilityItems;
+  }
+
   private async createRentInvoiceForPeriod(params: {
     contractId: string;
+    apartmentId: string;
     contractNumber: string;
     monthlyRent: Prisma.Decimal | number;
     paymentMethod: PaymentMethodType;
@@ -372,6 +619,8 @@ export class ContractsService {
     periodStart: Date;
     periodEnd: Date;
     memberUserIds: string[];
+    utilitiesIncluded?: Prisma.JsonValue | null;
+    utilitiesCharges?: Prisma.JsonValue | null;
   }): Promise<void> {
     const periodMarker = `${params.periodStart.toISOString().slice(0, 10)}`;
     const marker = `RENT_INVOICE_FOR_CONTRACT:${params.contractId}:${periodMarker}`;
@@ -399,6 +648,19 @@ export class ContractsService {
       now,
     );
     const rentAmount = Number(params.monthlyRent);
+    const utilityItems = await this.buildUtilityChargeItems({
+      contractId: params.contractId,
+      apartmentId: params.apartmentId,
+      periodStart: params.periodStart,
+      periodEnd: params.periodEnd,
+      utilitiesIncluded: params.utilitiesIncluded,
+      utilitiesCharges: params.utilitiesCharges,
+    });
+    const utilityTotal = utilityItems.reduce(
+      (sum, item) => sum + item.amount,
+      0,
+    );
+    const invoiceTotal = this.roundTo2(rentAmount + utilityTotal);
     const invoiceNumber = await this.generateRentInvoiceNumber(now);
     const rentItems: Prisma.InputJsonArray = [
       {
@@ -407,6 +669,7 @@ export class ContractsService {
         quantity: 1,
         itemType: 'rent',
       },
+      ...utilityItems,
     ];
     const invoiceContent: Prisma.InputJsonObject = {
       title: `Rent invoice ${invoiceNumber}`,
@@ -425,7 +688,11 @@ export class ContractsService {
         issueDate: now,
         dueDate,
         baseRent: rentAmount,
-        totalAmount: rentAmount,
+        utilityCharges:
+          utilityItems.length > 0
+            ? (utilityItems as unknown as Prisma.InputJsonValue)
+            : undefined,
+        totalAmount: invoiceTotal,
         paymentMethod: params.paymentMethod,
         status: InvoiceStatus.issued,
         notes: `Auto-created monthly rent invoice. ${marker}`,
@@ -463,12 +730,15 @@ export class ContractsService {
       where: { id: contractId },
       select: {
         id: true,
+        apartmentId: true,
         contractNumber: true,
         startDate: true,
         endDate: true,
         monthlyRent: true,
         paymentMethod: true,
         paymentDueDay: true,
+        utilitiesIncluded: true,
+        utilitiesCharges: true,
         status: true,
         members: {
           where: { status: MemberStatus.active },
@@ -495,6 +765,7 @@ export class ContractsService {
 
       await this.createRentInvoiceForPeriod({
         contractId: contract.id,
+        apartmentId: contract.apartmentId,
         contractNumber: contract.contractNumber,
         monthlyRent: contract.monthlyRent,
         paymentMethod: contract.paymentMethod,
@@ -502,6 +773,8 @@ export class ContractsService {
         periodStart,
         periodEnd,
         memberUserIds: (contract.members ?? []).map((member) => member.userId),
+        utilitiesIncluded: contract.utilitiesIncluded,
+        utilitiesCharges: contract.utilitiesCharges,
       });
 
       monthOffset += 1;
