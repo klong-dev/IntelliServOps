@@ -222,6 +222,17 @@ describe('IoTMqttService', () => {
     );
   });
 
+  it('should ignore self-published health-check probes on status topic', () => {
+    const { client, eventEmitter } = createService();
+
+    client.handlers.message('HOMEIQ/ESP_A101/status', Buffer.from('ARE_YOU_OK'));
+
+    expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+      'iot.mqtt.status',
+      expect.anything(),
+    );
+  });
+
   it('should parse door PIN update ACK from status messages', () => {
     const { client, eventEmitter } = createService();
 
