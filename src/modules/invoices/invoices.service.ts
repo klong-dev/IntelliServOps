@@ -494,11 +494,39 @@ export class InvoicesService {
     query: InvoiceMeQueryDto,
   ): Promise<InvoiceMeItemDto[]> {
     const month = query.billingMonth;
+    const paymentsServiceCompat = this.paymentsService as PaymentsService & {
+      listDueContractDepositPayouts?: (
+        currentUser: JwtPayload,
+        query: { month?: string },
+      ) => Promise<
+        Array<{
+          payoutPaymentId: string | null;
+          contractId: string;
+          contractNumber: string;
+          apartmentId: string;
+          apartmentNumber: string;
+          recipientUserId: string;
+          recipientFullName: string;
+          payoutMonth: string;
+          dueDate: Date;
+          payoutAmount: string;
+          currency: string;
+          status: PaymentStatus;
+          transferProofUrl: string | null;
+          transferReference: string | null;
+          transferNote: string | null;
+          confirmedAt: Date | null;
+          confirmedByStaffId: string | null;
+        }>
+      >;
+    };
     const [partnerPayouts, depositPayouts] = await Promise.all([
       this.paymentsService.listDuePartnerMonthlyPayouts(currentUser, { month }),
-      this.paymentsService.listDueContractDepositPayouts(currentUser, {
-        month,
-      }),
+      paymentsServiceCompat.listDueContractDepositPayouts
+        ? paymentsServiceCompat.listDueContractDepositPayouts(currentUser, {
+            month,
+          })
+        : Promise.resolve([]),
     ]);
 
     const partnerItems: InvoiceMeItemDto[] = partnerPayouts.map((item) => ({
