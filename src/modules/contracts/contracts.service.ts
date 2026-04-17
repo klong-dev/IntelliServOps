@@ -419,6 +419,9 @@ export class ContractsService {
       params.paymentDueDay,
       now,
     );
+    const billingMonth = `${params.periodStart.getUTCFullYear()}-${String(
+      params.periodStart.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
     const rentAmount = Number(params.monthlyRent);
     const invoiceNumber = await this.generateRentInvoiceNumber(now);
     const rentItems: Prisma.InputJsonArray = [
@@ -441,6 +444,7 @@ export class ContractsService {
         rentalContract: { connect: { id: params.contractId } },
         invoiceType: InvoiceType.rent,
         invoiceContent,
+        billingMonth,
         billingPeriodStart: params.periodStart,
         billingPeriodEnd: params.periodEnd,
         issueDate: now,
@@ -2542,6 +2546,9 @@ export class ContractsService {
     const invoiceNumber = await this.generateDepositInvoiceNumber();
     const now = new Date();
     const dueDate = this.resolveDepositInvoiceDueDate(contract.startDate, now);
+    const billingMonth = `${contract.startDate.getUTCFullYear()}-${String(
+      contract.startDate.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
     const depositCharge: Prisma.InputJsonArray = [
       {
         description: `Deposit for contract ${contract.contractNumber}`,
@@ -2562,6 +2569,7 @@ export class ContractsService {
         rentalContract: { connect: { id: contract.id } },
         invoiceType: InvoiceType.contractDeposit,
         invoiceContent,
+        billingMonth,
         billingPeriodStart: contract.startDate,
         billingPeriodEnd: contract.startDate,
         issueDate: now,

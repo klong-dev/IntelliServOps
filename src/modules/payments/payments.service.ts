@@ -616,6 +616,7 @@ export class PaymentsService {
         paymentReference,
         invoice: { connect: { id: paidDepositInvoice.id } },
         user: { connect: { id: primaryMember.userId } },
+        receiverUserId: primaryMember.userId,
         amount: payoutAmount,
         currency: paidDepositInvoice.currency || 'VND',
         paymentMethod:
@@ -848,7 +849,14 @@ export class PaymentsService {
       where: { id: createDto.invoiceId },
       include: {
         rentalContract: {
-          include: { members: true },
+          include: {
+            members: true,
+            apartment: {
+              select: {
+                ownerId: true,
+              },
+            },
+          },
         },
       },
     });
@@ -880,7 +888,8 @@ export class PaymentsService {
       }
     }
 
-    const payerUserId = this.resolvePayerUserId(invoice, currentUser);
+    const payerUserId = this.resolvePayerUserId(invoice);
+    const receiverUserId = this.resolveReceiverUserId(invoice);
 
     // Generate payment reference
     const paymentReference =
@@ -891,6 +900,7 @@ export class PaymentsService {
       data: {
         invoice: { connect: { id: createDto.invoiceId } },
         user: { connect: { id: payerUserId } },
+        receiverUserId,
         amount: createDto.amount,
         paymentMethod: createDto.paymentMethod,
         paymentReference,
@@ -944,7 +954,7 @@ export class PaymentsService {
       throw new BadRequestException('Payment already processed');
     }
 
-    const txOperations: Prisma.PrismaPromise<any>[] = [
+    const txOperations: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.payment.update({
         where: { id },
         data: {
@@ -996,6 +1006,11 @@ export class PaymentsService {
             id: true,
             status: true,
             apartmentId: true,
+            apartment: {
+              select: {
+                ownerId: true,
+              },
+            },
             startDate: true,
             endDate: true,
             members: {
@@ -1080,13 +1095,15 @@ export class PaymentsService {
     }
 
     if (!payment) {
-      const payerUserId = this.resolvePayerUserId(invoice, currentUser);
+      const payerUserId = this.resolvePayerUserId(invoice);
+      const receiverUserId = this.resolveReceiverUserId(invoice);
       const paymentReference = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
       payment = await this.prisma.payment.create({
         data: {
           invoice: { connect: { id: invoiceId } },
           user: { connect: { id: payerUserId } },
+          receiverUserId,
           amount: Number(invoice.totalAmount),
           currency: invoice.currency || 'VND',
           paymentMethod: invoice.paymentMethod || 'bank_transfer',
@@ -1128,6 +1145,11 @@ export class PaymentsService {
       include: {
         rentalContract: {
           include: {
+            apartment: {
+              select: {
+                ownerId: true,
+              },
+            },
             members: {
               include: {
                 user: {
@@ -1179,7 +1201,8 @@ export class PaymentsService {
 
     const orderCode = this.generatePayOSOrderCode();
     const paymentReference = `PAYOS-${orderCode}`;
-    const payerUserId = this.resolvePayerUserId(invoice, currentUser);
+    const payerUserId = this.resolvePayerUserId(invoice);
+    const receiverUserId = this.resolveReceiverUserId(invoice);
     const primaryMember = invoice.rentalContract.members.find(
       (m) => m.memberType === 'primary',
     );
@@ -1188,6 +1211,7 @@ export class PaymentsService {
       data: {
         invoice: { connect: { id: invoice.id } },
         user: { connect: { id: payerUserId } },
+        receiverUserId,
         amount,
         currency: invoice.currency || 'VND',
         paymentMethod: invoice.paymentMethod || 'bank_transfer',
@@ -1323,7 +1347,7 @@ export class PaymentsService {
         };
       }
 
-      const txOperations: Prisma.PrismaPromise<any>[] = [
+      const txOperations: Prisma.PrismaPromise<unknown>[] = [
         this.prisma.payment.update({
           where: { id: payment.id },
           data: {
@@ -1437,7 +1461,7 @@ export class PaymentsService {
   }
 
   private appendContractActivationOperations(
-    txOperations: Prisma.PrismaPromise<any>[],
+    txOperations: Prisma.PrismaPromise<unknown>[],
     invoiceType: InvoiceType,
     invoiceNumber: string,
     rentalContract: {
@@ -1473,7 +1497,7 @@ export class PaymentsService {
     const buildUserApartmentUpserts = (
       status: UserApartmentStatus,
       apartmentDoorPassword: string | null,
-    ): Prisma.PrismaPromise<any>[] =>
+    ): Prisma.PrismaPromise<unknown>[] =>
       members.map((member) =>
         this.prisma.userApartment.upsert({
           where: {
@@ -1593,18 +1617,15 @@ export class PaymentsService {
     );
   }
 
-  private resolvePayerUserId(
-    invoice: {
-      rentalContract: {
-        members: Array<{
-          userId: string;
-          memberType?: string | null;
-          isPrimaryContact?: boolean | null;
-        }>;
-      };
-    },
-    _currentUser: JwtPayload,
-  ): string {
+  private resolvePayerUserId(invoice: {
+    rentalContract: {
+      members: Array<{
+        userId: string;
+        memberType?: string | null;
+        isPrimaryContact?: boolean | null;
+      }>;
+    };
+  }): string {
     const primary = invoice.rentalContract.members.find(
       (member) => member.memberType === 'primary',
     );
@@ -1625,6 +1646,24 @@ export class PaymentsService {
     }
 
     throw new BadRequestException('Invoice has no tenant to attach payment');
+  }
+
+  private resolveReceiverUserId(invoice: {
+    rentalContract: {
+      apartment?: {
+        ownerId?: string | null;
+      } | null;
+    };
+  }): string {
+    const receiverUserId = invoice.rentalContract.apartment?.ownerId ?? null;
+
+    if (!receiverUserId) {
+      throw new BadRequestException(
+        'Invoice has no receiver user to attach payment',
+      );
+    }
+
+    return receiverUserId;
   }
 
   private generatePayOSOrderCode(): number {
