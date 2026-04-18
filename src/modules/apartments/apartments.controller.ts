@@ -245,6 +245,42 @@ export class ApartmentsController {
     return new StreamableFile(pdfData.buffer);
   }
 
+  @Get('cooperation-contracts/pdf/view')
+  @Public()
+  @ApiOperation({
+    summary: 'View partner cooperation contract PDF by signed token',
+    description:
+      'Public endpoint to view partner cooperation contract PDF using a short-lived signed token.',
+  })
+  @ApiQuery({
+    name: 'token',
+    required: true,
+    type: String,
+    description:
+      'Signed token returned in cooperationContractPublicPdfUrl field',
+  })
+  @ApiProduces('application/pdf')
+  @ApiResponse({ status: 200, description: 'Cooperation contract PDF file' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired PDF token' })
+  @ApiResponse({
+    status: 404,
+    description: 'Cooperation contract or PDF not found',
+  })
+  async viewCooperationPdfByToken(
+    @Query('token') token: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfData =
+      await this.apartmentsService.getCooperationContractPdfByToken(token);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="cooperation-${pdfData.contractNumber}.pdf"`,
+    });
+
+    return new StreamableFile(pdfData.buffer);
+  }
+
   @Post(':id/rating')
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.USER)

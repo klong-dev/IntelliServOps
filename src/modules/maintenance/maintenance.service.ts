@@ -142,6 +142,25 @@ export class MaintenanceService {
     }
   }
 
+  private mapMaintenanceStatusToTaskStatus(
+    status: MaintenanceStatus,
+  ): TaskStatus | null {
+    switch (status) {
+      case MaintenanceStatus.submitted:
+      case MaintenanceStatus.scheduled:
+      case MaintenanceStatus.acknowledged:
+        return TaskStatus.assigned;
+      case MaintenanceStatus.in_progress:
+        return TaskStatus.in_progress;
+      case MaintenanceStatus.completed:
+        return TaskStatus.completed;
+      case MaintenanceStatus.cancelled:
+        return TaskStatus.cancelled;
+      default:
+        return null;
+    }
+  }
+
   private async findBestMaintenanceStaffId(): Promise<string> {
     const maintenanceStaff = await this.prisma.staff.findMany({
       where: {
@@ -530,6 +549,101 @@ export class MaintenanceService {
     });
 
     return created;
+  }
+
+  async updateRequest(
+    id: string,
+    currentUser: JwtPayload,
+    updateDto: {
+      status?: MaintenanceStatus;
+      priority?: Urgency;
+      scheduledDate?: string;
+      completedAt?: string;
+      resolutionNotes?: string;
+      cost?: number;
+    },
+  ): Promise<{ id: string; title: string; status: MaintenanceStatus }> {
+    const request = await this.prisma.maintenanceRequest.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        assignedTaskId: true,
+        assignedTask: {
+          select: {
+            id: true,
+            assignedToStaffId: true,
+          },
+        },
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Maintenance request not found');
+    }
+
+    if (currentUser.actorType === 'staff') {
+      this.ensureStaffAccess(request, currentUser);
+    }
+
+    if (
+      currentUser.actorType !== 'admin' &&
+      currentUser.actorType !== 'operator' &&
+      currentUser.actorType !== 'staff'
+    ) {
+      throw new ForbiddenException('Only staff/operator/admin can update');
+    }
+
+    const status = updateDto.status;
+    const taskStatus =
+      status !== undefined
+        ? this.mapMaintenanceStatusToTaskStatus(status)
+        : null;
+
+    const result = await this.prisma.$transaction([
+      this.prisma.maintenanceRequest.update({
+        where: { id },
+        data: {
+          ...(updateDto.status !== undefined
+            ? { status: updateDto.status }
+            : {}),
+          ...(updateDto.priority !== undefined
+            ? { urgency: updateDto.priority }
+            : {}),
+          ...(updateDto.scheduledDate !== undefined
+            ? { preferredDate: new Date(updateDto.scheduledDate) }
+            : {}),
+          ...(updateDto.completedAt !== undefined
+            ? { completedAt: new Date(updateDto.completedAt) }
+            : {}),
+          ...(updateDto.resolutionNotes !== undefined
+            ? { completionNotes: updateDto.resolutionNotes }
+            : {}),
+          ...(updateDto.cost !== undefined
+            ? { actualCost: updateDto.cost }
+            : {}),
+        },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+        },
+      }),
+      ...(request.assignedTaskId && taskStatus
+        ? [
+            this.prisma.task.update({
+              where: { id: request.assignedTaskId },
+              data: { status: taskStatus },
+            }),
+          ]
+        : []),
+    ]);
+
+    return result[0] as {
+      id: string;
+      title: string;
+      status: MaintenanceStatus;
+    };
   }
 
   async accept(id: string, currentUser: JwtPayload, note?: string) {

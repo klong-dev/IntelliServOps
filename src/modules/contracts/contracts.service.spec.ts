@@ -688,6 +688,56 @@ describe('ContractsService', () => {
         ),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('should clear renewedFromContractId when cancelling a renewal contract', async () => {
+      const user = mockUserJwtPayload();
+      const renewalContract = mockContract({
+        status: ContractStatus.signed,
+        category: 'renewal',
+        renewedFromContractId: 'contract-source-123',
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
+      });
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce(renewalContract as any)
+        .mockResolvedValueOnce({
+          ...mockContract({ status: ContractStatus.terminated }),
+          members: [{ user: { id: user.sub } }],
+          apartment: null,
+          createdByStaff: null,
+          invoices: [],
+          renewalContracts: [],
+          contractPdfData: null,
+          landlordSignature: null,
+          tenantSignature: null,
+        } as any);
+
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback(prisma as any),
+      );
+
+      await service.cancelByUser(
+        'contract-123',
+        { reason: 'Khong thue nua' },
+        user,
+      );
+
+      expect(prisma.rentalContract.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'contract-123' },
+          data: expect.objectContaining({
+            status: ContractStatus.terminated,
+            renewedFromContractId: null,
+          }),
+        }),
+      );
+    });
   });
 
   describe('addMemberByNationalId', () => {

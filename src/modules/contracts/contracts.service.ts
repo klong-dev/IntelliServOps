@@ -315,6 +315,27 @@ export class ContractsService {
         status: ContractStatus.expired,
       },
     });
+
+    // Contracts that passed activation date but still have no paid deposit
+    // are treated as overdue and must expire.
+    await this.prisma.rentalContract.updateMany({
+      where: {
+        status: {
+          in: [ContractStatus.pending, ContractStatus.signed],
+        },
+        startDate: { lt: todayStart },
+        endDate: { gte: todayStart },
+        invoices: {
+          none: {
+            invoiceType: InvoiceType.contractDeposit,
+            status: InvoiceStatus.paid,
+          },
+        },
+      },
+      data: {
+        status: ContractStatus.expired,
+      },
+    });
   }
 
   private computeMonthlyBillingPeriod(
@@ -1231,8 +1252,13 @@ export class ContractsService {
         renewalContracts: {
           select: {
             id: true,
+            contractNumber: true,
+            status: true,
+            category: true,
+            startDate: true,
+            endDate: true,
+            createdAt: true,
           },
-          take: 1,
           orderBy: { createdAt: 'desc' },
         },
         invoices: {
@@ -1274,6 +1300,7 @@ export class ContractsService {
           depositPaidAt: paidDepositInvoice?.paidAt ?? null,
           isRenewed: !!latestRenewal,
           latestRenewalContractId: latestRenewal?.id ?? null,
+          renewalContracts,
         };
       },
     );
@@ -1351,8 +1378,13 @@ export class ContractsService {
           renewalContracts: {
             select: {
               id: true,
+              contractNumber: true,
+              status: true,
+              category: true,
+              startDate: true,
+              endDate: true,
+              createdAt: true,
             },
-            take: 1,
             orderBy: { createdAt: 'desc' },
           },
         },
@@ -1459,7 +1491,8 @@ export class ContractsService {
       isDepositPaid: !!paidDepositInvoice,
       depositPaidAt: paidDepositInvoice?.paidAt ?? null,
       isRenewed: !!rest.renewalContracts?.length,
-      latestRenewalContractId: rest.renewalContracts[0]?.id ?? null,
+      latestRenewalContractId: rest.renewalContracts?.[0]?.id ?? null,
+      renewalContracts: rest.renewalContracts ?? [],
     };
   }
 
@@ -1495,6 +1528,33 @@ export class ContractsService {
 
     if (!contract.contractPdfData) {
       throw new NotFoundException('Contract PDF has not been generated yet');
+    }
+
+    return {
+      buffer: contract.contractPdfData,
+      contractNumber: contract.contractNumber,
+    };
+  }
+
+  /**
+   * Get contract PDF by signed public token
+   */
+  async getContractPdfByToken(token: string) {
+    if (!token || !token.trim()) {
+      throw new BadRequestException('PDF token is required');
+    }
+
+    const contractId = this.verifyPdfToken(token.trim());
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id: contractId },
+      select: {
+        contractNumber: true,
+        contractPdfData: true,
+      },
+    });
+
+    if (!contract || !contract.contractPdfData) {
+      throw new NotFoundException('Contract or PDF not found');
     }
 
     return {
@@ -2140,6 +2200,9 @@ export class ContractsService {
           terminationDate: terminatedAt,
           terminationReason: cancelReason,
           earlyTerminationFee: null,
+          ...(contract.renewedFromContractId && {
+            renewedFromContractId: null,
+          }),
         },
       });
 

@@ -57,7 +57,6 @@ class ContractApartmentDto {
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 50.2 })
   usableArea?: number | null;
-
 }
 
 class WardAddressDto {
@@ -211,6 +210,29 @@ class ContractInvoiceDto {
   dueDate: Date;
 }
 
+class RenewalContractSummaryDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'CTR-202702-00012' })
+  contractNumber: string;
+
+  @ApiProperty({ example: 'draft' })
+  status: string;
+
+  @ApiProperty({ example: 'renewal' })
+  category: string;
+
+  @ApiProperty()
+  startDate: Date;
+
+  @ApiProperty()
+  endDate: Date;
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
 // ─── Contract List Item DTO (findAll) ───────────────────────────────
 
 export class ContractListItemDto {
@@ -258,6 +280,13 @@ export class ContractListItemDto {
 
   @ApiPropertyOptional({ type: String, nullable: true })
   latestRenewalContractId: string | null;
+
+  @ApiProperty({
+    type: [RenewalContractSummaryDto],
+    description:
+      'All renewal contracts generated from this contract, sorted by newest first',
+  })
+  renewalContracts: RenewalContractSummaryDto[];
 
   @ApiPropertyOptional({
     type: String,
@@ -421,6 +450,13 @@ export class ContractDetailDto {
 
   @ApiPropertyOptional({ type: String, nullable: true })
   latestRenewalContractId: string | null;
+
+  @ApiProperty({
+    type: [RenewalContractSummaryDto],
+    description:
+      'All renewal contracts generated from this contract, sorted by newest first',
+  })
+  renewalContracts: RenewalContractSummaryDto[];
 
   @ApiProperty({
     example: 1,

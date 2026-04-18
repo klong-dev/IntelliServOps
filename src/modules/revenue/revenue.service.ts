@@ -364,6 +364,7 @@ export class RevenueService {
   async getSystemRevenueOverview(
     filter: RevenueFilterQueryDto,
   ): Promise<RevenueOverviewDto> {
+    const normalized = this.normalizeFilter(filter);
     const rows = await this.buildRevenueRows(filter);
 
     const overview = rows.reduce(
@@ -384,7 +385,19 @@ export class RevenueService {
       },
     );
 
-    return overview;
+    const start = (normalized.page - 1) * normalized.limit;
+    const end = start + normalized.limit;
+
+    return {
+      ...overview,
+      invoices: rows.slice(start, end),
+      page: normalized.page,
+      limit: normalized.limit,
+      totalPages: Math.max(
+        1,
+        Math.ceil(overview.invoiceCount / normalized.limit),
+      ),
+    };
   }
 
   async getPartnerRevenueSummaries(

@@ -12,6 +12,8 @@ import {
   CreatePayOSPaymentLinkDto,
   ConfirmPartnerMonthlyPayoutDto,
   ListDuePartnerMonthlyPayoutsQueryDto,
+  ListDueContractDepositPayoutsQueryDto,
+  ConfirmContractDepositPayoutDto,
 } from './dto';
 import {
   InvoiceType,
@@ -21,6 +23,7 @@ import {
   ApartmentStatus,
   UserApartmentStatus,
   ActorType,
+  PaymentMethodType,
   Prisma,
   PartnerCooperationContractStatus,
   PartnerMonthlyPayoutStatus,
@@ -311,6 +314,345 @@ export class PaymentsService {
       transferProofUrl: payout.transferProofUrl,
       confirmedAt: payout.confirmedAt,
       confirmedByStaffId: payout.confirmedByStaffId,
+    };
+  }
+
+  async listDueContractDepositPayouts(
+    currentUser: JwtPayload,
+    query: ListDueContractDepositPayoutsQueryDto,
+  ) {
+    if (currentUser.actorType !== 'staff') {
+      throw new ForbiddenException(
+        'Only staff can view due contract deposit payouts',
+      );
+    }
+
+    const monthRange = this.resolveMonthRange(query.month);
+    const now = new Date();
+
+    const contracts = await this.prisma.rentalContract.findMany({
+      where: {
+        endDate: {
+          gte: monthRange.billingPeriodStart,
+          lt: monthRange.billingPeriodEndExclusive,
+        },
+        status: {
+          in: [
+            ContractStatus.expired,
+            ContractStatus.active,
+            ContractStatus.signed,
+          ],
+        },
+      },
+      select: {
+        id: true,
+        contractNumber: true,
+        apartmentId: true,
+        endDate: true,
+        depositAmount: true,
+        apartment: {
+          select: {
+            apartmentNumber: true,
+          },
+        },
+        members: {
+          select: {
+            userId: true,
+            memberType: true,
+            isPrimaryContact: true,
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                phone: true,
+                bankName: true,
+                bankAccountNumber: true,
+              },
+            },
+          },
+        },
+        invoices: {
+          where: {
+            invoiceType: {
+              in: [InvoiceType.deposit, InvoiceType.contractDeposit],
+            },
+            status: InvoiceStatus.paid,
+          },
+          orderBy: {
+            paidAt: 'desc',
+          },
+          select: {
+            id: true,
+            currency: true,
+            totalAmount: true,
+            payments: {
+              where: {
+                status: PaymentStatus.refunded,
+              },
+              orderBy: {
+                refundDate: 'desc',
+              },
+              select: {
+                id: true,
+                status: true,
+                paymentProofUrl: true,
+                transactionId: true,
+                notes: true,
+                refundDate: true,
+                processedByStaffId: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        endDate: 'asc',
+      },
+    });
+
+    const items = contracts
+      .map((contract) => {
+        const primaryMember =
+          contract.members.find((member) => member.memberType === 'primary') ||
+          contract.members.find((member) => member.isPrimaryContact) ||
+          contract.members[0];
+
+        if (!primaryMember) {
+          return null;
+        }
+
+        const paidDepositInvoice = contract.invoices[0];
+        if (!paidDepositInvoice) {
+          return null;
+        }
+
+        const refundedPayment = paidDepositInvoice.payments[0] || null;
+        const depositAmount = Number(contract.depositAmount);
+        const fallbackAmount = Number(paidDepositInvoice.totalAmount);
+        const payoutAmount =
+          Number.isFinite(depositAmount) && depositAmount > 0
+            ? depositAmount
+            : fallbackAmount;
+
+        if (!Number.isFinite(payoutAmount) || payoutAmount <= 0) {
+          return null;
+        }
+
+        const dueDate = contract.endDate;
+        const status = refundedPayment?.status ?? PaymentStatus.pending;
+
+        return {
+          payoutPaymentId: refundedPayment?.id ?? null,
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          apartmentId: contract.apartmentId,
+          apartmentNumber: contract.apartment.apartmentNumber,
+          recipientUserId: primaryMember.user.id,
+          recipientFullName: primaryMember.user.fullName,
+          recipientPhone: primaryMember.user.phone ?? null,
+          recipientBankName: primaryMember.user.bankName ?? null,
+          recipientBankAccountNumber:
+            primaryMember.user.bankAccountNumber ?? null,
+          payoutMonth: monthRange.payoutMonth,
+          contractEndDate: contract.endDate,
+          dueDate,
+          depositAmount: payoutAmount.toFixed(2),
+          payoutAmount: payoutAmount.toFixed(2),
+          currency: paidDepositInvoice.currency || 'VND',
+          status,
+          isDue: dueDate <= now,
+          transferProofUrl: refundedPayment?.paymentProofUrl ?? null,
+          transferReference: refundedPayment?.transactionId ?? null,
+          transferNote: refundedPayment?.notes ?? null,
+          confirmedAt: refundedPayment?.refundDate ?? null,
+          confirmedByStaffId: refundedPayment?.processedByStaffId ?? null,
+        };
+      })
+      .filter((item) => item !== null)
+      .filter(
+        (item) =>
+          item.isDue &&
+          item.payoutAmount !== '0.00' &&
+          item.status !== PaymentStatus.refunded,
+      )
+      .sort(
+        (a, b) =>
+          +new Date(a.dueDate) - +new Date(b.dueDate) ||
+          a.contractNumber.localeCompare(b.contractNumber, 'vi'),
+      );
+
+    return items;
+  }
+
+  async confirmContractDepositPayout(
+    currentUser: JwtPayload,
+    body: ConfirmContractDepositPayoutDto,
+    transferProof: {
+      mimetype?: string;
+      originalname?: string;
+      buffer?: Buffer;
+      size?: number;
+    },
+  ) {
+    if (currentUser.actorType !== 'staff') {
+      throw new ForbiddenException(
+        'Only staff can confirm contract deposit payouts',
+      );
+    }
+
+    const mimeType = transferProof.mimetype || '';
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+      throw new BadRequestException(
+        `Invalid transfer proof format. Allowed: image/jpeg, image/png, image/webp. Received: ${mimeType || 'unknown'}`,
+      );
+    }
+
+    if (!transferProof.buffer) {
+      throw new BadRequestException('Transfer proof image data is required');
+    }
+
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: {
+        id: body.contractId,
+      },
+      select: {
+        id: true,
+        contractNumber: true,
+        endDate: true,
+        depositAmount: true,
+        members: {
+          select: {
+            userId: true,
+            memberType: true,
+            isPrimaryContact: true,
+          },
+        },
+        invoices: {
+          where: {
+            invoiceType: {
+              in: [InvoiceType.deposit, InvoiceType.contractDeposit],
+            },
+            status: InvoiceStatus.paid,
+          },
+          orderBy: {
+            paidAt: 'desc',
+          },
+          select: {
+            id: true,
+            currency: true,
+            totalAmount: true,
+            paymentMethod: true,
+            payments: {
+              where: {
+                status: PaymentStatus.refunded,
+              },
+              select: {
+                id: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    if (contract.endDate > new Date()) {
+      throw new BadRequestException('Contract has not ended yet');
+    }
+
+    const paidDepositInvoice = contract.invoices[0];
+    if (!paidDepositInvoice) {
+      throw new NotFoundException(
+        'No paid deposit invoice found for this contract',
+      );
+    }
+
+    if (paidDepositInvoice.payments.length > 0) {
+      throw new ConflictException(
+        'Contract deposit payout is already confirmed',
+      );
+    }
+
+    const primaryMember =
+      contract.members.find((member) => member.memberType === 'primary') ||
+      contract.members.find((member) => member.isPrimaryContact) ||
+      contract.members[0];
+
+    if (!primaryMember) {
+      throw new BadRequestException(
+        'Contract has no member to receive deposit payout',
+      );
+    }
+
+    const depositAmount = Number(contract.depositAmount);
+    const fallbackAmount = Number(paidDepositInvoice.totalAmount);
+    const payoutAmount =
+      Number.isFinite(depositAmount) && depositAmount > 0
+        ? depositAmount
+        : fallbackAmount;
+
+    if (!Number.isFinite(payoutAmount) || payoutAmount <= 0) {
+      throw new BadRequestException('Deposit amount is invalid for payout');
+    }
+
+    const extension = this.getImageExtensionByMimeType(mimeType);
+    const payoutMonth = `${contract.endDate.getUTCFullYear()}-${String(
+      contract.endDate.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
+    const storagePath = `contract-deposit-payouts/${payoutMonth}/${contract.id}/staff-${currentUser.sub}-${Date.now()}.${extension}`;
+    const transferProofUrl = await this.storageService.uploadFile(
+      'apartment-cooperation',
+      storagePath,
+      transferProof,
+    );
+
+    const paymentReference = `REFUND-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const refundDate = new Date();
+    const payoutPayment = await this.prisma.payment.create({
+      data: {
+        paymentReference,
+        invoice: { connect: { id: paidDepositInvoice.id } },
+        user: { connect: { id: primaryMember.userId } },
+        amount: payoutAmount,
+        currency: paidDepositInvoice.currency || 'VND',
+        paymentMethod:
+          paidDepositInvoice.paymentMethod || PaymentMethodType.bank_transfer,
+        paymentGateway: 'manual_refund',
+        transactionId: body.transferReference?.trim() || null,
+        paymentDate: refundDate,
+        status: PaymentStatus.refunded,
+        paymentProofUrl: transferProofUrl,
+        notes: body.transferNote?.trim() || null,
+        processedByStaff: { connect: { id: currentUser.sub } },
+        refundAmount: payoutAmount,
+        refundDate,
+        refundReason:
+          body.refundReason?.trim() ||
+          'Contract ended, security deposit payout',
+      },
+      select: {
+        id: true,
+        status: true,
+        refundDate: true,
+        processedByStaffId: true,
+      },
+    });
+
+    return {
+      message: 'Contract deposit payout confirmed successfully',
+      payoutPaymentId: payoutPayment.id,
+      contractId: contract.id,
+      contractNumber: contract.contractNumber,
+      recipientUserId: primaryMember.userId,
+      payoutAmount: payoutAmount.toFixed(2),
+      currency: paidDepositInvoice.currency || 'VND',
+      status: payoutPayment.status,
+      transferProofUrl,
+      confirmedAt: payoutPayment.refundDate,
+      confirmedByStaffId: payoutPayment.processedByStaffId,
     };
   }
 
