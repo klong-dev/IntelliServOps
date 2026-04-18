@@ -241,6 +241,7 @@ export class IoTService {
     }
 
     const targetApartmentId = updateDto.apartmentId ?? board.apartment?.id;
+    const targetStatus = updateDto.status ?? board.status;
 
     await this.upsertStoredBoardRecord({
       where: { id: boardId },
@@ -248,11 +249,12 @@ export class IoTService {
         id: boardId,
         name: board.name,
         ...(targetApartmentId && { apartmentId: targetApartmentId }),
-        status: board.status,
+        status: targetStatus,
         ...(board.lastOnlineAt && { lastOnlineAt: board.lastOnlineAt }),
       },
       update: {
         ...(targetApartmentId !== undefined ? { apartmentId: targetApartmentId } : {}),
+        ...(updateDto.status !== undefined ? { status: updateDto.status } : {}),
       },
       select: { id: true },
     });
@@ -278,6 +280,13 @@ export class IoTService {
           ),
         ),
       );
+    }
+
+    if (updateDto.status !== undefined && board.devices.length > 0) {
+      await this.prisma.ioTDevice.updateMany({
+        where: { id: { in: board.devices.map((device) => device.id) } },
+        data: { status: updateDto.status },
+      });
     }
 
     return this.findOneBoard(boardId);

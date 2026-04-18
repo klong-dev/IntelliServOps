@@ -1,5 +1,6 @@
 import { ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
-import { IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IoTStatus } from '@prisma/client';
 import {
   CreateIoTBoardDeviceDto,
   CreateIoTBoardDto,
@@ -14,6 +15,16 @@ export class UpdateIoTBoardDto extends PartialType(
   @IsUUID()
   @IsOptional()
   apartmentId?: string;
+
+  @ApiPropertyOptional({
+    enum: IoTStatus,
+    description:
+      'Optional status toggle for this board. Allowed values: active, inactive. Child devices inherit this value.',
+    example: IoTStatus.active,
+  })
+  @IsEnum(IoTStatus)
+  @IsOptional()
+  status?: IoTStatus;
 }
 
 export class UpdateIoTBoardDeviceDto extends PartialType(
