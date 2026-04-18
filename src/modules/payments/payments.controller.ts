@@ -40,7 +40,7 @@ import {
 } from './dto/contract-deposit-payout.dto';
 import { PaymentListQueryDto } from './dto/payment-list-query.dto';
 import { SimulatePaymentSuccessDto } from './dto/simulate-payment-success.dto';
-import { Roles, CurrentUser, Public } from '../../common/decorators';
+import { Roles, CurrentUser } from '../../common/decorators';
 import { Public } from '../../common/decorators/public.decorator';
 import { ApiJsonResponse } from '../../common/dto';
 import { FileUploadPipe } from '../../common/pipes';
