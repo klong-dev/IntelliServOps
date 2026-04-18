@@ -46,6 +46,7 @@ import { FileUploadPipe } from '../../common/pipes';
 import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { PaymentStatus } from '@prisma/client';
+import type { Webhook } from '@payos/node/lib/resources';
 
 @ApiTags('Payments')
 @ApiBearerAuth('JWT-auth')
@@ -116,6 +117,20 @@ export class PaymentsController {
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.paymentsService.createPayOSPayment(createDto, currentUser);
+  }
+
+  @Post('payos/webhook')
+  @Public()
+  @ApiOperation({
+    summary: 'Receive PayOS payment webhook',
+    description: 'Public callback endpoint used by PayOS to confirm payment results.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Webhook received and processed',
+  })
+  async handlePayOSWebhook(@Body() webhookData: Webhook) {
+    return this.paymentsService.handlePayOSWebhook(webhookData);
   }
 
   @Post('invoice/:invoiceId/mock-success')
