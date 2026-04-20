@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsEnum,
   IsInt,
+  IsUUID,
   Min,
   Max,
 } from 'class-validator';
@@ -29,6 +30,14 @@ export class SearchApartmentDto {
   @IsOptional()
   @Type(() => Number)
   wardCode?: number;
+
+  @ApiPropertyOptional({
+    example: '0f8fad5b-d9cb-469f-a165-70867728950e',
+    description: 'Owner user ID filter.',
+  })
+  @IsUUID()
+  @IsOptional()
+  ownerId?: string;
 
   @ApiPropertyOptional({ example: 'Vinhomes' })
   @IsString()

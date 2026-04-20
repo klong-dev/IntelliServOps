@@ -614,6 +614,7 @@ export class ApartmentsService {
     const {
       provinceCode,
       wardCode,
+      ownerId,
       keyword,
       minBedrooms,
       maxBedrooms,
@@ -673,6 +674,7 @@ export class ApartmentsService {
     }
 
     const where: Prisma.ApartmentWhereInput = {
+      ...(ownerId && { ownerId }),
       ...(status && { status }),
       ...(andConditions.length > 0 && { AND: andConditions }),
       ...((minBedrooms !== undefined || maxBedrooms !== undefined) && {
