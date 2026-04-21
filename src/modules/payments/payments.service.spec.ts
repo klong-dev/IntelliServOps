@@ -528,6 +528,99 @@ describe('PaymentsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should retry with a new orderCode when PayOS reports duplicate order', async () => {
+      const user = mockUserJwtPayload();
+      const invoice = mockInvoice({
+        currency: 'VND',
+        paymentMethod: 'bank_transfer',
+        baseRent: 0,
+        taxAmount: 0,
+        rentalContract: {
+          id: 'contract-123',
+          status: ContractStatus.signed,
+          apartmentId: 'apt-123',
+          startDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          members: [
+            {
+              userId: 'user-123',
+              memberType: 'primary',
+              isPrimaryContact: true,
+              user: {
+                fullName: 'Nguyen Van A',
+                email: 'tenant@example.com',
+                phone: '0901234567',
+              },
+            },
+          ],
+        },
+      });
+      const payosClient = {
+        paymentRequests: {
+          create: jest
+            .fn()
+            .mockRejectedValueOnce(
+              new Error('HTTP 200, Đơn thanh toán đã tồn tại (code: 231)'),
+            )
+            .mockResolvedValueOnce({
+              paymentLinkId: 'plink-123',
+              orderCode: 1776806693805002,
+              status: 'PENDING',
+              checkoutUrl: 'https://pay.payos.vn/web/abc',
+              qrCode: 'qr-code',
+              expiredAt: 1776807693,
+            }),
+        },
+      };
+
+      prisma.invoice.findUnique.mockResolvedValue(invoice as any);
+      prisma.payment.create.mockResolvedValue({
+        id: 'payment-123',
+        invoiceId: 'invoice-123',
+        paymentReference: 'PAYOS-1776806693805001',
+      } as any);
+      prisma.payment.update.mockResolvedValue({} as any);
+
+      (service as any).payosClient = payosClient;
+      jest
+        .spyOn(service as any, 'generatePayOSOrderCode')
+        .mockReturnValueOnce(1776806693805001)
+        .mockReturnValueOnce(1776806693805002);
+
+      const result = await service.createPayOSPayment(
+        {
+          invoiceId: 'invoice-123',
+          description: 'TT INV-DEP-202604-00006',
+        },
+        user,
+      );
+
+      expect(payosClient.paymentRequests.create).toHaveBeenCalledTimes(2);
+      expect(payosClient.paymentRequests.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ orderCode: 1776806693805001 }),
+      );
+      expect(payosClient.paymentRequests.create).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ orderCode: 1776806693805002 }),
+      );
+      expect(prisma.payment.update).toHaveBeenCalledWith({
+        where: { id: 'payment-123' },
+        data: expect.objectContaining({
+          paymentReference: 'PAYOS-1776806693805002',
+          transactionId: 'plink-123',
+          status: PaymentStatus.pending,
+        }),
+      });
+      expect(result).toMatchObject({
+        paymentId: 'payment-123',
+        invoiceId: 'invoice-123',
+        paymentReference: 'PAYOS-1776806693805002',
+        orderCode: 1776806693805002,
+        checkoutUrl: 'https://pay.payos.vn/web/abc',
+      });
+    });
+
     it('should throw when PayOS is not configured while handling webhook', async () => {
       await expect(service.handlePayOSWebhook({} as any)).rejects.toThrow(
         BadRequestException,

@@ -454,9 +454,7 @@ export class ContractPdfService {
     doc
       .font('Regular')
       .fontSize(11)
-      .text(
-        `Hôm nay, ${weekday}, ngày ${day} tháng ${month} năm ${year}, các Bên gồm:`,
-      );
+      .text(`${weekday}, ngày ${day} tháng ${month} năm ${year}, các Bên gồm:`);
 
     doc.moveDown(0.5);
   }
@@ -496,9 +494,6 @@ export class ContractPdfService {
         `     Ngày cấp: ${data.tenantIdIssueDate || '....................'}`,
     );
     doc.text(
-      `Nơi cấp: ${data.tenantIdIssuePlace || '.........................................'}`,
-    );
-    doc.text(
       `Nơi ĐKTT: ${data.tenantAddress || '........................................'}`,
     );
     doc.text(
@@ -513,7 +508,7 @@ export class ContractPdfService {
       doc
         .font('Bold')
         .fontSize(11)
-        .text('Danh sach thanh vien ben B (kem CCCD):');
+        .text('Danh sách thành viên bên B (kèm CCCD):');
       doc.moveDown(0.2);
 
       data.tenantMembers.forEach((member, index) => {

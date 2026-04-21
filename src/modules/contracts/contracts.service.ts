@@ -128,6 +128,7 @@ export class ContractsService {
       this.landlordSignatureBufferPromise = readFile(this.landlordSignaturePath)
         .then((buffer) => Buffer.from(buffer))
         .catch((error: unknown) => {
+          this.landlordSignatureBufferPromise = null;
           this.logger.warn(
             `Could not load default landlord signature from ${this.landlordSignaturePath}: ${error instanceof Error ? error.message : 'unknown error'}`,
           );

@@ -65,7 +65,7 @@ describe('ContractPdfService', () => {
   });
 
   describe('renderParties', () => {
-    it('should render Party A business address and omit Party A issue place line', () => {
+    it('should render Party A business address, omit issue place lines, and use accented Party B members heading', () => {
       const doc = new FakePdfDocument();
 
       (service as any).renderParties(doc as any, {
@@ -78,16 +78,35 @@ describe('ContractPdfService', () => {
           'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
         landlordPhone: '0388969964',
         tenantName: 'Nguyễn Văn A',
+        tenantIdIssuePlace: 'TP. Hồ Chí Minh',
+        tenantMembers: [
+          {
+            fullName: 'Nguyễn Văn A',
+            idNumber: '079203001234',
+          },
+        ],
       });
 
-      const partyALines = doc.texts.slice(0, 5);
-
-      expect(partyALines).toContain(
+      expect(doc.texts).toContain(
         'Địa chỉ kinh doanh: Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
       );
-      expect(partyALines.some((line) => line.startsWith('Nơi cấp:'))).toBe(
-        false,
-      );
+      expect(doc.texts.some((line) => line.startsWith('Nơi cấp:'))).toBe(false);
+      expect(doc.texts).toContain('Danh sách thành viên bên B (kèm CCCD):');
+    });
+  });
+
+  describe('renderHeader', () => {
+    it('should not prefix the opening clause with "Hôm nay"', () => {
+      const doc = new FakePdfDocument();
+
+      (service as any).renderHeader(doc as any);
+
+      expect(doc.texts.some((line) => line.includes('Hôm nay,'))).toBe(false);
+      expect(
+        doc.texts.some((line) =>
+          /ngày \d+ tháng \d+ năm \d+, các Bên gồm:/.test(line),
+        ),
+      ).toBe(true);
     });
   });
 
@@ -112,6 +131,24 @@ describe('ContractPdfService', () => {
   });
 
   describe('renderSignatures', () => {
+    it('should render Party A signature image when landlord signature exists', () => {
+      const doc = new FakePdfDocument();
+      const landlordSignature = Buffer.from('landlord-signature');
+
+      (service as any).renderSignatures(doc as any, {
+        contractNumber: 'CTR-2026-00001',
+        landlordName: 'Hoàng Kim Long',
+        tenantName: 'Nguyễn Văn A',
+        landlordSignature,
+        tenantSignature: null,
+      });
+
+      expect(doc.images).toContainEqual(
+        expect.objectContaining({ source: landlordSignature }),
+      );
+      expect(doc.texts).not.toContain('Đã ký điện tử');
+    });
+
     it('should use landlord name instead of IntelliServOps in fallback signature text', () => {
       const doc = new FakePdfDocument();
 
