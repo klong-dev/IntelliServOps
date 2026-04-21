@@ -719,6 +719,167 @@ describe('IoTService', () => {
       expect(result[0].updatedAt).toEqual(new Date('2026-04-03T00:00:00.000Z'));
     });
 
+    it('should update board status and propagate it to child devices', async () => {
+      prisma.ioTBoard.findUnique
+        .mockResolvedValueOnce({
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-02T00:00:00.000Z'),
+          apartment: {
+            id: 'apt-123',
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.inactive,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-03T00:00:00.000Z'),
+          apartment: {
+            id: 'apt-123',
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        } as any);
+      prisma.ioTDevice.findMany
+        .mockResolvedValueOnce([mockBoardSourceDevice()] as any)
+        .mockResolvedValueOnce([
+          mockBoardSourceDevice({ status: IoTStatus.inactive }),
+        ] as any);
+      prisma.ioTBoard.upsert.mockResolvedValue({ id: 'ESP_A101' } as any);
+      prisma.ioTDevice.updateMany.mockResolvedValue({ count: 1 } as any);
+
+      const result = await service.updateBoard('ESP_A101', {
+        status: IoTStatus.inactive,
+      });
+
+      expect(prisma.ioTBoard.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ESP_A101' },
+          update: expect.objectContaining({
+            apartmentId: 'apt-123',
+            status: IoTStatus.inactive,
+          }),
+        }),
+      );
+      expect(prisma.ioTDevice.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['device-123'] } },
+        data: { status: IoTStatus.inactive },
+      });
+      expect(result).toMatchObject({
+        id: 'ESP_A101',
+        status: IoTStatus.inactive,
+        devices: [
+          expect.objectContaining({
+            id: 'device-123',
+            status: IoTStatus.inactive,
+          }),
+        ],
+      });
+    });
+
+    it('should allow linking an apartment to an unlinked board', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-456' } as any);
+      prisma.ioTBoard.findUnique
+        .mockResolvedValueOnce({
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-02T00:00:00.000Z'),
+          apartment: null,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'ESP_A101',
+          name: 'A101 Main Board',
+          status: IoTStatus.active,
+          lastOnlineAt: null,
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-03T00:00:00.000Z'),
+          apartment: {
+            id: 'apt-456',
+            apartmentNumber: 'B202',
+            streetAddress: '456 Le Loi',
+          },
+        } as any);
+      prisma.ioTDevice.findMany
+        .mockResolvedValueOnce([
+          mockBoardSourceDevice({ apartmentId: null, apartment: null }),
+        ] as any)
+        .mockResolvedValueOnce([
+          mockBoardSourceDevice({
+            apartmentId: 'apt-456',
+            apartment: {
+              id: 'apt-456',
+              apartmentNumber: 'B202',
+              streetAddress: '456 Le Loi',
+            },
+          }),
+        ] as any);
+      prisma.ioTBoard.upsert.mockResolvedValue({ id: 'ESP_A101' } as any);
+      prisma.ioTDevice.updateMany.mockResolvedValue({ count: 1 } as any);
+
+      const result = await service.updateBoard('ESP_A101', {
+        apartmentId: 'apt-456',
+      });
+
+      expect(prisma.ioTBoard.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ESP_A101' },
+          update: expect.objectContaining({
+            apartmentId: 'apt-456',
+          }),
+        }),
+      );
+      expect(prisma.ioTDevice.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['device-123'] } },
+        data: { apartmentId: 'apt-456' },
+      });
+      expect(result).toMatchObject({
+        id: 'ESP_A101',
+        apartment: {
+          id: 'apt-456',
+          apartmentNumber: 'B202',
+        },
+      });
+    });
+
+    it('should reject linking a different apartment before unlinking the board', async () => {
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-02T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice(),
+      ] as any);
+
+      await expect(
+        service.updateBoard('ESP_A101', {
+          apartmentId: 'apt-456',
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(prisma.apartment.findUnique).not.toHaveBeenCalled();
+      expect(prisma.ioTBoard.upsert).not.toHaveBeenCalled();
+      expect(prisma.ioTDevice.updateMany).not.toHaveBeenCalled();
+    });
+
     it('should unlink apartment from a board and its devices', async () => {
       prisma.ioTBoard.findUnique.mockResolvedValue({
         id: 'ESP_A101',
