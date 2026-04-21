@@ -397,7 +397,7 @@ export class ContractsController {
   @ApiOperation({
     summary: 'Update editable PDF content of contract',
     description:
-      'Update fields that are rendered in contract PDF and regenerate PDF immediately.',
+      'Update fields that are rendered in the rental contract PDF and regenerate the PDF immediately. landlordAddress is shown as business address, while landlordIdIssuePlace is kept only for backward compatibility.',
   })
   @ApiBody({
     type: UpdateContractPdfContentDto,
@@ -405,12 +405,12 @@ export class ContractsController {
       updateRentAndDates: {
         summary: 'Update rental terms and regenerate PDF',
         value: {
-          landlordName: 'Cong ty TNHH IntelliServOps',
-          landlordIdNumber: '0312345678',
-          landlordIdIssueDate: '01/01/2020',
-          landlordIdIssuePlace: 'So KH&DT TP. Ho Chi Minh',
-          landlordAddress: 'TP. Ho Chi Minh, Viet Nam',
-          landlordPhone: '1900 0000',
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
           startDate: '2026-04-01',
           endDate: '2027-03-31',
           monthlyRent: 16500000,

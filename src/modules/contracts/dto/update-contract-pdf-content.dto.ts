@@ -13,15 +13,15 @@ import { PaymentMethodType } from '@prisma/client';
 export class UpdateContractPdfContentDto {
   @ApiPropertyOptional({
     description: 'Landlord name displayed in PDF (Party A)',
-    example: 'Cong ty TNHH IntelliServOps',
+    example: 'Hoang Kim Long',
   })
   @IsString()
   @IsOptional()
   landlordName?: string;
 
   @ApiPropertyOptional({
-    description: 'Landlord/company ID number displayed in PDF',
-    example: '0312345678',
+    description: 'Landlord national ID number displayed in PDF',
+    example: '060204000351',
   })
   @IsString()
   @IsOptional()
@@ -29,23 +29,24 @@ export class UpdateContractPdfContentDto {
 
   @ApiPropertyOptional({
     description: 'Issue date of landlord ID/license',
-    example: '01/01/2020',
+    example: '19/04/2021',
   })
   @IsString()
   @IsOptional()
   landlordIdIssueDate?: string;
 
   @ApiPropertyOptional({
-    description: 'Issue place of landlord ID/license',
-    example: 'So KH&DT TP. Ho Chi Minh',
+    description:
+      'Legacy issue-place field kept for backward compatibility; rental contract PDF no longer renders this value',
+    example: 'Canh sat quan ly hanh chinh ve trat tu xa hoi',
   })
   @IsString()
   @IsOptional()
   landlordIdIssuePlace?: string;
 
   @ApiPropertyOptional({
-    description: 'Landlord registered address displayed in PDF',
-    example: 'TP. Ho Chi Minh, Viet Nam',
+    description: 'Landlord business address displayed in PDF',
+    example: 'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
   })
   @IsString()
   @IsOptional()
@@ -53,7 +54,7 @@ export class UpdateContractPdfContentDto {
 
   @ApiPropertyOptional({
     description: 'Landlord phone number displayed in PDF',
-    example: '1900 0000',
+    example: '0388969964',
   })
   @IsString()
   @IsOptional()

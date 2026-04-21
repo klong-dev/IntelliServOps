@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ApartmentsService } from '../apartments/apartments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContractPdfService } from './contract-pdf.service';
+import { IoTService } from '../iot/iot.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
@@ -16,6 +17,7 @@ import {
   ContractStatus,
   ApartmentStatus,
   MemberStatus,
+  PaymentMethodType,
   ReservationStatus,
 } from '@prisma/client';
 import {
@@ -24,17 +26,26 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { readFile } from 'fs/promises';
+
+jest.mock('fs/promises', () => ({
+  readFile: jest.fn(),
+}));
 
 describe('ContractsService', () => {
   let service: ContractsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let apartmentsService: Record<string, jest.Mock>;
+  const ioTService = {
+    syncApartmentDoorPin: jest.fn(),
+  };
   const contractPdfService = {
     generateContractPdf: jest.fn().mockResolvedValue(Buffer.from('pdf')),
   };
   const notificationsService = {
     createAndPush: jest.fn(),
   };
+  const readFileMock = readFile as jest.MockedFunction<typeof readFile>;
 
   const mockContract = (overrides = {}) => ({
     id: 'contract-123',
@@ -56,12 +67,27 @@ describe('ContractsService', () => {
     apartmentsService = {
       updateStatus: jest.fn(),
     };
+    readFileMock
+      .mockReset()
+      .mockResolvedValue(Buffer.from('landlord-signature'));
+    contractPdfService.generateContractPdf.mockReset();
+    contractPdfService.generateContractPdf.mockResolvedValue(
+      Buffer.from('pdf'),
+    );
+    ioTService.syncApartmentDoorPin.mockResolvedValue({
+      success: true,
+      skipped: false,
+      boardId: 'ESP_A101',
+      deviceId: 1,
+      message: 'Door PIN synced to board successfully.',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ApartmentsService, useValue: apartmentsService },
+        { provide: IoTService, useValue: ioTService },
         { provide: ContractPdfService, useValue: contractPdfService },
         { provide: NotificationsService, useValue: notificationsService },
       ],
@@ -335,6 +361,82 @@ describe('ContractsService', () => {
     });
   });
 
+  describe('regenerateContractPdf', () => {
+    it('should include fallback landlord signature and additional terms in generated PDF data', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        contractNumber: 'CTR-2026-00001',
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2027-03-31T00:00:00.000Z'),
+        monthlyRent: 15000000,
+        depositAmount: 30000000,
+        paymentDueDay: 5,
+        paymentMethod: PaymentMethodType.bank_transfer,
+        specialConditions: 'Khong hut thuoc trong can ho.',
+        contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        landlordName: 'Hoang Kim Long',
+        landlordIdNumber: '060204000351',
+        landlordIdIssueDate: '19/04/2021',
+        landlordIdIssuePlace: 'Legacy issue place',
+        landlordAddress:
+          'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+        landlordPhone: '0388969964',
+        landlordSignature: null,
+        tenantSignature: null,
+        apartment: {
+          apartmentNumber: 'A-101',
+          buildingName: 'Vinhomes Grand Park',
+          totalArea: 70,
+          usableArea: 65,
+          numberOfBedrooms: 2,
+          numberOfBathrooms: 1,
+        },
+        members: [
+          {
+            memberType: 'primary',
+            isPrimaryContact: true,
+            user: {
+              fullName: 'Nguyen Van A',
+              phone: '0901234567',
+              email: 'tenant@example.com',
+              identity: {
+                nationalId: '079203001234',
+                issueDate: '01/01/2022',
+                address: '123 Nguyen Hue, TP HCM',
+              },
+            },
+          },
+        ],
+      } as any);
+
+      await service.regenerateContractPdf('contract-123');
+
+      expect(readFileMock).toHaveBeenCalled();
+      expect(contractPdfService.generateContractPdf).toHaveBeenCalledWith(
+        expect.objectContaining({
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          landlordSignature: Buffer.from('landlord-signature'),
+        }),
+      );
+
+      const updateCall = prisma.rentalContract.update.mock.calls[0]?.[0];
+      expect(updateCall.where).toEqual({ id: 'contract-123' });
+      expect(Buffer.from(updateCall.data.contractPdfData)).toEqual(
+        Buffer.from('pdf'),
+      );
+      expect(Buffer.from(updateCall.data.landlordSignature)).toEqual(
+        Buffer.from('landlord-signature'),
+      );
+    });
+  });
+
   describe('uploadSignedPdf', () => {
     it('should auto-create deposit invoice when signing contract', async () => {
       const user = mockUserJwtPayload();
@@ -412,6 +514,57 @@ describe('ContractsService', () => {
       await expect(service.update('non-existent', updateDto)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('updateContractPdfContent', () => {
+    it('should persist editable PDF fields and regenerate the contract PDF', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        status: ContractStatus.draft,
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2027-03-31T00:00:00.000Z'),
+      } as any);
+      prisma.rentalContract.update.mockResolvedValue({} as any);
+
+      jest.spyOn(service, 'regenerateContractPdf').mockResolvedValue();
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 'contract-123',
+      } as any);
+
+      await service.updateContractPdfContent(
+        'contract-123',
+        {
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        },
+        staff,
+      );
+
+      expect(prisma.rentalContract.update).toHaveBeenCalledWith({
+        where: { id: 'contract-123' },
+        data: expect.objectContaining({
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        }),
+      });
+      expect(service.regenerateContractPdf).toHaveBeenCalledWith(
+        'contract-123',
+      );
+      expect(service.findOne).toHaveBeenCalledWith('contract-123', staff);
     });
   });
 
@@ -1168,6 +1321,10 @@ describe('ContractsService', () => {
           }),
         }),
       );
+      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+        'apt-123',
+        expect.stringMatching(/^\d{6}$/),
+      );
     });
   });
 
@@ -1226,6 +1383,130 @@ describe('ContractsService', () => {
         expect.stringContaining('contract-1'),
         expect.any(String),
       );
+    });
+  });
+
+  describe('monthly rent invoice utilities', () => {
+    it('should merge electricity and water charges into the monthly invoice using meter readings', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-utility-1',
+        apartmentId: 'apt-utility-1',
+        contractNumber: 'CTR-UTILITY-00001',
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2026-12-31T00:00:00.000Z'),
+        monthlyRent: 10000000,
+        paymentMethod: PaymentMethodType.bank_transfer,
+        paymentDueDay: 5,
+        utilitiesIncluded: { electricity: false, water: false },
+        utilitiesCharges: { electricity: 3500, water: 15000 },
+        status: ContractStatus.active,
+        members: [{ userId: 'user-1' }],
+      } as any);
+
+      prisma.invoice.findFirst.mockResolvedValue(null as any);
+      prisma.utilityMeter.findMany.mockResolvedValue([
+        {
+          id: 'meter-electricity',
+          meterType: 'electricity',
+          meterNumber: 'PE-001',
+          ratePerUnit: 4000,
+          readings: [{ id: 'reading-electricity' }],
+        },
+        {
+          id: 'meter-water',
+          meterType: 'water',
+          meterNumber: 'PW-001',
+          ratePerUnit: 18000,
+          readings: [{ id: 'reading-water' }],
+        },
+      ] as any);
+      prisma.utilityReading.findFirst
+        .mockResolvedValueOnce({
+          id: 'snapshot-electricity-start',
+          readingDate: new Date('2026-04-01T00:00:00.000Z'),
+          readingValue: 1100,
+          previousReadingValue: 1000,
+          consumption: 100,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'snapshot-electricity-end',
+          readingDate: new Date('2026-04-30T00:00:00.000Z'),
+          readingValue: 1250,
+          previousReadingValue: 1100,
+          consumption: 150,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'snapshot-water-start',
+          readingDate: new Date('2026-04-01T00:00:00.000Z'),
+          readingValue: 30,
+          previousReadingValue: 20,
+          consumption: 10,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'snapshot-water-end',
+          readingDate: new Date('2026-04-30T00:00:00.000Z'),
+          readingValue: 42,
+          previousReadingValue: 30,
+          consumption: 12,
+        } as any);
+      prisma.utilityReading.update.mockResolvedValue({
+        id: 'snapshot-end',
+      } as any);
+      prisma.utilityReading.updateMany.mockResolvedValue({ count: 2 } as any);
+      prisma.invoice.count.mockResolvedValue(0);
+      prisma.invoice.create.mockResolvedValue({
+        id: 'invoice-utility-1',
+        invoiceNumber: 'INV-REN-202604-00001',
+        dueDate: new Date('2026-04-05T00:00:00.000Z'),
+      } as any);
+
+      await (service as any).generateMissingMonthlyRentInvoicesForContract(
+        'contract-utility-1',
+        new Date('2026-04-30T00:00:00.000Z'),
+      );
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            invoiceType: 'rent',
+            baseRent: 10000000,
+            totalAmount: 10705000,
+            utilityCharges: expect.arrayContaining([
+              expect.objectContaining({
+                meterType: 'electricity',
+                oldReading: 1100,
+                newReading: 1250,
+                consumption: 150,
+                unitPrice: 3500,
+                amount: 525000,
+              }),
+              expect.objectContaining({
+                meterType: 'water',
+                oldReading: 30,
+                newReading: 42,
+                consumption: 12,
+                unitPrice: 15000,
+                amount: 180000,
+              }),
+            ]),
+            invoiceContent: expect.objectContaining({
+              items: expect.arrayContaining([
+                expect.objectContaining({ itemType: 'rent', amount: 10000000 }),
+                expect.objectContaining({
+                  itemType: 'utility_electricity',
+                  amount: 525000,
+                }),
+                expect.objectContaining({
+                  itemType: 'utility_water',
+                  amount: 180000,
+                }),
+              ]),
+            }),
+          }),
+        }),
+      );
+      expect(prisma.utilityReading.update).toHaveBeenCalledTimes(2);
+      expect(prisma.utilityReading.updateMany).toHaveBeenCalledTimes(2);
     });
   });
 });

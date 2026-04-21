@@ -41,6 +41,8 @@ import { ApartmentsService } from '../apartments/apartments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContractPdfData, ContractPdfService } from './contract-pdf.service';
 import * as crypto from 'crypto';
+import { readFile } from 'fs/promises';
+import * as path from 'path';
 import axios from 'axios';
 
 type WardLookupResponse = {
@@ -83,7 +85,13 @@ export class ContractsService {
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly PDF_TOKEN_EXPIRY = 5 * 60 * 1000; // 5 minutes
   private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
+  private readonly landlordSignaturePath = path.join(
+    process.cwd(),
+    'documents',
+    'sign.png',
+  );
   private readonly wardAddressCache = new Map<number, WardAddressInfo | null>();
+  private landlordSignatureBufferPromise: Promise<Buffer | null> | null = null;
 
   private readonly depositInvoiceSelect = {
     id: true,
@@ -108,6 +116,21 @@ export class ContractsService {
     private readonly notificationsService: NotificationsService,
     private readonly contractPdfService: ContractPdfService,
   ) {}
+
+  private async getDefaultLandlordSignature(): Promise<Buffer | null> {
+    if (!this.landlordSignatureBufferPromise) {
+      this.landlordSignatureBufferPromise = readFile(this.landlordSignaturePath)
+        .then((buffer) => Buffer.from(buffer))
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Could not load default landlord signature from ${this.landlordSignaturePath}: ${error instanceof Error ? error.message : 'unknown error'}`,
+          );
+          return null;
+        });
+    }
+
+    return this.landlordSignatureBufferPromise;
+  }
 
   private normalizeWardName(value: string | undefined): string | null {
     if (typeof value !== 'string') {
@@ -532,7 +555,9 @@ export class ContractsService {
 
     for (const meter of meters) {
       const typeKey = meter.meterType;
-      if (this.parseUtilityBoolean(params.utilitiesIncluded ?? undefined, typeKey)) {
+      if (
+        this.parseUtilityBoolean(params.utilitiesIncluded ?? undefined, typeKey)
+      ) {
         continue;
       }
 
@@ -878,6 +903,7 @@ export class ContractsService {
         paymentDueDay: true,
         paymentMethod: true,
         specialConditions: true,
+        contractTerms: true,
         landlordName: true,
         landlordIdNumber: true,
         landlordIdIssueDate: true,
@@ -945,6 +971,9 @@ export class ContractsService {
       email: member.user.email || undefined,
       memberType: member.memberType,
     }));
+    const landlordSignature = contract.landlordSignature
+      ? Buffer.from(contract.landlordSignature)
+      : await this.getDefaultLandlordSignature();
 
     const pdfData: ContractPdfData = {
       contractNumber: contract.contractNumber,
@@ -975,9 +1004,8 @@ export class ContractsService {
       paymentDueDay: contract.paymentDueDay,
       paymentMethod: contract.paymentMethod,
       specialConditions: contract.specialConditions || undefined,
-      landlordSignature: contract.landlordSignature
-        ? Buffer.from(contract.landlordSignature)
-        : null,
+      contractTerms: contract.contractTerms || undefined,
+      landlordSignature,
       tenantSignature: contract.tenantSignature
         ? Buffer.from(contract.tenantSignature)
         : null,
@@ -986,9 +1014,17 @@ export class ContractsService {
     const pdfBuffer =
       await this.contractPdfService.generateContractPdf(pdfData);
 
+    const updateData: Prisma.RentalContractUpdateInput = {
+      contractPdfData: new Uint8Array(pdfBuffer),
+    };
+
+    if (!contract.landlordSignature && landlordSignature) {
+      updateData.landlordSignature = new Uint8Array(landlordSignature);
+    }
+
     await this.prisma.rentalContract.update({
       where: { id: contractId },
-      data: { contractPdfData: new Uint8Array(pdfBuffer) },
+      data: updateData,
     });
   }
 
