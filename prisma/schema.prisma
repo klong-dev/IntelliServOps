@@ -599,6 +599,7 @@ model Apartment {
   id                    String           @id @default(uuid())
   buildingName          String?
   apartmentNumber       String
+  slug                  String           @unique
   maxConcurrentViewings Int              @default(2)
   floorNumber           Int?
   wardCode              Int?             // Mã phường/xã (v2)

@@ -211,11 +211,11 @@ export class ApartmentsController {
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get apartment details' })
+  @ApiOperation({ summary: 'Get apartment details by UUID or slug' })
   @ApiJsonResponse(ApartmentDetailDto, { description: 'Apartment details' })
   @ApiResponse({ status: 404, description: 'Apartment not found' })
   async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() currentUser?: JwtPayload,
   ) {
     return this.apartmentsService.findOne(id, currentUser);

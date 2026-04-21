@@ -30,6 +30,7 @@ describe('ApartmentsService', () => {
 
   const mockApartmentListItem = (overrides = {}) => ({
     id: 'apt-123',
+    slug: 'vinhomes-central-park-a-1501',
     buildingName: 'Vinhomes Central Park',
     apartmentNumber: 'A-1501',
     floorNumber: 15,
@@ -62,6 +63,7 @@ describe('ApartmentsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    prisma.apartment.findMany.mockResolvedValue([] as any);
 
     mockedAxios.get.mockResolvedValue({
       data: {
@@ -161,6 +163,22 @@ describe('ApartmentsService', () => {
     expect(result.ratingEligibilityReason).toBe('not_authenticated');
   });
 
+  it('should find apartment detail by slug', async () => {
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.5 },
+    } as any);
+
+    const result = await service.findOne('vinhomes-central-park-a-1501');
+
+    expect(result.slug).toBe('vinhomes-central-park-a-1501');
+    expect(prisma.apartment.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { slug: 'vinhomes-central-park-a-1501' },
+      }),
+    );
+  });
+
   it('should mark canRateApartment=true for user with active contract and no previous rating', async () => {
     const user = mockUserJwtPayload();
 
@@ -224,6 +242,7 @@ describe('ApartmentsService', () => {
   it('should create apartment for owner and merge uploaded media', async () => {
     prisma.apartment.create.mockResolvedValue({
       id: 'apt-123',
+      slug: 'a-1501',
       apartmentNumber: 'A-1501',
       wardCode: null,
       provinceCode: undefined,
@@ -257,6 +276,7 @@ describe('ApartmentsService', () => {
     expect(prisma.apartment.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          slug: 'a-1501',
           owner: { connect: { id: 'user-123' } },
           images: [
             'https://existing.example.com/img.jpg',
@@ -289,9 +309,12 @@ describe('ApartmentsService', () => {
       id: 'apt-123',
       ownerId: 'user-123',
       images: ['https://existing.example.com/img.jpg'],
+      buildingName: 'Vinhomes Central Park',
+      apartmentNumber: 'A-1501',
     } as any);
     prisma.apartment.update.mockResolvedValue({
       id: 'apt-123',
+      slug: 'vinhomes-grand-park-a-1501',
       apartmentNumber: 'A-1501',
       wardCode: null,
       provinceCode: null,
@@ -327,6 +350,49 @@ describe('ApartmentsService', () => {
             'https://existing.example.com/img.jpg',
             'https://cdn.example.com/img-2.jpg',
           ],
+        }),
+      }),
+    );
+  });
+
+  it('should regenerate slug when apartment name changes', async () => {
+    prisma.apartment.findUnique
+      .mockResolvedValueOnce({
+        id: 'apt-123',
+        ownerId: 'user-123',
+        images: [],
+        buildingName: 'Vinhomes Central Park',
+        apartmentNumber: 'A-1501',
+      } as any)
+      .mockResolvedValueOnce(null as any);
+    prisma.apartment.update.mockResolvedValue({
+      id: 'apt-123',
+      slug: 'masteri-thao-dien-a-1501',
+      apartmentNumber: 'A-1501',
+      wardCode: null,
+      provinceCode: null,
+      streetAddress: '12 Nguyen Hue',
+      baseRentPrice: 18000000,
+      images: [],
+      videoTourUrl: null,
+      status: ApartmentStatus.available,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback(prisma as any),
+    );
+
+    await service.update(
+      'apt-123',
+      { buildingName: 'Masteri Thao Dien' },
+      mockUserJwtPayload(),
+    );
+
+    expect(prisma.apartment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          slug: 'masteri-thao-dien-a-1501',
         }),
       }),
     );
