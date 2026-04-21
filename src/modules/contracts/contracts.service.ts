@@ -38,6 +38,7 @@ import {
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { ApartmentsService } from '../apartments/apartments.service';
+import { IoTService } from '../iot/iot.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContractPdfData, ContractPdfService } from './contract-pdf.service';
 import * as crypto from 'crypto';
@@ -105,6 +106,7 @@ export class ContractsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly apartmentsService: ApartmentsService,
+    private readonly ioTService: IoTService,
     private readonly notificationsService: NotificationsService,
     private readonly contractPdfService: ContractPdfService,
   ) {}
@@ -256,45 +258,79 @@ export class ContractsService {
       memberType: MemberType;
       isPrimaryContact: boolean;
     }>;
-  }): Prisma.PrismaPromise<any>[] {
+  }): {
+    operations: Prisma.PrismaPromise<any>[];
+    apartmentDoorPassword: string | null;
+  } {
     const members = contract.members ?? [];
 
     if (!members.length) {
-      return [];
+      return {
+        operations: [],
+        apartmentDoorPassword: null,
+      };
     }
 
     const apartmentDoorPassword = this.generateSixDigitPassword();
 
-    return members.map((member) =>
-      this.prisma.userApartment.upsert({
-        where: {
-          userId_apartmentId_rentalContractId: {
-            userId: member.userId,
-            apartmentId: contract.apartmentId,
-            rentalContractId: contract.id,
+    return {
+      operations: members.map((member) =>
+        this.prisma.userApartment.upsert({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: member.userId,
+              apartmentId: contract.apartmentId,
+              rentalContractId: contract.id,
+            },
           },
-        },
-        create: {
-          user: { connect: { id: member.userId } },
-          apartment: { connect: { id: contract.apartmentId } },
-          rentalContract: { connect: { id: contract.id } },
-          moveInDate: contract.startDate,
-          moveOutDate: contract.endDate,
-          apartmentDoorPassword,
-          isPrimaryTenant:
-            member.memberType === MemberType.primary || member.isPrimaryContact,
-          status: UserApartmentStatus.active,
-        },
-        update: {
-          moveInDate: contract.startDate,
-          moveOutDate: contract.endDate,
-          apartmentDoorPassword,
-          isPrimaryTenant:
-            member.memberType === MemberType.primary || member.isPrimaryContact,
-          status: UserApartmentStatus.active,
-        },
-      }),
-    );
+          create: {
+            user: { connect: { id: member.userId } },
+            apartment: { connect: { id: contract.apartmentId } },
+            rentalContract: { connect: { id: contract.id } },
+            moveInDate: contract.startDate,
+            moveOutDate: contract.endDate,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === MemberType.primary ||
+              member.isPrimaryContact,
+            status: UserApartmentStatus.active,
+          },
+          update: {
+            moveInDate: contract.startDate,
+            moveOutDate: contract.endDate,
+            apartmentDoorPassword,
+            isPrimaryTenant:
+              member.memberType === MemberType.primary ||
+              member.isPrimaryContact,
+            status: UserApartmentStatus.active,
+          },
+        }),
+      ),
+      apartmentDoorPassword,
+    };
+  }
+
+  private async syncApartmentDoorPasswordToBoard(
+    apartmentId: string,
+    rentalContractId: string,
+    apartmentDoorPassword: string,
+  ): Promise<void> {
+    try {
+      const syncResult = await this.ioTService.syncApartmentDoorPin(
+        apartmentId,
+        apartmentDoorPassword,
+      );
+
+      if (!syncResult.success) {
+        this.logger.warn(
+          `Door PIN sync was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
   }
 
   private async syncExpiredContractsByDate(): Promise<void> {
@@ -2298,7 +2334,7 @@ export class ContractsService {
       );
     }
 
-    const userApartmentOps = this.buildUserApartmentActivationOperations({
+    const activationPayload = this.buildUserApartmentActivationOperations({
       id: contract.id,
       apartmentId: contract.apartmentId,
       startDate: contract.startDate,
@@ -2318,8 +2354,16 @@ export class ContractsService {
         where: { id: contract.apartmentId },
         data: { status: ApartmentStatus.occupied },
       }),
-      ...userApartmentOps,
+      ...activationPayload.operations,
     ]);
+
+    if (activationPayload.apartmentDoorPassword) {
+      await this.syncApartmentDoorPasswordToBoard(
+        contract.apartmentId,
+        contract.id,
+        activationPayload.apartmentDoorPassword,
+      );
+    }
 
     const invoiceGenerationDate =
       contract.startDate > todayStart ? contract.startDate : todayStart;
