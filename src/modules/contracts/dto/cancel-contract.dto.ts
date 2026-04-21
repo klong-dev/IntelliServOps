@@ -3,7 +3,7 @@ import { IsString, MinLength } from 'class-validator';
 
 export class CancelContractDto {
   @ApiProperty({
-    example: 'Khong co nhu cau thue nua',
+    example: 'Không có nhu cầu thuê nữa',
     description: 'Reason provided by user when cancelling contract',
   })
   @IsString()

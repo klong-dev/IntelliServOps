@@ -318,7 +318,7 @@ export class ContractsController {
             electricity: 3500,
             water: 15000,
           },
-          specialConditions: 'Khong nuoi thu cung trong can ho.',
+          specialConditions: 'Không nuôi thú cưng trong căn hộ.',
           members: [
             {
               userId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -405,11 +405,11 @@ export class ContractsController {
       updateRentAndDates: {
         summary: 'Update rental terms and regenerate PDF',
         value: {
-          landlordName: 'Hoang Kim Long',
+          landlordName: 'Hoàng Kim Long',
           landlordIdNumber: '060204000351',
           landlordIdIssueDate: '19/04/2021',
           landlordAddress:
-            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+            'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
           landlordPhone: '0388969964',
           startDate: '2026-04-01',
           endDate: '2027-03-31',
@@ -417,8 +417,8 @@ export class ContractsController {
           depositAmount: 33000000,
           paymentDueDay: 7,
           paymentMethod: 'bank_transfer',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          specialConditions: 'Không hút thuốc trong căn hộ.',
+          contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
         },
       },
     },

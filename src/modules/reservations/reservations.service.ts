@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateReservationDto } from './dto';
 import { ContractsService } from '../contracts/contracts.service';
+import { resolveContractPartyAFields } from '../contracts/contract-party-a-defaults';
 import { ContractStatus, MemberStatus } from '@prisma/client';
 
 @Injectable()
@@ -173,6 +174,7 @@ export class ReservationsService {
 
     // 7. Generate contract number
     const contractNumber = await this.generateContractNumber();
+    const defaultPartyAFields = resolveContractPartyAFields();
 
     // 8. Create reservation + draft contract in transaction
     const reservation = await this.prisma.$transaction(async (tx) => {
@@ -229,6 +231,7 @@ export class ReservationsService {
           paymentDueDay: 5,
           paymentMethod: 'bank_transfer',
           specialConditions: createReservationDto.specialRequests,
+          ...defaultPartyAFields,
           status: ContractStatus.draft,
         },
       });

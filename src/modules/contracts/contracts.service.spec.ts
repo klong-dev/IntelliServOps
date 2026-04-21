@@ -27,6 +27,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { readFile } from 'fs/promises';
+import { DEFAULT_CONTRACT_PARTY_A } from './contract-party-a-defaults';
 
 jest.mock('fs/promises', () => ({
   readFile: jest.fn(),
@@ -298,6 +299,7 @@ describe('ContractsService', () => {
       const operator = mockOperatorJwtPayload();
       const apartment = { id: 'apt-123', status: ApartmentStatus.available };
       const created = mockContract();
+      const createContractInTx = jest.fn().mockResolvedValue(created);
 
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
       prisma.rentalContract.findFirst.mockResolvedValue(null);
@@ -322,7 +324,7 @@ describe('ContractsService', () => {
       // Service uses callback-style $transaction
       prisma.$transaction.mockImplementation(async (callback) =>
         callback({
-          rentalContract: { create: jest.fn().mockResolvedValue(created) },
+          rentalContract: { create: createContractInTx },
           userContractMember: { createMany: jest.fn().mockResolvedValue({}) },
         }),
       );
@@ -336,6 +338,11 @@ describe('ContractsService', () => {
         pdfUrl: `/contracts/${created.id}/pdf`,
         hasPdf: false,
       });
+      expect(createContractInTx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining(DEFAULT_CONTRACT_PARTY_A),
+        }),
+      );
     });
 
     it('should throw NotFoundException if apartment not found', async () => {
@@ -374,15 +381,14 @@ describe('ContractsService', () => {
         depositAmount: 30000000,
         paymentDueDay: 5,
         paymentMethod: PaymentMethodType.bank_transfer,
-        specialConditions: 'Khong hut thuoc trong can ho.',
-        contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
-        landlordName: 'Hoang Kim Long',
-        landlordIdNumber: '060204000351',
-        landlordIdIssueDate: '19/04/2021',
+        specialConditions: 'Không hút thuốc trong căn hộ.',
+        contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
+        landlordName: null,
+        landlordIdNumber: null,
+        landlordIdIssueDate: null,
         landlordIdIssuePlace: 'Legacy issue place',
-        landlordAddress:
-          'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
-        landlordPhone: '0388969964',
+        landlordAddress: null,
+        landlordPhone: null,
         landlordSignature: null,
         tenantSignature: null,
         apartment: {
@@ -398,13 +404,13 @@ describe('ContractsService', () => {
             memberType: 'primary',
             isPrimaryContact: true,
             user: {
-              fullName: 'Nguyen Van A',
+              fullName: 'Nguyễn Văn A',
               phone: '0901234567',
               email: 'tenant@example.com',
               identity: {
                 nationalId: '079203001234',
                 issueDate: '01/01/2022',
-                address: '123 Nguyen Hue, TP HCM',
+                address: '123 Nguyễn Huệ, TP HCM',
               },
             },
           },
@@ -416,14 +422,14 @@ describe('ContractsService', () => {
       expect(readFileMock).toHaveBeenCalled();
       expect(contractPdfService.generateContractPdf).toHaveBeenCalledWith(
         expect.objectContaining({
-          landlordName: 'Hoang Kim Long',
+          landlordName: 'Hoàng Kim Long',
           landlordIdNumber: '060204000351',
           landlordIdIssueDate: '19/04/2021',
           landlordAddress:
-            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+            'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
           landlordPhone: '0388969964',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          specialConditions: 'Không hút thuốc trong căn hộ.',
+          contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
           landlordSignature: Buffer.from('landlord-signature'),
         }),
       );
@@ -432,6 +438,21 @@ describe('ContractsService', () => {
       expect(updateCall.where).toEqual({ id: 'contract-123' });
       expect(Buffer.from(updateCall.data.contractPdfData)).toEqual(
         Buffer.from('pdf'),
+      );
+      expect(updateCall.data.landlordName).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordName,
+      );
+      expect(updateCall.data.landlordIdNumber).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordIdNumber,
+      );
+      expect(updateCall.data.landlordIdIssueDate).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordIdIssueDate,
+      );
+      expect(updateCall.data.landlordAddress).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordAddress,
+      );
+      expect(updateCall.data.landlordPhone).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordPhone,
       );
       expect(Buffer.from(updateCall.data.landlordSignature)).toEqual(
         Buffer.from('landlord-signature'),
@@ -538,14 +559,14 @@ describe('ContractsService', () => {
       await service.updateContractPdfContent(
         'contract-123',
         {
-          landlordName: 'Hoang Kim Long',
+          landlordName: 'Hoàng Kim Long',
           landlordIdNumber: '060204000351',
           landlordIdIssueDate: '19/04/2021',
           landlordAddress:
-            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+            'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
           landlordPhone: '0388969964',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          specialConditions: 'Không hút thuốc trong căn hộ.',
+          contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
         },
         staff,
       );
@@ -553,14 +574,14 @@ describe('ContractsService', () => {
       expect(prisma.rentalContract.update).toHaveBeenCalledWith({
         where: { id: 'contract-123' },
         data: expect.objectContaining({
-          landlordName: 'Hoang Kim Long',
+          landlordName: 'Hoàng Kim Long',
           landlordIdNumber: '060204000351',
           landlordIdIssueDate: '19/04/2021',
           landlordAddress:
-            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+            'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
           landlordPhone: '0388969964',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          specialConditions: 'Không hút thuốc trong căn hộ.',
+          contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
         }),
       });
       expect(service.regenerateContractPdf).toHaveBeenCalledWith(
@@ -771,7 +792,7 @@ describe('ContractsService', () => {
 
       const result = await service.cancelByUser(
         'contract-123',
-        { reason: 'Khong thue nua' },
+        { reason: 'Không thuê nữa' },
         user,
       );
 
@@ -814,7 +835,7 @@ describe('ContractsService', () => {
       await expect(
         service.cancelByUser(
           'contract-123',
-          { reason: 'Khong thue nua' },
+          { reason: 'Không thuê nữa' },
           user,
         ),
       ).rejects.toThrow(NotFoundException);
@@ -838,7 +859,7 @@ describe('ContractsService', () => {
       await expect(
         service.cancelByUser(
           'contract-123',
-          { reason: 'Khong thue nua' },
+          { reason: 'Không thuê nữa' },
           user,
         ),
       ).rejects.toThrow(ForbiddenException);
@@ -879,7 +900,7 @@ describe('ContractsService', () => {
 
       await service.cancelByUser(
         'contract-123',
-        { reason: 'Khong thue nua' },
+        { reason: 'Không thuê nữa' },
         user,
       );
 

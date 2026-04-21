@@ -9,7 +9,7 @@ class ReservationApartmentDto {
   @ApiProperty({ example: 'A101' })
   apartmentNumber: string;
 
-  @ApiProperty({ example: '123 Nguyen Hue, Q1' })
+  @ApiProperty({ example: '123 Nguyễn Huệ, Quận 1' })
   address: string;
 
   @ApiProperty({ example: '15000000.00' })

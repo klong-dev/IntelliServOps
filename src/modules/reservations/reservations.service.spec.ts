@@ -1,0 +1,118 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { ReservationsService } from './reservations.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ContractsService } from '../contracts/contracts.service';
+import { createPrismaMock } from '../../test-utils';
+import { DEFAULT_CONTRACT_PARTY_A } from '../contracts/contract-party-a-defaults';
+
+describe('ReservationsService', () => {
+  let service: ReservationsService;
+  let prisma: ReturnType<typeof createPrismaMock>;
+  const contractsService = {
+    regenerateContractPdf: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    prisma = createPrismaMock();
+    contractsService.regenerateContractPdf
+      .mockReset()
+      .mockResolvedValue(undefined);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReservationsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ContractsService, useValue: contractsService },
+      ],
+    }).compile();
+
+    service = module.get<ReservationsService>(ReservationsService);
+  });
+
+  it('should seed default Party A fields when creating draft contract from reservation flow', async () => {
+    const userId = 'user-123';
+    const createReservationDto = {
+      apartmentId: 'apt-123',
+      desiredStartDate: '2099-01-01',
+      desiredEndDate: '2099-12-31',
+      numberOfOccupants: 1,
+      specialRequests: 'Need parking spot',
+    };
+
+    const createContractInTx = jest
+      .fn()
+      .mockResolvedValue({ id: 'contract-123' });
+
+    prisma.user.findUnique.mockResolvedValue({
+      id: userId,
+      isVerified: true,
+      isActive: true,
+    } as any);
+    prisma.apartment.findUnique
+      .mockResolvedValueOnce({
+        id: 'apt-123',
+        status: 'available',
+        apartmentNumber: 'A-101',
+        wardCode: null,
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'apt-123',
+        baseRentPrice: 10000000,
+        depositAmount: 20000000,
+        maxOccupants: 2,
+      } as any);
+    prisma.reservation.findFirst.mockResolvedValue(null as any);
+    prisma.rentalContract.count.mockResolvedValue(0);
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        apartment: {
+          update: jest.fn().mockResolvedValue({}),
+        },
+        reservation: {
+          create: jest.fn().mockResolvedValue({
+            id: 'reservation-123',
+            userId,
+            apartmentId: 'apt-123',
+            desiredStartDate: new Date('2099-01-01T00:00:00.000Z'),
+            desiredEndDate: new Date('2099-12-31T00:00:00.000Z'),
+            numberOfOccupants: 1,
+            specialRequests: 'Need parking spot',
+            status: 'pending',
+            expiresAt: new Date('2098-12-01T00:00:00.000Z'),
+            createdAt: new Date('2098-11-29T00:00:00.000Z'),
+            updatedAt: new Date('2098-11-29T00:00:00.000Z'),
+            apartment: {
+              id: 'apt-123',
+              apartmentNumber: 'A-101',
+              wardCode: null,
+              baseRentPrice: 10000000,
+            },
+          }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        rentalContract: {
+          create: createContractInTx,
+        },
+        userContractMember: {
+          create: jest.fn().mockResolvedValue({}),
+          createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+      }),
+    );
+
+    const result = await service.create(userId, createReservationDto);
+
+    expect(createContractInTx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ...DEFAULT_CONTRACT_PARTY_A,
+          specialConditions: 'Need parking spot',
+        }),
+      }),
+    );
+    expect(contractsService.regenerateContractPdf).toHaveBeenCalledWith(
+      'contract-123',
+    );
+    expect(result.contractId).toBe('contract-123');
+  });
+});
