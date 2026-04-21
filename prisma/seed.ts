@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
+import iconv from 'iconv-lite';
 import { Pool } from 'pg';
 
 const databaseUrl =
@@ -16,7 +17,71 @@ async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
+function countMojibakeMarkers(input: string) {
+  const matches = input.match(/Ã|Â|Ä|Å|Æ|Ç|È|É|Ê|Ë|Ì|Í|Î|Ï|Ð|Ñ|Ò|Ó|Ô|Õ|Ö|×|Ø|Ù|Ú|Û|Ü|Ý|Þ|ß|á»|áº|Ä‘|Æ°|Ã´|Æ¡/g);
+  return matches ? matches.length : 0;
+}
+
+function fixMojibakeString(input: string) {
+  if (!input || countMojibakeMarkers(input) === 0) {
+    return input;
+  }
+
+  let current = input;
+
+  for (let i = 0; i < 3; i += 1) {
+    let candidate = current;
+
+    try {
+      candidate = iconv.encode(current, 'win1252').toString('utf8');
+    } catch {
+      break;
+    }
+
+    if (countMojibakeMarkers(candidate) < countMojibakeMarkers(current)) {
+      current = candidate;
+      continue;
+    }
+
+    break;
+  }
+
+  return current;
+}
+
+function sanitizeSeedValue<T>(value: T): T {
+  if (typeof value === 'string') {
+    return fixMojibakeString(value) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeSeedValue(item)) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    if (
+      value instanceof Date ||
+      value instanceof Prisma.Decimal ||
+      Buffer.isBuffer(value) ||
+      value instanceof Uint8Array ||
+      (value as { constructor?: { name?: string } }).constructor?.name ===
+        'Decimal'
+    ) {
+      return value;
+    }
+
+    const entries = Object.entries(value as Record<string, unknown>).map(
+      ([key, nestedValue]) => [key, sanitizeSeedValue(nestedValue)],
+    );
+
+    return Object.fromEntries(entries) as T;
+  }
+
+  return value;
+}
+
 async function ensureAdmin(data: Prisma.AdminUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.admin.findFirst({
     where: {
       OR: [{ email: data.email }, { username: data.username }],
@@ -34,6 +99,7 @@ async function ensureAdmin(data: Prisma.AdminUncheckedCreateInput) {
 }
 
 async function ensureOperator(data: Prisma.OperatorUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.operator.findFirst({
     where: {
       OR: [{ email: data.email }, { employeeCode: data.employeeCode }],
@@ -51,6 +117,7 @@ async function ensureOperator(data: Prisma.OperatorUncheckedCreateInput) {
 }
 
 async function ensureStaff(data: Prisma.StaffUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.staff.findFirst({
     where: {
       OR: [{ email: data.email }, { employeeCode: data.employeeCode }],
@@ -68,6 +135,7 @@ async function ensureStaff(data: Prisma.StaffUncheckedCreateInput) {
 }
 
 async function ensureUser(data: Prisma.UserUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const orConditions: Prisma.UserWhereInput[] = [{ email: data.email }];
 
   if (data.taxCode) {
@@ -93,6 +161,7 @@ async function ensureUser(data: Prisma.UserUncheckedCreateInput) {
 }
 
 async function ensureGuest(data: Prisma.GuestUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.guest.findUnique({
     where: { email: data.email },
   });
@@ -111,6 +180,7 @@ async function ensureApartment(
   where: Prisma.ApartmentWhereInput,
   data: Prisma.ApartmentUncheckedCreateInput,
 ) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.apartment.findFirst({ where });
 
   if (existing) {
@@ -124,6 +194,7 @@ async function ensureApartment(
 }
 
 async function ensureContract(data: Prisma.RentalContractUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.rentalContract.findUnique({
     where: { contractNumber: data.contractNumber },
   });
@@ -139,6 +210,7 @@ async function ensureContract(data: Prisma.RentalContractUncheckedCreateInput) {
 }
 
 async function ensureInvoice(data: Prisma.InvoiceUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.invoice.findUnique({
     where: { invoiceNumber: data.invoiceNumber },
   });
@@ -154,6 +226,7 @@ async function ensureInvoice(data: Prisma.InvoiceUncheckedCreateInput) {
 }
 
 async function ensurePayment(data: Prisma.PaymentUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.payment.findUnique({
     where: { paymentReference: data.paymentReference },
   });
@@ -169,6 +242,7 @@ async function ensurePayment(data: Prisma.PaymentUncheckedCreateInput) {
 }
 
 async function ensureUtilityMeter(data: Prisma.UtilityMeterUncheckedCreateInput) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.utilityMeter.findUnique({
     where: { meterNumber: data.meterNumber },
   });
@@ -186,6 +260,7 @@ async function ensureUtilityMeter(data: Prisma.UtilityMeterUncheckedCreateInput)
 async function ensureUtilityReading(
   data: Prisma.UtilityReadingUncheckedCreateInput,
 ) {
+  data = sanitizeSeedValue(data);
   const existing = await prisma.utilityReading.findFirst({
     where: {
       utilityMeterId: data.utilityMeterId,
@@ -341,7 +416,7 @@ async function ensurePartnerPayoutTransfer(
 }
 
 async function main() {
-  console.log('đŸŒ± Starting database seed...');
+  console.log('🌱 Starting database seed...');
 
   // ============================================================================
   // ADMINS
@@ -352,7 +427,7 @@ async function main() {
   const admin1 = await ensureAdmin({
     email: 'superadmin@intellirentops.vn',
     phone: '+84909111222',
-    fullName: 'Nguyá»…n VÄƒn Admin',
+    fullName: 'Nguyễn Văn Admin',
     username: 'superadmin',
     passwordHash: adminPassword,
     roleLevel: 'super_admin',
@@ -362,7 +437,7 @@ async function main() {
   const admin2 = await ensureAdmin({
     email: 'admin@intellirentops.vn',
     phone: '+84909111333',
-    fullName: 'Tráº§n Thá»‹ Quáº£n LĂ½',
+    fullName: 'Trần Thị Quản Lý',
     username: 'admin',
     passwordHash: adminPassword,
     roleLevel: 'admin',
@@ -378,7 +453,7 @@ async function main() {
   const operator1 = await ensureOperator({
     email: 'operator1@intellirentops.vn',
     phone: '+84909222111',
-    fullName: 'LĂª VÄƒn Äiá»u HĂ nh',
+    fullName: 'Lê Văn Điều Hành',
     employeeCode: 'OP-001',
     shift: 'morning',
     passwordHash: operatorPassword,
@@ -388,7 +463,7 @@ async function main() {
   const operator2 = await ensureOperator({
     email: 'operator2@intellirentops.vn',
     phone: '+84909222222',
-    fullName: 'Pháº¡m Thá»‹ Há»— Trá»£',
+    fullName: 'Phạm Thị Hỗ Trợ',
     employeeCode: 'OP-002',
     shift: 'afternoon',
     passwordHash: operatorPassword,
@@ -404,13 +479,13 @@ async function main() {
   const staff1 = await ensureStaff({
     email: 'staff1@intellirentops.vn',
     phone: '+84909333111',
-    fullName: 'HoĂ ng VÄƒn Ká»¹ Thuáº­t',
+    fullName: 'Hoàng Văn Kỹ Thuật',
     employeeCode: 'ST-001',
     role: 'technician',
-    department: 'Ká»¹ thuáº­t',
+    department: 'Kỹ thuật',
     passwordHash: staffPassword,
-    workingCity: 'Há»“ ChĂ­ Minh',
-    workingDistrict: 'Quáº­n 1',
+    workingCity: 'Hồ Chí Minh',
+    workingDistrict: 'Quận 1',
     hireDate: new Date('2024-01-15'),
     isActive: true,
   });
@@ -418,13 +493,13 @@ async function main() {
   const staff2 = await ensureStaff({
     email: 'staff2@intellirentops.vn',
     phone: '+84909333222',
-    fullName: 'NgĂ´ Thá»‹ ChÄƒm SĂ³c',
+    fullName: 'Ngô Thị Chăm Sóc',
     employeeCode: 'ST-002',
     role: 'customer_service',
     department: 'CSKH',
     passwordHash: staffPassword,
-    workingCity: 'Há»“ ChĂ­ Minh',
-    workingDistrict: 'Quáº­n 7',
+    workingCity: 'Hồ Chí Minh',
+    workingDistrict: 'Quận 7',
     hireDate: new Date('2024-03-01'),
     isActive: true,
   });
@@ -432,13 +507,13 @@ async function main() {
   const staff3 = await ensureStaff({
     email: 'staff3@intellirentops.vn',
     phone: '+84909333333',
-    fullName: 'Äá»— VÄƒn Báº£o TrĂ¬',
+    fullName: 'Đỗ Văn Bảo Trì',
     employeeCode: 'ST-003',
     role: 'maintenance',
-    department: 'Báº£o trĂ¬',
+    department: 'Bảo trì',
     passwordHash: staffPassword,
-    workingCity: 'Há»“ ChĂ­ Minh',
-    workingDistrict: 'Quáº­n 2',
+    workingCity: 'Hồ Chí Minh',
+    workingDistrict: 'Quận 2',
     hireDate: new Date('2024-06-01'),
     isActive: true,
   });
@@ -452,8 +527,8 @@ async function main() {
   const partner1 = await ensureUser({
     email: 'partner1@gmail.com',
     phone: '+84909444111',
-    fullName: 'VĂµ VÄƒn Chá»§ NhĂ ',
-    companyName: 'CĂ´ng ty BÄS PhĂº Má»¹',
+    fullName: 'Võ Văn Chủ Nhà',
+    companyName: 'Công ty BĐS Phú Mỹ',
     taxCode: '0312345678',
     passwordHash: partnerPassword,
     bankName: 'Vietcombank',
@@ -467,8 +542,8 @@ async function main() {
   const partner2 = await ensureUser({
     email: 'partner2@gmail.com',
     phone: '+84909444222',
-    fullName: 'TrÆ°Æ¡ng Thá»‹ Äáº§u TÆ°',
-    companyName: 'CĂ´ng ty Äáº§u tÆ° HoĂ ng Gia',
+    fullName: 'Trương Thị Đầu Tư',
+    companyName: 'Công ty Đầu tư Hoàng Gia',
     taxCode: '0398765432',
     passwordHash: partnerPassword,
     bankName: 'Techcombank',
@@ -488,10 +563,10 @@ async function main() {
   const user1 = await ensureUser({
     email: 'user1@gmail.com',
     phone: '+84909555111',
-    fullName: 'Nguyá»…n VÄƒn ThuĂª',
+    fullName: 'Nguyễn Văn Thuê',
     passwordHash: userPassword,
     dateOfBirth: new Date('1990-05-15'),
-    emergencyContactName: 'Nguyá»…n VÄƒn Cha',
+    emergencyContactName: 'Nguyễn Văn Cha',
     emergencyContactPhone: '+84909555999',
     isActive: true,
     isVerified: true,
@@ -501,10 +576,10 @@ async function main() {
   const user2 = await ensureUser({
     email: 'user2@gmail.com',
     phone: '+84909555222',
-    fullName: 'Tráº§n Thá»‹ á» Trá»',
+    fullName: 'Trần Thị Ở Trọ',
     passwordHash: userPassword,
     dateOfBirth: new Date('1995-08-20'),
-    emergencyContactName: 'Tráº§n VÄƒn Máº¹',
+    emergencyContactName: 'Trần Văn Mẹ',
     emergencyContactPhone: '+84909555888',
     isActive: true,
     isVerified: true,
@@ -514,7 +589,7 @@ async function main() {
   const user3 = await ensureUser({
     email: 'user3@gmail.com',
     phone: '+84909555333',
-    fullName: 'LĂª Minh KhĂ¡ch',
+    fullName: 'Lê Minh Khách',
     passwordHash: userPassword,
     dateOfBirth: new Date('1988-12-10'),
     isActive: true,
@@ -542,14 +617,14 @@ async function main() {
   const guest1 = await ensureGuest({
     email: 'guest1@gmail.com',
     phone: '+84909666111',
-    fullName: 'KhĂ¡ch Xem NhĂ  1',
+    fullName: 'Khách Xem Nhà 1',
     preferredContactMethod: 'phone',
   });
 
   const guest2 = await ensureGuest({
     email: 'guest2@gmail.com',
     phone: '+84909666222',
-    fullName: 'KhĂ¡ch Xem NhĂ  2',
+    fullName: 'Khách Xem Nhà 2',
     preferredContactMethod: 'both',
   });
 
@@ -575,15 +650,15 @@ async function main() {
       numberOfBathrooms: 2,
       floorNumber: 23,
       wardCode: 26728,
-      streetAddress: '208 Nguyá»…n Há»¯u Cáº£nh, PhÆ°á»ng 22',
+      streetAddress: '208 Nguyễn Hữu Cảnh, Phường 22',
       latitude: new Prisma.Decimal(10.7915),
       longitude: new Prisma.Decimal(106.7218),
       baseRentPrice: new Prisma.Decimal(25000000),
       depositAmount: new Prisma.Decimal(50000000),
       furnishingStatus: 'fully_furnished',
-      amenities: ['Há»“ bÆ¡i', 'Gym', 'CĂ´ng viĂªn', 'SiĂªu thá»‹', 'Báº£o vá»‡ 24/7'],
+      amenities: ['Hồ bơi', 'Gym', 'Công viên', 'Siêu thị', 'Bảo vệ 24/7'],
       description:
-        'CÄƒn há»™ cao cáº¥p view sĂ´ng SĂ i GĂ²n, ná»™i tháº¥t Ä‘áº§y Ä‘á»§, tiá»‡n Ă­ch 5 sao',
+        'Căn hộ cao cấp view sông Sài Gòn, nội thất đầy đủ, tiện ích 5 sao',
       status: 'available',
       ownerId: partner1.id,
       approvedByOperatorId: operator1.id,
@@ -594,21 +669,21 @@ async function main() {
   const apt2 = await ensureApartment(
     { apartmentNumber: 'T2-1505' },
     {
-      buildingName: 'Masteri Tháº£o Äiá»n',
+      buildingName: 'Masteri Thảo Điền',
       apartmentNumber: 'T2-1505',
       totalArea: new Prisma.Decimal(70.0),
       numberOfBedrooms: 2,
       numberOfBathrooms: 2,
       floorNumber: 15,
       wardCode: 26728,
-      streetAddress: '159 Xa Lá»™ HĂ  Ná»™i, PhÆ°á»ng Tháº£o Äiá»n',
+      streetAddress: '159 Xa Lộ Hà Nội, Phường Thảo Điền',
       latitude: new Prisma.Decimal(10.8024),
       longitude: new Prisma.Decimal(106.7398),
       baseRentPrice: new Prisma.Decimal(18000000),
       depositAmount: new Prisma.Decimal(36000000),
       furnishingStatus: 'fully_furnished',
-      amenities: ['Há»“ bÆ¡i', 'Gym', 'BBQ', 'SĂ¢n chÆ¡i tráº» em'],
-      description: 'CÄƒn há»™ hiá»‡n Ä‘áº¡i gáº§n Metro, view thĂ nh phá»‘',
+      amenities: ['Hồ bơi', 'Gym', 'BBQ', 'Sân chơi trẻ em'],
+      description: 'Căn hộ hiện đại gần Metro, view thành phố',
       status: 'occupied',
       ownerId: partner1.id,
       approvedByOperatorId: operator1.id,
@@ -626,14 +701,14 @@ async function main() {
       numberOfBathrooms: 1,
       floorNumber: 8,
       wardCode: 26728,
-      streetAddress: '92 Nguyá»…n Há»¯u Cáº£nh, PhÆ°á»ng 22',
+      streetAddress: '92 Nguyễn Hữu Cảnh, Phường 22',
       latitude: new Prisma.Decimal(10.788),
       longitude: new Prisma.Decimal(106.7195),
       baseRentPrice: new Prisma.Decimal(12000000),
       depositAmount: new Prisma.Decimal(24000000),
       furnishingStatus: 'semi_furnished',
-      amenities: ['Há»“ bÆ¡i', 'Gym'],
-      description: 'CÄƒn há»™ 1 phĂ²ng ngá»§, phĂ¹ há»£p Ä‘á»™c thĂ¢n hoáº·c cáº·p Ä‘Ă´i',
+      amenities: ['Hồ bơi', 'Gym'],
+      description: 'Căn hộ 1 phòng ngủ, phù hợp độc thân hoặc cặp đôi',
       status: 'available',
       ownerId: partner2.id,
       approvedByOperatorId: operator1.id,
@@ -651,14 +726,14 @@ async function main() {
       numberOfBathrooms: 2,
       floorNumber: 20,
       wardCode: 26728,
-      streetAddress: '89 Nguyá»…n Há»¯u Cáº£nh, PhÆ°á»ng 22',
+      streetAddress: '89 Nguyễn Hữu Cảnh, Phường 22',
       latitude: new Prisma.Decimal(10.7905),
       longitude: new Prisma.Decimal(106.719),
       baseRentPrice: new Prisma.Decimal(35000000),
       depositAmount: new Prisma.Decimal(70000000),
       furnishingStatus: 'fully_furnished',
-      amenities: ['Há»“ bÆ¡i', 'Gym', 'Spa', 'SĂ¢n tennis', 'NhĂ  hĂ ng'],
-      description: 'Penthouse view panorama, ná»™i tháº¥t sang trá»ng',
+      amenities: ['Hồ bơi', 'Gym', 'Spa', 'Sân tennis', 'Nhà hàng'],
+      description: 'Penthouse view panorama, nội thất sang trọng',
       status: 'available',
       ownerId: partner2.id,
       approvedByOperatorId: operator1.id,
@@ -673,7 +748,7 @@ async function main() {
 
   await prisma.room.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         apartmentId: apt1.id,
         roomNumber: 'PN-01',
@@ -716,7 +791,7 @@ async function main() {
         area: new Prisma.Decimal(25.0),
         status: 'occupied',
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -767,7 +842,7 @@ async function main() {
 
   await prisma.userContractMember.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         rentalContractId: contract1.id,
         userId: user1.id,
@@ -798,7 +873,7 @@ async function main() {
         moveInDate: new Date('2026-03-15'),
         status: 'active',
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -808,7 +883,7 @@ async function main() {
 
   await prisma.userApartment.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         userId: user1.id,
         apartmentId: apt2.id,
@@ -840,7 +915,7 @@ async function main() {
         emergencyContactPhone: '+84909555777',
         notes: 'Demo tenant access package for lecturer showcase.',
       },
-    ],
+    ]),
   });
 
   const activeRentalContracts = await prisma.rentalContract.findMany({
@@ -883,7 +958,7 @@ async function main() {
 
   await prisma.apartment.update({
     where: { id: apt4.id },
-    data: { status: 'occupied' },
+    data: sanitizeSeedValue({ status: 'occupied' }),
   });
 
   // ============================================================================
@@ -893,7 +968,7 @@ async function main() {
 
   await prisma.partnerCooperationContract.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         contractNumber: 'PCC-2026-00001',
         apartmentId: apt2.id,
@@ -918,7 +993,7 @@ async function main() {
         signedAt: new Date('2026-03-01'),
         notes: 'Demo partner cooperation for premium unit.',
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -928,36 +1003,36 @@ async function main() {
 
   await prisma.ioTDevice.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         apartmentId: apt2.id,
-        deviceName: 'KhĂ³a cá»­a thĂ´ng minh',
+        deviceName: 'Khóa cửa thông minh',
         deviceType: 'smart_lock',
         status: 'active',
         isControllableByTenant: true,
       },
       {
         apartmentId: apt2.id,
-        deviceName: 'Äiá»u hĂ²a Daikin',
+        deviceName: 'Điều hòa Daikin',
         deviceType: 'thermostat',
         status: 'active',
         isControllableByTenant: true,
       },
       {
         apartmentId: apt1.id,
-        deviceName: 'ÄĂ¨n phĂ²ng khĂ¡ch',
+        deviceName: 'Đèn phòng khách',
         deviceType: 'light',
         status: 'active',
         isControllableByTenant: true,
       },
       {
         apartmentId: apt1.id,
-        deviceName: 'Camera cá»­a',
+        deviceName: 'Camera cửa',
         deviceType: 'camera',
         status: 'active',
         isControllableByTenant: false,
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1015,7 +1090,7 @@ async function main() {
   console.log('Creating utility readings...');
 
   await prisma.utilityReading.createMany({
-    data: [
+    data: sanitizeSeedValue([
       {
         utilityMeterId: meter1.id,
         readingValue: new Prisma.Decimal(1100),
@@ -1070,7 +1145,7 @@ async function main() {
         readingDate: new Date('2026-04-30'),
         readingType: 'manual',
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1088,9 +1163,9 @@ async function main() {
       baseRent: new Prisma.Decimal(18000000),
       totalAmount: new Prisma.Decimal(19900000),
       additionalCharges: [
-        { description: 'Tiá»n Ä‘iá»‡n', amount: 350000 },
-        { description: 'Tiá»n nÆ°á»›c', amount: 150000 },
-        { description: 'PhĂ­ quáº£n lĂ½', amount: 1500000 },
+        { description: 'Tiền điện', amount: 350000 },
+        { description: 'Tiền nước', amount: 150000 },
+        { description: 'Phí quản lý', amount: 1500000 },
       ],
       status: 'paid',
       paidAt: new Date('2026-02-03'),
@@ -1106,9 +1181,9 @@ async function main() {
       baseRent: new Prisma.Decimal(18000000),
       totalAmount: new Prisma.Decimal(20275000),
       additionalCharges: [
-        { description: 'Tiá»n Ä‘iá»‡n', amount: 525000 },
-        { description: 'Tiá»n nÆ°á»›c', amount: 375000 },
-        { description: 'PhĂ­ quáº£n lĂ½', amount: 1500000 },
+        { description: 'Tiền điện', amount: 525000 },
+        { description: 'Tiền nước', amount: 375000 },
+        { description: 'Phí quản lý', amount: 1500000 },
       ],
       status: 'issued',
   });
@@ -1180,12 +1255,12 @@ async function main() {
       transactionId: 'TXN-001',
       paymentDate: new Date('2026-02-03'),
       status: 'completed',
-      notes: 'Thanh toĂ¡n tiá»n thuĂª thĂ¡ng 1/2026',
+      notes: 'Thanh toán tiền thuê tháng 1/2026',
   });
 
   await prisma.payment.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         invoiceId: invoice3.id,
         userId: user4.id,
@@ -1208,7 +1283,7 @@ async function main() {
         status: 'completed',
         notes: 'Demo tenant payment for premium apartment period 2',
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1218,7 +1293,7 @@ async function main() {
 
   await prisma.apartment.update({
     where: { id: apt2.id },
-    data: { status: 'occupied' },
+    data: sanitizeSeedValue({ status: 'occupied' }),
   });
 
   const utilityDemoReference = new Date(Date.UTC(2026, 3, 1, 0, 0, 0, 0));
@@ -1334,22 +1409,22 @@ async function main() {
 
   await prisma.utilityMeter.update({
     where: { id: meter1.id },
-    data: {
+    data: sanitizeSeedValue({
       previousReading: new Prisma.Decimal(latestElectricPrevious),
       currentReading: new Prisma.Decimal(latestElectricCurrent),
       readingDate: monthEndUtc(utilityDemoReference, 0),
       status: 'active',
-    },
+    }),
   });
 
   await prisma.utilityMeter.update({
     where: { id: meter2.id },
-    data: {
+    data: sanitizeSeedValue({
       previousReading: new Prisma.Decimal(latestWaterPrevious),
       currentReading: new Prisma.Decimal(latestWaterCurrent),
       readingDate: monthEndUtc(utilityDemoReference, 0),
       status: 'active',
-    },
+    }),
   });
 
   // ============================================================================
@@ -1377,16 +1452,16 @@ async function main() {
   console.log('Creating contact requests...');
 
   await prisma.contactRequest.createMany({
-    data: [
+    data: sanitizeSeedValue([
       {
         guestId: guest1.id,
         apartmentId: apt1.id,
-        fullName: 'KhĂ¡ch Xem NhĂ  1',
+        fullName: 'Khách Xem Nhà 1',
         email: 'guest1@gmail.com',
         phone: '+84909666111',
-        message: 'TĂ´i muá»‘n xem cÄƒn há»™ nĂ y vĂ o cuá»‘i tuáº§n',
+        message: 'Tôi muốn xem căn hộ này vào cuối tuần',
         preferredContactMethod: 'phone',
-        preferredContactTime: 'SĂ¡ng thá»© 7',
+        preferredContactTime: 'Sáng thứ 7',
         preferredMoveInDate: new Date('2026-04-01'),
         numberOfOccupants: 2,
         source: 'website',
@@ -1395,10 +1470,10 @@ async function main() {
       {
         guestId: guest2.id,
         apartmentId: apt3.id,
-        fullName: 'KhĂ¡ch Xem NhĂ  2',
+        fullName: 'Khách Xem Nhà 2',
         email: 'guest2@gmail.com',
         phone: '+84909666222',
-        message: 'CÄƒn há»™ nĂ y cĂ³ cho nuĂ´i thĂº cÆ°ng khĂ´ng?',
+        message: 'Căn hộ này có cho nuôi thú cưng không?',
         preferredContactMethod: 'both',
         source: 'mobile_app',
         status: 'contacted',
@@ -1419,7 +1494,7 @@ async function main() {
         assignedToOperatorId: operator1.id,
         firstContactedAt: new Date('2026-03-02T09:00:00'),
       },
-    ],
+    ]),
   });
 
   const demoContactRequest = await prisma.contactRequest.findFirstOrThrow({
@@ -1431,7 +1506,7 @@ async function main() {
   });
 
   await prisma.bookingRequest.create({
-    data: {
+    data: sanitizeSeedValue({
       guestId: guest3.id,
       apartmentId: apt4.id,
       contactRequestId: demoContactRequest.id,
@@ -1445,7 +1520,7 @@ async function main() {
       approvedByOperatorId: operator1.id,
       approvedAt: new Date('2026-03-05T10:00:00'),
       createdRentalContractId: contract3.id,
-    },
+    }),
   });
 
   await ensureReservation({
@@ -1466,22 +1541,22 @@ async function main() {
   console.log('Creating appointments...');
 
   await prisma.appointment.create({
-    data: {
+    data: sanitizeSeedValue({
       apartmentId: apt1.id,
       guestId: guest1.id,
       assignedStaffId: staff2.id,
       appointmentDate: new Date('2026-02-15'),
       appointmentTime: new Date('2026-02-15T10:00:00'),
       durationMinutes: 30,
-      meetingLocation: 'Sáº£nh táº§ng 1 - Vinhomes Central Park',
+      meetingLocation: 'Sảnh tầng 1 - Vinhomes Central Park',
       type: 'physical_viewing',
       status: 'scheduled',
-      staffNotes: 'KhĂ¡ch quan tĂ¢m cÄƒn 2PN, háº¹n xem 10h sĂ¡ng',
-    },
+      staffNotes: 'Khách quan tâm căn 2PN, hẹn xem 10h sáng',
+    }),
   });
 
   await prisma.appointment.create({
-    data: {
+    data: sanitizeSeedValue({
       apartmentId: apt4.id,
       guestId: guest3.id,
       contactRequestId: demoContactRequest.id,
@@ -1496,7 +1571,7 @@ async function main() {
       followupRequired: false,
       guestNotes: 'Needs move-in before mid-March.',
       staffNotes: 'Guest liked the view and agreed to reserve immediately.',
-    },
+    }),
   });
 
   // ============================================================================
@@ -1505,14 +1580,14 @@ async function main() {
   console.log('Creating maintenance requests...');
 
   await prisma.maintenanceRequest.createMany({
-    data: [
+    data: sanitizeSeedValue([
       {
         rentalContractId: contract1.id,
         apartmentId: apt2.id,
         userId: user1.id,
-        title: 'Äiá»u hĂ²a khĂ´ng mĂ¡t',
+        title: 'Điều hòa không mát',
         description:
-          'Äiá»u hĂ²a phĂ²ng khĂ¡ch báº­t lĂªn nhÆ°ng khĂ´ng ra hÆ¡i láº¡nh, Ä‘Ă£ thá»­ nhiá»u láº§n',
+          'Điều hòa phòng khách bật lên nhưng không ra hơi lạnh, đã thử nhiều lần',
         category: 'hvac',
         urgency: 'medium',
         preferredDate: new Date('2026-02-12'),
@@ -1522,14 +1597,14 @@ async function main() {
         rentalContractId: contract1.id,
         apartmentId: apt2.id,
         userId: user1.id,
-        title: 'Bá»“n rá»­a bá»‹ ngháº¹t',
-        description: 'Bá»“n rá»­a chĂ©n thoĂ¡t nÆ°á»›c ráº¥t cháº­m',
+        title: 'Bồn rửa bị nghẹt',
+        description: 'Bồn rửa chén thoát nước rất chậm',
         category: 'plumbing',
         urgency: 'low',
         status: 'completed',
         completedAt: new Date('2026-02-01'),
         completionNotes:
-          'ÄĂ£ thĂ´ng á»‘ng thoĂ¡t, hÆ°á»›ng dáº«n khĂ¡ch sá»­ dá»¥ng Ä‘Ăºng cĂ¡ch',
+          'Đã thông ống thoát, hướng dẫn khách sử dụng đúng cách',
         actualCost: new Prisma.Decimal(150000),
         costCoveredBy: 'landlord',
       },
@@ -1547,7 +1622,7 @@ async function main() {
         status: 'scheduled',
         costEstimate: new Prisma.Decimal(250000),
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1557,7 +1632,7 @@ async function main() {
 
   await prisma.apartmentRating.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         apartmentId: apt2.id,
         userId: user1.id,
@@ -1572,7 +1647,7 @@ async function main() {
         rating: 5,
         comment: 'Premium apartment with stable operations, ideal for demo.',
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1592,7 +1667,7 @@ async function main() {
       }
     ).ticket.createMany({
       skipDuplicates: true,
-      data: [
+      data: sanitizeSeedValue([
         {
           ticketNumber: 'TKT-2026-00001',
           userId: user1.id,
@@ -1615,7 +1690,7 @@ async function main() {
           priority: 'low',
           status: 'in_progress',
         },
-      ],
+      ]),
     });
   } else {
     console.log('Skipping ticket seed because Ticket model is not present.');
@@ -1628,10 +1703,10 @@ async function main() {
 
   await prisma.task.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
-        title: 'Kiá»ƒm tra Ä‘iá»u hĂ²a cÄƒn P1-2301',
-        description: 'KhĂ¡ch bĂ¡o Ä‘iá»u hĂ²a khĂ´ng mĂ¡t, cáº§n kiá»ƒm tra vĂ  sá»­a chá»¯a',
+        title: 'Kiểm tra điều hòa căn P1-2301',
+        description: 'Khách báo điều hòa không mát, cần kiểm tra và sửa chữa',
         taskType: 'maintenance',
         priority: 'medium',
         status: 'assigned',
@@ -1642,8 +1717,8 @@ async function main() {
         estimatedDurationMins: 60,
       },
       {
-        title: 'Follow up khĂ¡ch xem nhĂ ',
-        description: 'Gá»i Ä‘iá»‡n follow up khĂ¡ch Ä‘Ă£ háº¹n xem cÄƒn Vinhomes',
+        title: 'Follow up khách xem nhà',
+        description: 'Gọi điện follow up khách đã hẹn xem căn Vinhomes',
         taskType: 'followup',
         priority: 'high',
         status: 'pending',
@@ -1652,8 +1727,8 @@ async function main() {
         estimatedDurationMins: 15,
       },
       {
-        title: 'BĂ n giao cÄƒn há»™ má»›i',
-        description: 'BĂ n giao cÄƒn P1-2301 cho khĂ¡ch thuĂª má»›i',
+        title: 'Bàn giao căn hộ mới',
+        description: 'Bàn giao căn P1-2301 cho khách thuê mới',
         taskType: 'delivery',
         priority: 'high',
         status: 'completed',
@@ -1662,9 +1737,9 @@ async function main() {
         assignedByOperatorId: operator1.id,
         actualStartTime: new Date('2026-01-01T09:00:00'),
         actualEndTime: new Date('2026-01-01T11:00:00'),
-        completionNotes: 'ÄĂ£ bĂ n giao Ä‘áº§y Ä‘á»§, khĂ¡ch hĂ i lĂ²ng',
+        completionNotes: 'Đã bàn giao đầy đủ, khách hài lòng',
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1675,14 +1750,14 @@ async function main() {
   await ensurePartnerRequest({
     userId: partner1.id,
     propertyType: 'apartment',
-    address: '500 Äiá»‡n BiĂªn Phá»§, Quáº­n 3',
-    city: 'Há»“ ChĂ­ Minh',
-    district: 'Quáº­n 3',
+    address: '500 Điện Biên Phủ, Quận 3',
+    city: 'Hồ Chí Minh',
+    district: 'Quận 3',
     totalArea: new Prisma.Decimal(200),
     numberOfUnits: 3,
     expectedRentPrice: new Prisma.Decimal(15000000),
-    description: 'TĂ²a nhĂ  3 cÄƒn há»™ cho thuĂª',
-    amenities: ['Thang mĂ¡y', 'Báº£o vá»‡', 'Háº§m xe'],
+    description: 'Tòa nhà 3 căn hộ cho thuê',
+    amenities: ['Thang máy', 'Bảo vệ', 'Hầm xe'],
     status: 'submitted',
   });
 
@@ -1693,12 +1768,12 @@ async function main() {
 
   await prisma.policy.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         policyType: 'building_regulations',
-        title: 'Ná»™i quy tĂ²a nhĂ ',
+        title: 'Nội quy tòa nhà',
         content:
-          'CÆ° dĂ¢n pháº£i tuĂ¢n thá»§ giá» giáº¥c sinh hoáº¡t chung. KhĂ´ng gĂ¢y tiáº¿ng á»“n lá»›n sau 22h. Giá»¯ gĂ¬n vá»‡ sinh khu vá»±c chung. KhĂ´ng xáº£ rĂ¡c ngoĂ i nÆ¡i quy Ä‘á»‹nh...',
+          'Cư dân phải tuân thủ giờ giấc sinh hoạt chung. Không gây tiếng ồn lớn sau 22h. Giữ gìn vệ sinh khu vực chung. Không xả rác ngoài nơi quy định...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
@@ -1711,9 +1786,9 @@ async function main() {
       },
       {
         policyType: 'parking_rules',
-        title: 'Quy Ä‘á»‹nh Ä‘á»— xe',
+        title: 'Quy định đỗ xe',
         content:
-          'Má»—i cÄƒn há»™ Ä‘Æ°á»£c phĂ¢n bá»• 1 chá»— Ä‘á»— xe Ă´ tĂ´ vĂ  2 chá»— Ä‘á»— xe mĂ¡y. Äá»— Ä‘Ăºng vá»‹ trĂ­ quy Ä‘á»‹nh. Tá»‘c Ä‘á»™ tá»‘i Ä‘a trong háº§m 5km/h...',
+          'Mỗi căn hộ được phân bổ 1 chỗ đỗ xe ô tô và 2 chỗ đỗ xe máy. Đỗ đúng vị trí quy định. Tốc độ tối đa trong hầm 5km/h...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
@@ -1726,9 +1801,9 @@ async function main() {
       },
       {
         policyType: 'pet_policy',
-        title: 'Quy Ä‘á»‹nh nuĂ´i thĂº cÆ°ng',
+        title: 'Quy định nuôi thú cưng',
         content:
-          'Cho phĂ©p nuĂ´i thĂº cÆ°ng nhá» (dÆ°á»›i 10kg). Pháº£i Ä‘Äƒng kĂ½ vá»›i ban quáº£n lĂ½. Khi ra khu vá»±c chung pháº£i cĂ³ dĂ¢y xĂ­ch vĂ  tĂºi dá»n vá»‡ sinh...',
+          'Cho phép nuôi thú cưng nhỏ (dưới 10kg). Phải đăng ký với ban quản lý. Khi ra khu vực chung phải có dây xích và túi dọn vệ sinh...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
@@ -1739,9 +1814,9 @@ async function main() {
       },
       {
         policyType: 'rental_rules',
-        title: 'Quy Ä‘á»‹nh cho thuĂª cÄƒn há»™',
+        title: 'Quy định cho thuê căn hộ',
         content:
-          'CĂ¡c quy Ä‘á»‹nh vá» viá»‡c thuĂª vĂ  sá»­ dá»¥ng cÄƒn há»™. CÆ° dĂ¢n khĂ´ng Ä‘Æ°á»£c tá»± Ă½ sá»­a chá»¯a káº¿t cáº¥u cÄƒn há»™. BĂ¡o ngay cho ban quáº£n lĂ½ khi cĂ³ sá»± cá»‘...',
+          'Các quy định về việc thuê và sử dụng căn hộ. Cư dân không được tự ý sửa chữa kết cấu căn hộ. Báo ngay cho ban quản lý khi có sự cố...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
@@ -1754,9 +1829,9 @@ async function main() {
       },
       {
         policyType: 'noise_policy',
-        title: 'Quy Ä‘á»‹nh tiáº¿ng á»“n',
+        title: 'Quy định tiếng ồn',
         content:
-          'Giá» yĂªn tÄ©nh: 22h00 - 06h00. KhĂ´ng sá»­ dá»¥ng thiáº¿t bá»‹ gĂ¢y tiáº¿ng á»“n lá»›n vĂ o giá» yĂªn tÄ©nh. Thi cĂ´ng sá»­a chá»¯a chá»‰ Ä‘Æ°á»£c phĂ©p tá»« 08h-17h ngĂ y thÆ°á»ng...',
+          'Giờ yên tĩnh: 22h00 - 06h00. Không sử dụng thiết bị gây tiếng ồn lớn vào giờ yên tĩnh. Thi công sửa chữa chỉ được phép từ 08h-17h ngày thường...',
         version: '1.0',
         language: 'vi',
         effectiveDate: new Date('2026-01-01'),
@@ -1767,7 +1842,7 @@ async function main() {
         approvedByAdminId: admin1.id,
         approvedAt: new Date('2025-12-20'),
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1788,14 +1863,14 @@ async function main() {
       }
     ).legalDocument.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         documentType: 'contract_template',
-        title: 'Máº«u há»£p Ä‘á»“ng thuĂª nhĂ ',
-        description: 'Máº«u há»£p Ä‘á»“ng thuĂª nhĂ  tiĂªu chuáº©n',
+        title: 'Mẫu hợp đồng thuê nhà',
+        description: 'Mẫu hợp đồng thuê nhà tiêu chuẩn',
         fileUrl: '/documents/contract_template_v1.pdf',
         fileType: 'pdf',
-        category: 'Há»£p Ä‘á»“ng',
+        category: 'Hợp đồng',
         language: 'vi',
         version: '1.0',
         isTemplate: true,
@@ -1805,18 +1880,18 @@ async function main() {
       },
       {
         documentType: 'disclosure',
-        title: 'BiĂªn báº£n bĂ n giao cÄƒn há»™',
-        description: 'Máº«u biĂªn báº£n bĂ n giao khi vĂ o/ra cÄƒn há»™',
+        title: 'Biên bản bàn giao căn hộ',
+        description: 'Mẫu biên bản bàn giao khi vào/ra căn hộ',
         fileUrl: '/documents/handover_form_v1.pdf',
         fileType: 'pdf',
-        category: 'Biá»ƒu máº«u',
+        category: 'Biểu mẫu',
         language: 'vi',
         version: '1.0',
         isTemplate: true,
         isPublic: true,
         createdByAdminId: admin1.id,
       },
-    ],
+    ]),
   });
 
   // ============================================================================
@@ -1826,13 +1901,13 @@ async function main() {
 
   await prisma.notification.createMany({
     skipDuplicates: true,
-    data: [
+    data: sanitizeSeedValue([
       {
         recipientType: 'user',
         recipientId: user1.id,
-        title: 'HĂ³a Ä‘Æ¡n má»›i',
+        title: 'Hóa đơn mới',
         message:
-          'HĂ³a Ä‘Æ¡n thĂ¡ng 2/2026 Ä‘Ă£ Ä‘Æ°á»£c táº¡o. Vui lĂ²ng thanh toĂ¡n trÆ°á»›c ngĂ y 05/03/2026.',
+          'Hóa đơn tháng 2/2026 đã được tạo. Vui lòng thanh toán trước ngày 05/03/2026.',
         notificationType: 'info',
         channel: 'in_app',
         deliveryStatus: 'delivered',
@@ -1841,9 +1916,9 @@ async function main() {
       {
         recipientType: 'user',
         recipientId: user1.id,
-        title: 'YĂªu cáº§u báº£o trĂ¬ Ä‘Ă£ tiáº¿p nháº­n',
+        title: 'Yêu cầu bảo trì đã tiếp nhận',
         message:
-          'YĂªu cáº§u sá»­a Ä‘iá»u hĂ²a cá»§a báº¡n Ä‘Ă£ Ä‘Æ°á»£c tiáº¿p nháº­n. Ká»¹ thuáº­t viĂªn sáº½ liĂªn há»‡ sá»›m.',
+          'Yêu cầu sửa điều hòa của bạn đã được tiếp nhận. Kỹ thuật viên sẽ liên hệ sớm.',
         notificationType: 'success',
         channel: 'in_app',
         deliveryStatus: 'delivered',
@@ -1854,8 +1929,8 @@ async function main() {
       {
         recipientType: 'staff',
         recipientId: staff1.id,
-        title: 'Task má»›i Ä‘Æ°á»£c giao',
-        message: 'Báº¡n cĂ³ task má»›i: Kiá»ƒm tra Ä‘iá»u hĂ²a cÄƒn P1-2301',
+        title: 'Task mới được giao',
+        message: 'Bạn có task mới: Kiểm tra điều hòa căn P1-2301',
         notificationType: 'info',
         channel: 'in_app',
         deliveryStatus: 'delivered',
@@ -1874,7 +1949,7 @@ async function main() {
         isRead: true,
         readAt: new Date('2026-03-15'),
       },
-    ],
+    ]),
     });
   } else {
     console.log('Skipping legal document seed because LegalDocument model is not present.');
@@ -1886,13 +1961,13 @@ async function main() {
   console.log('Creating activity logs...');
 
   await prisma.activityLog.createMany({
-    data: [
+    data: sanitizeSeedValue([
       {
         actorType: 'user',
         actorId: user1.id,
         action: 'LOGIN',
         entityType: 'Session',
-        description: 'User Ä‘Äƒng nháº­p thĂ nh cĂ´ng',
+        description: 'User đăng nhập thành công',
         ipAddress: '118.69.123.45',
         userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0)',
         status: 'success',
@@ -1902,7 +1977,7 @@ async function main() {
         actorId: user1.id,
         action: 'CREATE_MAINTENANCE_REQUEST',
         entityType: 'MaintenanceRequest',
-        description: 'Táº¡o yĂªu cáº§u báº£o trĂ¬: Äiá»u hĂ²a khĂ´ng mĂ¡t',
+        description: 'Tạo yêu cầu bảo trì: Điều hòa không mát',
         status: 'success',
       },
       {
@@ -1910,7 +1985,7 @@ async function main() {
         actorId: staff1.id,
         action: 'COMPLETE_TASK',
         entityType: 'Task',
-        description: 'HoĂ n thĂ nh task: BĂ n giao cÄƒn há»™ má»›i',
+        description: 'Hoàn thành task: Bàn giao căn hộ mới',
         status: 'success',
       },
       {
@@ -1919,15 +1994,15 @@ async function main() {
         action: 'APPROVE_APARTMENT',
         entityType: 'Apartment',
         entityId: apt1.id,
-        description: 'PhĂª duyá»‡t cÄƒn há»™ má»›i tá»« partner',
+        description: 'Phê duyệt căn hộ mới từ partner',
         status: 'success',
       },
-    ],
+    ]),
   });
 
-  console.log('âœ… Database seeding completed!');
+  console.log('✅ Database seeding completed!');
   console.log('');
-  console.log('đŸ“ Summary:');
+  console.log('📊 Summary:');
   console.log('   - Admins: 2');
   console.log('   - Operators: 2');
   console.log('   - Staff: 3');
@@ -1959,7 +2034,7 @@ async function main() {
   console.log('   - Notifications: 4');
   console.log('   - Activity Logs: 4');
   console.log('');
-  console.log('đŸ”‘ Test Accounts:');
+  console.log('🔑 Test Accounts:');
   console.log('   Admin: superadmin@intellirentops.vn / Admin@123');
   console.log('   Operator: operator1@intellirentops.vn / Operator@123');
   console.log('   Staff: staff1@intellirentops.vn / Staff@123');
@@ -1970,7 +2045,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error('âŒ Seed failed:', e);
+    console.error('❌ Seed failed:', e);
     process.exit(1);
   })
   .finally(async () => {
