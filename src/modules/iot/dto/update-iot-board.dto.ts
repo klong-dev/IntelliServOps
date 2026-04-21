@@ -34,4 +34,12 @@ export class UpdateIoTBoardDto extends PartialType(
 
 export class UpdateIoTBoardDeviceDto extends PartialType(
   CreateIoTBoardDeviceDto,
-) {}
+) {
+  @ApiPropertyOptional({
+    enum: UPDATABLE_BOARD_STATUSES,
+    description: 'Optional runtime status for this board child device.',
+  })
+  @IsIn(UPDATABLE_BOARD_STATUSES)
+  @IsOptional()
+  status?: (typeof UPDATABLE_BOARD_STATUSES)[number];
+}

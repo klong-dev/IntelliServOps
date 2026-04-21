@@ -2830,6 +2830,9 @@ export class IoTService {
       ...(updateDto.deviceName !== undefined && {
         deviceName: updateDto.deviceName,
       }),
+      ...(updateDto.status !== undefined && {
+        status: updateDto.status,
+      }),
       ...(updateDto.topic !== undefined && {
         deviceType: this.mapTopicToDeviceType(updateDto.topic),
       }),

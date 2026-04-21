@@ -983,6 +983,85 @@ describe('IoTService', () => {
         }),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('should update board child device status', async () => {
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-04-02T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'device-123',
+          deviceName: 'Living Room Light',
+          deviceType: 'light',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'light',
+              deviceId: 2,
+              state: 'OFF',
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique
+        .mockResolvedValueOnce({
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'light',
+              deviceId: 2,
+              state: 'OFF',
+            },
+          },
+        } as any)
+        .mockResolvedValueOnce(
+          mockDeviceDetail({
+            id: 'device-123',
+            deviceName: 'Living Room Light',
+            deviceType: 'light',
+            status: IoTStatus.inactive,
+            configuration: {
+              mqtt: {
+                espId: 'ESP_A101',
+                boardName: 'A101 Main Board',
+                topic: 'light',
+                deviceId: 2,
+                state: 'OFF',
+              },
+            },
+          }) as any,
+        );
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+
+      const result = await service.updateBoardDevice('ESP_A101', 'device-123', {
+        status: IoTStatus.inactive,
+      });
+
+      expect(prisma.ioTDevice.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'device-123' },
+          data: expect.objectContaining({
+            status: IoTStatus.inactive,
+          }),
+        }),
+      );
+      expect(result).toMatchObject({
+        id: 'device-123',
+        status: IoTStatus.inactive,
+      });
+    });
   });
 
   describe('createDevice', () => {
