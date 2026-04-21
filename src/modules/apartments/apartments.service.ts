@@ -677,6 +677,7 @@ export class ApartmentsService {
     const {
       provinceCode,
       wardCode,
+      ownerId,
       keyword,
       minBedrooms,
       maxBedrooms,
@@ -736,6 +737,7 @@ export class ApartmentsService {
     }
 
     const where: Prisma.ApartmentWhereInput = {
+      ...(ownerId && { ownerId }),
       ...(status && { status }),
       ...(andConditions.length > 0 && { AND: andConditions }),
       ...((minBedrooms !== undefined || maxBedrooms !== undefined) && {
@@ -1254,6 +1256,10 @@ export class ApartmentsService {
     const imageUrls = media?.imageUrls ?? [];
     const videoUrl = media?.videoUrl;
     const shouldSetVerified = imageUrls.length > 0 && Boolean(videoUrl);
+    let provinceCode: number | undefined;
+    if (createDto.wardCode) {
+      provinceCode = await this.resolveProvinceCodeFromWard(createDto.wardCode);
+    }
     const slug = await this.generateUniqueApartmentSlug({
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
@@ -1265,6 +1271,7 @@ export class ApartmentsService {
       slug,
       floorNumber: createDto.floorNumber,
       wardCode: createDto.wardCode,
+      provinceCode,
       streetAddress: createDto.streetAddress,
       latitude: createDto.latitude,
       longitude: createDto.longitude,
@@ -1301,6 +1308,9 @@ export class ApartmentsService {
         id: true,
         slug: true,
         apartmentNumber: true,
+        wardCode: true,
+        provinceCode: true,
+        streetAddress: true,
         status: true,
         ownerId: true,
         images: true,

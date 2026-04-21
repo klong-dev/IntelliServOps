@@ -70,6 +70,22 @@ export class PartnerCooperationSubmitResultDto {
   @ApiProperty({ example: 'P-1205' })
   apartmentNumber: string;
 
+  @ApiPropertyOptional({
+    type: Number,
+    example: 26728,
+    nullable: true,
+    description: 'Mã phường/xã (v2)',
+  })
+  wardCode: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    example: 79,
+    nullable: true,
+    description: 'Mã tỉnh/thành (v2), auto-resolved từ wardCode',
+  })
+  provinceCode: number | null;
+
   @ApiProperty({
     enum: ApartmentStatus,
     example: ApartmentStatus.inactive,

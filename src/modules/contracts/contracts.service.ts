@@ -83,6 +83,12 @@ type MeterReadingSnapshot = {
   consumption: number | null;
 };
 
+type DoorPasswordSyncResult = {
+  success: boolean;
+  skipped: boolean;
+  message: string;
+};
+
 @Injectable()
 export class ContractsService {
   private readonly logger = new Logger(ContractsService.name);
@@ -276,7 +282,7 @@ export class ContractsService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  private buildUserApartmentActivationOperations(contract: {
+  private async buildUserApartmentActivationOperations(contract: {
     id: string;
     apartmentId: string;
     startDate: Date;
@@ -286,10 +292,10 @@ export class ContractsService {
       memberType: MemberType;
       isPrimaryContact: boolean;
     }>;
-  }): {
+  }): Promise<{
     operations: Prisma.PrismaPromise<any>[];
     apartmentDoorPassword: string | null;
-  } {
+  }> {
     const members = contract.members ?? [];
 
     if (!members.length) {
@@ -299,7 +305,23 @@ export class ContractsService {
       };
     }
 
-    const apartmentDoorPassword = this.generateSixDigitPassword();
+    const existingApartmentAccess = await this.prisma.userApartment.findFirst({
+      where: {
+        rentalContractId: contract.id,
+        apartmentId: contract.apartmentId,
+        apartmentDoorPassword: { not: null },
+      },
+      select: {
+        apartmentDoorPassword: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    const apartmentDoorPassword =
+      existingApartmentAccess?.apartmentDoorPassword?.trim() ||
+      this.generateSixDigitPassword();
 
     return {
       operations: members.map((member) =>
@@ -342,7 +364,7 @@ export class ContractsService {
     apartmentId: string,
     rentalContractId: string,
     apartmentDoorPassword: string,
-  ): Promise<void> {
+  ): Promise<DoorPasswordSyncResult> {
     try {
       const syncResult = await this.ioTService.syncApartmentDoorPin(
         apartmentId,
@@ -354,11 +376,53 @@ export class ContractsService {
           `Door PIN sync was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
         );
       }
+
+      return {
+        success: syncResult.success,
+        skipped: Boolean(syncResult.skipped),
+        message: syncResult.message,
+      };
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
       this.logger.warn(
-        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${message}`,
       );
+
+      return {
+        success: false,
+        skipped: false,
+        message,
+      };
     }
+  }
+
+  private async notifyMembersApartmentPassword(params: {
+    memberUserIds: string[];
+    apartmentDoorPassword: string;
+    rentalContractId: string;
+    invoiceNumber?: string;
+  }): Promise<void> {
+    const contextText = params.invoiceNumber
+      ? `Dat coc ${params.invoiceNumber} da thanh toan.`
+      : 'Dat coc hop dong da thanh toan.';
+
+    await Promise.allSettled(
+      params.memberUserIds.map((memberUserId) =>
+        this.notificationsService.createAndPush({
+          recipientType: ActorType.user,
+          recipientId: memberUserId,
+          notificationType: 'info',
+          channel: 'in_app',
+          title: 'Mat khau nha da san sang',
+          message: `${contextText} Mat khau nha (da dong bo IoT): ${params.apartmentDoorPassword}`,
+          actionUrl: `/contracts/${params.rentalContractId}`,
+          actionLabel: 'Xem hop dong',
+          priority: 'high',
+          relatedEntityType: 'RentalContract',
+          relatedEntityId: params.rentalContractId,
+        }),
+      ),
+    );
   }
 
   private async syncExpiredContractsByDate(): Promise<void> {
@@ -2395,7 +2459,7 @@ export class ContractsService {
         invoiceType: InvoiceType.contractDeposit,
         status: InvoiceStatus.paid,
       },
-      select: { id: true },
+      select: { id: true, invoiceNumber: true },
     });
 
     if (!paidDepositInvoice) {
@@ -2404,13 +2468,15 @@ export class ContractsService {
       );
     }
 
-    const activationPayload = this.buildUserApartmentActivationOperations({
-      id: contract.id,
-      apartmentId: contract.apartmentId,
-      startDate: contract.startDate,
-      endDate: contract.endDate,
-      members: contract.members,
-    });
+    const activationPayload = await this.buildUserApartmentActivationOperations(
+      {
+        id: contract.id,
+        apartmentId: contract.apartmentId,
+        startDate: contract.startDate,
+        endDate: contract.endDate,
+        members: contract.members,
+      },
+    );
 
     const result = await this.prisma.$transaction([
       this.prisma.rentalContract.update({
@@ -2428,11 +2494,30 @@ export class ContractsService {
     ]);
 
     if (activationPayload.apartmentDoorPassword) {
-      await this.syncApartmentDoorPasswordToBoard(
+      const syncResult = await this.syncApartmentDoorPasswordToBoard(
         contract.apartmentId,
         contract.id,
         activationPayload.apartmentDoorPassword,
       );
+
+      if (!syncResult.success) {
+        this.logger.warn(
+          `Skip door password notification for contract ${contract.id} because IoT sync failed: ${syncResult.message}`,
+        );
+      } else {
+        const memberUserIds = (contract.members ?? []).map(
+          (member) => member.userId,
+        );
+
+        if (memberUserIds.length > 0) {
+          await this.notifyMembersApartmentPassword({
+            memberUserIds,
+            apartmentDoorPassword: activationPayload.apartmentDoorPassword,
+            rentalContractId: contract.id,
+            invoiceNumber: paidDepositInvoice.invoiceNumber,
+          });
+        }
+      }
     }
 
     const invoiceGenerationDate =
