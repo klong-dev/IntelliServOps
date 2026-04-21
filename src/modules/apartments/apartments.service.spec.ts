@@ -414,6 +414,113 @@ describe('ApartmentsService', () => {
     expect(result.status).toBe(ApartmentStatus.inactive);
   });
 
+  it('should resolve and persist provinceCode when partner submits cooperation apartment with wardCode', async () => {
+    prisma.user.findUnique
+      .mockResolvedValueOnce({
+        id: 'user-123',
+        identity: { isVerified: true },
+      } as any)
+      .mockResolvedValueOnce({
+        createdByStaffId: 'staff-123',
+      } as any);
+    prisma.apartment.findUnique.mockResolvedValueOnce(null as any);
+    prisma.apartment.create.mockResolvedValue({
+      id: 'apt-123',
+      slug: 'vinhomes-central-park',
+      apartmentNumber: 'A-1501',
+      wardCode: 26728,
+      provinceCode: 79,
+      streetAddress: '12 Nguyen Hue',
+      status: ApartmentStatus.verified,
+      ownerId: 'user-123',
+      images: ['https://cdn.example.com/img-1.jpg'],
+      videoTourUrl: 'https://cdn.example.com/video.mp4',
+      createdAt: new Date('2026-01-01'),
+    } as any);
+
+    const result = await service.submitPartnerCooperation(
+      {
+        buildingName: 'Vinhomes Central Park',
+        apartmentNumber: 'A-1501',
+        wardCode: 26728,
+        streetAddress: '12 Nguyen Hue',
+        totalArea: 75.5,
+        maxOccupants: 4,
+        numberOfBedrooms: 2,
+        numberOfBathrooms: 2,
+        baseRentPrice: 15000000,
+      } as any,
+      mockUserJwtPayload(),
+      {
+        imageUrls: ['https://cdn.example.com/img-1.jpg'],
+        videoUrl: 'https://cdn.example.com/video.mp4',
+      },
+    );
+
+    expect(prisma.apartment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          wardCode: 26728,
+          provinceCode: 79,
+        }),
+      }),
+    );
+    expect(result.wardCode).toBe(26728);
+    expect(result.provinceCode).toBe(79);
+    expect(notificationsService.createAndPush).toHaveBeenCalled();
+  });
+
+  it('should keep provinceCode unset when partner submits cooperation apartment without wardCode', async () => {
+    prisma.user.findUnique
+      .mockResolvedValueOnce({
+        id: 'user-123',
+        identity: { isVerified: true },
+      } as any)
+      .mockResolvedValueOnce({
+        createdByStaffId: null,
+      } as any);
+    prisma.apartment.findUnique.mockResolvedValueOnce(null as any);
+    prisma.apartment.create.mockResolvedValue({
+      id: 'apt-124',
+      slug: 'vinhomes-central-park',
+      apartmentNumber: 'A-1502',
+      wardCode: null,
+      provinceCode: null,
+      streetAddress: '12 Nguyen Hue',
+      status: ApartmentStatus.inactive,
+      ownerId: 'user-123',
+      images: [],
+      videoTourUrl: null,
+      createdAt: new Date('2026-01-01'),
+    } as any);
+
+    const result = await service.submitPartnerCooperation(
+      {
+        buildingName: 'Vinhomes Central Park',
+        apartmentNumber: 'A-1502',
+        streetAddress: '12 Nguyen Hue',
+        totalArea: 75.5,
+        maxOccupants: 4,
+        numberOfBedrooms: 2,
+        numberOfBathrooms: 2,
+        baseRentPrice: 15000000,
+      } as any,
+      mockUserJwtPayload(),
+    );
+
+    expect(prisma.apartment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          wardCode: undefined,
+          provinceCode: undefined,
+        }),
+      }),
+    );
+    expect(result.wardCode).toBeNull();
+    expect(result.provinceCode).toBeNull();
+    expect(notificationsService.createAndPush).not.toHaveBeenCalled();
+  });
+
   it('should return apartments by owner with rating', async () => {
     prisma.apartment.findMany.mockResolvedValue([
       {
