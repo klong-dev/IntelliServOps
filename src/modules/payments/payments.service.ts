@@ -81,6 +81,7 @@ export class PaymentsService {
   private readonly payosClient: PayOS | null;
   private readonly defaultPayOSReturnUrl: string;
   private readonly defaultPayOSCancelUrl: string;
+  private readonly maxPayOSCreateLinkAttempts = 3;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1195,8 +1196,8 @@ export class PaymentsService {
 
     const invoiceContent = this.buildInvoiceContent(invoice);
 
-    const orderCode = this.generatePayOSOrderCode();
-    const paymentReference = `PAYOS-${orderCode}`;
+    let orderCode = this.generatePayOSOrderCode();
+    let paymentReference = `PAYOS-${orderCode}`;
     const payerUserId = this.resolvePayerUserId(invoice, currentUser);
     const primaryMember = invoice.rentalContract.members.find(
       (m) => m.memberType === 'primary',
@@ -1227,8 +1228,7 @@ export class PaymentsService {
       invoice.invoiceNumber,
     );
 
-    const payload: CreatePaymentLinkRequest = {
-      orderCode,
+    const basePayload = {
       amount: Math.round(amount),
       description,
       returnUrl: createDto.returnUrl || this.defaultPayOSReturnUrl,
@@ -1239,46 +1239,79 @@ export class PaymentsService {
       buyerPhone: primaryMember?.user.phone || undefined,
     };
 
-    try {
-      const paymentLink = await payos.paymentRequests.create(payload);
+    let lastError: unknown;
 
-      await this.prisma.payment.update({
-        where: { id: createPayment.id },
-        data: {
-          transactionId: paymentLink.paymentLinkId,
-          status: PaymentStatus.pending,
-          notes: `PayOS orderCode: ${orderCode}; paymentLinkId: ${paymentLink.paymentLinkId}`,
-        },
-      });
+    for (
+      let attempt = 1;
+      attempt <= this.maxPayOSCreateLinkAttempts;
+      attempt++
+    ) {
+      if (attempt > 1) {
+        orderCode = this.generatePayOSOrderCode();
+        paymentReference = `PAYOS-${orderCode}`;
+      }
 
-      return {
-        paymentId: createPayment.id,
-        invoiceId: createPayment.invoiceId,
-        paymentReference: createPayment.paymentReference,
-        orderCode: paymentLink.orderCode,
-        status: paymentLink.status,
-        checkoutUrl: paymentLink.checkoutUrl,
-        qrCode: paymentLink.qrCode,
-        expiredAt: paymentLink.expiredAt ?? null,
-        invoice: invoiceContent,
+      const payload: CreatePaymentLinkRequest = {
+        orderCode,
+        ...basePayload,
       };
-    } catch (error) {
-      await this.prisma.payment.update({
-        where: { id: createPayment.id },
-        data: {
-          status: PaymentStatus.failed,
-          notes: `PayOS create link failed: ${
-            error instanceof Error ? error.message : 'unknown error'
-          }`,
-        },
-      });
 
-      throw new BadRequestException(
-        `Create PayOS payment link failed: ${
-          error instanceof Error ? error.message : 'unknown error'
-        }`,
-      );
+      try {
+        const paymentLink = await payos.paymentRequests.create(payload);
+
+        await this.prisma.payment.update({
+          where: { id: createPayment.id },
+          data: {
+            paymentReference,
+            transactionId: paymentLink.paymentLinkId,
+            status: PaymentStatus.pending,
+            notes: `PayOS orderCode: ${orderCode}; paymentLinkId: ${paymentLink.paymentLinkId}`,
+          },
+        });
+
+        return {
+          paymentId: createPayment.id,
+          invoiceId: createPayment.invoiceId,
+          paymentReference,
+          orderCode: paymentLink.orderCode,
+          status: paymentLink.status,
+          checkoutUrl: paymentLink.checkoutUrl,
+          qrCode: paymentLink.qrCode,
+          expiredAt: paymentLink.expiredAt ?? null,
+          invoice: invoiceContent,
+        };
+      } catch (error) {
+        lastError = error;
+
+        if (
+          attempt < this.maxPayOSCreateLinkAttempts &&
+          this.isPayOSDuplicateOrderError(error)
+        ) {
+          this.logger.warn(
+            `PayOS duplicate orderCode ${orderCode} for invoice ${invoice.id}, retrying create-link attempt ${attempt + 1}/${this.maxPayOSCreateLinkAttempts}`,
+          );
+          continue;
+        }
+
+        break;
+      }
     }
+
+    const errorMessage =
+      lastError instanceof Error ? lastError.message : 'unknown error';
+
+    await this.prisma.payment.update({
+      where: { id: createPayment.id },
+      data: {
+        paymentReference,
+        status: PaymentStatus.failed,
+        notes: `PayOS create link failed: ${errorMessage}`,
+      },
+    });
+
+    throw new BadRequestException(
+      `Create PayOS payment link failed: ${errorMessage}`,
+    );
   }
 
   async handlePayOSWebhook(webhookData: Webhook) {
@@ -1695,11 +1728,19 @@ export class PaymentsService {
   }
 
   private generatePayOSOrderCode(): number {
-    const timePart = Date.now().toString().slice(-10);
+    const timePart = Date.now().toString();
     const randomPart = Math.floor(Math.random() * 1000)
       .toString()
       .padStart(3, '0');
     return Number(`${timePart}${randomPart}`);
+  }
+
+  private isPayOSDuplicateOrderError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      message.includes('Đơn thanh toán đã tồn tại') ||
+      /\(code:\s*231\)/i.test(message)
+    );
   }
 
   private buildPayOSDescription(
