@@ -68,6 +68,10 @@ describe('PaymentsService', () => {
       id: 'contract-123',
       status: ContractStatus.signed,
       apartmentId: 'apt-123',
+      apartment: {
+        apartmentNumber: 'A-101',
+        buildingName: 'Vinhomes Grand Park',
+      },
       startDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
       endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       members: [{ userId: 'user-123' }],
@@ -342,6 +346,10 @@ describe('PaymentsService', () => {
             id: 'contract-123',
             status: ContractStatus.signed,
             apartmentId: 'apt-123',
+            apartment: {
+              apartmentNumber: 'A-101',
+              buildingName: 'Vinhomes Grand Park',
+            },
             members: [{ userId: 'user-123' }],
           },
         }),
@@ -372,6 +380,16 @@ describe('PaymentsService', () => {
         expect.objectContaining({
           recipientType: 'user',
           recipientId: 'user-123',
+          notificationType: 'success',
+          channel: 'push',
+          title: 'Thanh toán thành công',
+          message: expect.stringContaining(
+            'Thông tin căn hộ: A-101 - Vinhomes Grand Park.',
+          ),
+        }),
+      );
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
           message: expect.stringMatching(/\d{6}/),
         }),
       );
@@ -404,7 +422,7 @@ describe('PaymentsService', () => {
       expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
     });
 
-    it('should provision door password even before startDate', async () => {
+    it('should keep contract pending activation but create active userApartment with password before startDate', async () => {
       const payment = mockPayment({ status: PaymentStatus.pending });
 
       prisma.payment.findUnique.mockResolvedValue({
@@ -416,6 +434,10 @@ describe('PaymentsService', () => {
             apartmentId: 'apt-123',
             startDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
             endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+            apartment: {
+              apartmentNumber: 'A-101',
+              buildingName: 'Vinhomes Grand Park',
+            },
             members: [{ userId: 'user-123' }],
           },
         }),
@@ -434,25 +456,35 @@ describe('PaymentsService', () => {
       expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
-            status: UserApartmentStatus.inactive,
+            status: UserApartmentStatus.active,
             apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
           }),
           update: expect.objectContaining({
-            status: UserApartmentStatus.inactive,
+            status: UserApartmentStatus.active,
             apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
           }),
         }),
-      );
-      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
-        'apt-123',
-        expect.stringMatching(/^\d{6}$/),
       );
       expect(notificationsService.createAndPush).toHaveBeenCalledWith(
         expect.objectContaining({
           recipientType: 'user',
           recipientId: 'user-123',
-          message: expect.stringMatching(/^Dat coc .* Mat khau nha: \d{6}$/),
+          notificationType: 'success',
+          channel: 'push',
+          title: 'Thanh toán thành công',
+          message: expect.stringContaining(
+            'Thông tin căn hộ: A-101 - Vinhomes Grand Park.',
+          ),
         }),
+      );
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringMatching(/\d{6}/),
+        }),
+      );
+      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+        'apt-123',
+        expect.stringMatching(/^\d{6}$/),
       );
     });
   });
