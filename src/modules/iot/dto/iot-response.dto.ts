@@ -415,6 +415,13 @@ export class IoTHealthCheckResultDto {
 export class IoTBoardDeviceControlResultDto {
   @ApiProperty({ example: false })
   success: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'Door PIN updated successfully.',
+  })
+  message?: string;
 }
 
 export class IoTTestSequenceStepDto {

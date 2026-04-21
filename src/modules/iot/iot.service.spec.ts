@@ -27,6 +27,7 @@ describe('IoTService', () => {
     checkOnline: jest.fn(),
     controlDevice: jest.fn(),
     controlDeviceAndWaitForAck: jest.fn(),
+    sendDoorPasswordAndWaitForAck: jest.fn(),
     waitForStatusEvent: jest.fn(),
     sendDoorPassword: jest.fn(),
     runTestSequence: jest.fn(),
@@ -1368,31 +1369,35 @@ describe('IoTService', () => {
       } as any);
       prisma.ioTDevice.update.mockResolvedValue({ id: 'door-device-1' } as any);
       prisma.activityLog.create.mockResolvedValue({ id: 'log-1' } as any);
-      mqttService.sendDoorPassword.mockReturnValue({
-        brokerUrl: 'mqtt://broker.hivemq.com:1883',
-        topic: 'ESP_A101/get/door-password',
-        payload: '290304',
-        espId: 'ESP_A101',
-        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
-        doorId: 1,
-        password: '290304',
-      });
-      mqttService.waitForStatusEvent.mockResolvedValue({
-        espId: 'ESP_A101',
-        rawTopic: 'HOMEIQ/ESP_A101/status',
-        message: 'PIN_UPDATED_OK_DOOR_1',
-        receivedAt: new Date('2026-03-30T00:00:01.000Z'),
-        type: 'door_pin_update',
-        deviceTopic: 'door',
-        deviceId: 1,
-        state: 'PIN_UPDATED',
-        pinUpdateResult: 'success',
+      mqttService.sendDoorPasswordAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          brokerUrl: 'mqtt://broker.hivemq.com:1883',
+          topic: 'ESP_A101/get/door-password',
+          payload: '290304',
+          espId: 'ESP_A101',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+          doorId: 1,
+          password: '290304',
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'PIN_UPDATED_OK_DOOR_1',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'door_pin_update',
+          deviceTopic: 'door',
+          deviceId: 1,
+          state: 'PIN_UPDATED',
+          pinUpdateResult: 'success',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
       });
 
       await expect(
         service.updateDoorPin('ESP_A101', 1, '258036', '290304', user),
       ).resolves.toMatchObject({ success: true });
-      expect(mqttService.sendDoorPassword).toHaveBeenCalledWith(
+      expect(mqttService.sendDoorPasswordAndWaitForAck).toHaveBeenCalledWith(
         'ESP_A101',
         1,
         '290304',
@@ -1451,24 +1456,28 @@ describe('IoTService', () => {
       } as any);
       prisma.ioTDevice.update.mockResolvedValue({ id: 'door-device-1' } as any);
       prisma.activityLog.create.mockResolvedValue({ id: 'log-1' } as any);
-      mqttService.sendDoorPassword.mockReturnValue({
-        brokerUrl: 'mqtt://broker.hivemq.com:1883',
-        topic: 'ESP_A101/get/door-password',
-        payload: '290304',
-        espId: 'ESP_A101',
-        publishedAt: new Date('2026-03-30T00:00:00.000Z'),
-        doorId: 1,
-        password: '290304',
-      });
-      mqttService.waitForStatusEvent.mockResolvedValue({
-        espId: 'ESP_A101',
-        rawTopic: 'HOMEIQ/ESP_A101/status',
-        message: 'PWD_UPDATED',
-        receivedAt: new Date('2026-03-30T00:00:01.000Z'),
-        type: 'door_pin_update',
-        deviceTopic: 'door',
-        state: 'PIN_UPDATED',
-        pinUpdateResult: 'success',
+      mqttService.sendDoorPasswordAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          brokerUrl: 'mqtt://broker.hivemq.com:1883',
+          topic: 'ESP_A101/get/door-password',
+          payload: '290304',
+          espId: 'ESP_A101',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+          doorId: 1,
+          password: '290304',
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'PWD_UPDATED',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'door_pin_update',
+          deviceTopic: 'door',
+          state: 'PIN_UPDATED',
+          pinUpdateResult: 'success',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
       });
 
       await expect(
@@ -1530,6 +1539,52 @@ describe('IoTService', () => {
       await expect(
         service.updateDoorPin('ESP_A101', 1, '000000', '290304', user),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should list door history from activity logs', async () => {
+      prisma.activityLog.findMany.mockResolvedValue([
+        {
+          id: 'log-1',
+          actorType: 'system',
+          actorId: 'ESP_A101',
+          action: 'IOT_DOOR_OPENED',
+          entityId: 'ESP_A101',
+          description: 'Door 1 on board ESP_A101 opened',
+          status: 'success',
+          metadata: {
+            apartmentId: 'apt-123',
+            deviceId: 1,
+          },
+          createdAt: new Date('2026-04-20T10:00:00.000Z'),
+        },
+      ] as any);
+      prisma.activityLog.count.mockResolvedValue(1 as any);
+
+      const result = await service.findDoorHistory({
+        boardId: 'ESP_A101',
+        limit: 10,
+      });
+
+      expect(prisma.activityLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            entityId: 'ESP_A101',
+          }),
+          take: 10,
+        }),
+      );
+      expect(result).toMatchObject({
+        total: 1,
+        limit: 10,
+        items: [
+          expect.objectContaining({
+            action: 'IOT_DOOR_OPENED',
+            boardId: 'ESP_A101',
+            apartmentId: 'apt-123',
+            deviceId: 1,
+          }),
+        ],
+      });
     });
 
     it('should return success only when board ack state matches requested action', async () => {
@@ -1793,6 +1848,17 @@ describe('IoTService', () => {
               }),
             }),
           }),
+        }),
+      );
+      expect(prisma.activityLog.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            expect.objectContaining({
+              action: 'IOT_DOOR_OPENED',
+              actorType: 'system',
+              actorId: 'ESP_A101',
+            }),
+          ],
         }),
       );
     });

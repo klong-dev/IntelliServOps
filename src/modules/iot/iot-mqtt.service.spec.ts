@@ -35,7 +35,29 @@ describe('IoTMqttService', () => {
 
   const createService = (overrides?: Record<string, string | undefined>) => {
     const client = createClient();
-    const eventEmitter = { emit: jest.fn() };
+    const listeners = new Map<string, Set<(payload: unknown) => void>>();
+    const eventEmitter = {
+      emit: jest.fn((event: string, payload: unknown) => {
+        const handlers = listeners.get(event);
+        if (!handlers) {
+          return false;
+        }
+
+        for (const handler of handlers) {
+          handler(payload);
+        }
+
+        return true;
+      }),
+      on: jest.fn((event: string, handler: (payload: unknown) => void) => {
+        const handlers = listeners.get(event) ?? new Set();
+        handlers.add(handler);
+        listeners.set(event, handlers);
+      }),
+      off: jest.fn((event: string, handler: (payload: unknown) => void) => {
+        listeners.get(event)?.delete(handler);
+      }),
+    };
 
     connectMock.mockReturnValue(client);
 
@@ -266,6 +288,33 @@ describe('IoTMqttService', () => {
         deviceTopic: 'door',
         pinUpdateResult: 'success',
       }),
+    );
+  });
+
+  it('should send door password and resolve when matching ACK is received', async () => {
+    const { service, client } = createService();
+
+    const promise = service.sendDoorPasswordAndWaitForAck(
+      'ESP_A101',
+      1,
+      '290304',
+      200,
+    );
+
+    client.handlers.message('HOMEIQ/ESP_A101/status', Buffer.from('PWD_UPDATED'));
+
+    await expect(promise).resolves.toMatchObject({
+      timedOut: false,
+      timeoutMs: 200,
+      statusEvent: expect.objectContaining({
+        espId: 'ESP_A101',
+        type: 'door_pin_update',
+        pinUpdateResult: 'success',
+      }),
+    });
+    expect(client.publish).toHaveBeenCalledWith(
+      'ESP_A101/get/door-password',
+      '290304',
     );
   });
 });

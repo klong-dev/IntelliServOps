@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  DoorHistoryQueryDto,
   CreateIoTBoardDto,
   CreateIoTDeviceDto,
   CreateIoTBoardDeviceDto,
@@ -29,6 +30,8 @@ import {
   type MqttDeviceTopic,
 } from './iot-mqtt.types';
 import {
+  ActivityStatus,
+  ActorType,
   InvoiceStatus,
   InvoiceType,
   IoTDeviceType,
@@ -607,6 +610,86 @@ export class IoTService {
     return this.controlBoardDevice(boardId, deviceId, 'door', 'ON');
   }
 
+  async findDoorHistory(query: DoorHistoryQueryDto) {
+    const from = query.from ? new Date(query.from) : undefined;
+    const to = query.to ? new Date(query.to) : undefined;
+    const limit = Math.min(200, Math.max(1, query.limit ?? 50));
+
+    if (from && Number.isNaN(from.getTime())) {
+      throw new BadRequestException('Invalid from date');
+    }
+
+    if (to && Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Invalid to date');
+    }
+
+    if (from && to && from > to) {
+      throw new BadRequestException('from must be earlier than or equal to to');
+    }
+
+    const where: Prisma.ActivityLogWhereInput = {
+      action: {
+        in: ['IOT_DOOR_OPENED', 'IOT_DOOR_CLOSED'],
+      },
+      ...(query.boardId ? { entityId: query.boardId } : {}),
+      ...((from || to) && {
+        createdAt: {
+          ...(from ? { gte: from } : {}),
+          ...(to ? { lte: to } : {}),
+        },
+      }),
+      ...(query.apartmentId
+        ? {
+            metadata: {
+              path: ['apartmentId'],
+              equals: query.apartmentId,
+            },
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.activityLog.findMany({
+        where,
+        select: {
+          id: true,
+          actorType: true,
+          actorId: true,
+          action: true,
+          entityId: true,
+          description: true,
+          status: true,
+          metadata: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
+      this.prisma.activityLog.count({ where }),
+    ]);
+
+    return {
+      items: items.map((item) => {
+        const metadata = this.toPlainObject(item.metadata);
+
+        return {
+          id: item.id,
+          action: item.action,
+          boardId: item.entityId ?? '',
+          deviceId: this.readPositiveInteger(metadata.deviceId) ?? null,
+          apartmentId: this.readString(metadata.apartmentId) ?? null,
+          actorType: item.actorType,
+          actorId: item.actorId,
+          description: item.description,
+          status: item.status,
+          createdAt: item.createdAt,
+        };
+      }),
+      total,
+      limit,
+    };
+  }
+
   async updateDoorPin(
     boardId: string,
     deviceId: number,
@@ -633,12 +716,12 @@ export class IoTService {
       }
     }
 
-    const details = this.ioTMqttService.sendDoorPassword(
+    const ack = await this.ioTMqttService.sendDoorPasswordAndWaitForAck(
       boardId,
       deviceId,
       newPin,
     );
-    const pinUpdateAck = await this.waitForDoorPinUpdateAck(boardId, deviceId);
+    const pinUpdateAck = this.toDoorPinUpdateAckResult(ack);
 
     if (!pinUpdateAck.success) {
       return {
@@ -683,12 +766,12 @@ export class IoTService {
       await this.assertDoorAccess(boardId, currentUser);
     this.assertDoorDeviceMatch(boardDoorDeviceId, deviceId);
 
-    const details = this.ioTMqttService.sendDoorPassword(
+    const ack = await this.ioTMqttService.sendDoorPasswordAndWaitForAck(
       boardId,
       deviceId,
       newPin,
     );
-    const pinUpdateAck = await this.waitForDoorPinUpdateAck(boardId, deviceId);
+    const pinUpdateAck = this.toDoorPinUpdateAckResult(ack);
 
     if (!pinUpdateAck.success) {
       return {
@@ -1359,6 +1442,12 @@ export class IoTService {
       return;
     }
 
+    const doorTransitions: Array<{
+      apartmentId: string | null;
+      deviceId: number | null;
+      nextState: 'ON' | 'OFF';
+    }> = [];
+
     await Promise.all(
       devices.map((device) => {
         const metadata = this.extractMqttMetadata(
@@ -1369,6 +1458,24 @@ export class IoTService {
           !event.deviceTopic || metadata.topic === event.deviceTopic;
         const matchesDeviceId =
           event.deviceId === undefined || metadata.deviceId === event.deviceId;
+        const nextState =
+          matchesTopic && matchesDeviceId && event.state
+            ? this.normalizeBoardDeviceState(event.state)
+            : undefined;
+        const previousState = this.normalizeBoardDeviceState(metadata.state);
+
+        if (
+          metadata.topic === 'door' &&
+          nextState !== undefined &&
+          previousState !== undefined &&
+          previousState !== nextState
+        ) {
+          doorTransitions.push({
+            apartmentId: device.apartmentId ?? null,
+            deviceId: metadata.deviceId ?? null,
+            nextState,
+          });
+        }
 
         return this.prisma.ioTDevice.update({
           where: { id: device.id },
@@ -1380,9 +1487,7 @@ export class IoTService {
               {
                 lastMessage: event.message,
                 lastMessageAt: event.receivedAt,
-                ...(matchesTopic && matchesDeviceId && event.state
-                  ? { state: this.normalizeBoardDeviceState(event.state) }
-                  : {}),
+                ...(nextState ? { state: nextState } : {}),
               },
             ) as Prisma.InputJsonValue,
           },
@@ -1390,6 +1495,8 @@ export class IoTService {
         });
       }),
     );
+
+    await this.logDoorStateTransitions(event.espId, doorTransitions, event);
 
     await this.updateStoredBoardMany({
       where: { id: event.espId },
@@ -2077,37 +2184,80 @@ export class IoTService {
     };
   }
 
-  private async waitForDoorPinUpdateAck(boardId: string, deviceId: number) {
-    const statusEvent = await this.ioTMqttService.waitForStatusEvent(
-      (event) =>
-        event.espId === boardId &&
-        event.deviceTopic === 'door' &&
-        (event.deviceId === undefined || event.deviceId === deviceId) &&
-        event.type === 'door_pin_update',
-      BOARD_CONTROL_ACK_TIMEOUT_MS,
-    );
-
-    if (!statusEvent) {
+  private toDoorPinUpdateAckResult(ack: {
+    statusEvent: IoTMqttStatusEvent | null;
+    timeoutMs: number;
+    timedOut: boolean;
+  }) {
+    if (ack.timedOut || !ack.statusEvent) {
       return {
         success: false,
-        message: `No door PIN update acknowledgement within ${BOARD_CONTROL_ACK_TIMEOUT_MS}ms.`,
+        message: `No door PIN update acknowledgement within ${ack.timeoutMs}ms.`,
         receivedAt: null as Date | null,
       };
     }
 
-    if (statusEvent.pinUpdateResult !== 'success') {
+    const isSuccess =
+      ack.statusEvent.pinUpdateResult === 'success' ||
+      ack.statusEvent.state === 'PIN_UPDATED';
+
+    if (!isSuccess) {
       return {
         success: false,
         message: 'Board reported door PIN update failed.',
-        receivedAt: statusEvent.receivedAt,
+        receivedAt: ack.statusEvent.receivedAt,
       };
     }
 
     return {
       success: true,
       message: 'Door PIN updated successfully.',
-      receivedAt: statusEvent.receivedAt,
+      receivedAt: ack.statusEvent.receivedAt,
     };
+  }
+
+  private async logDoorStateTransitions(
+    boardId: string,
+    transitions: Array<{
+      apartmentId: string | null;
+      deviceId: number | null;
+      nextState: 'ON' | 'OFF';
+    }>,
+    event: IoTMqttStatusEvent,
+  ) {
+    if (transitions.length === 0) {
+      return;
+    }
+
+    try {
+      await this.prisma.activityLog.createMany({
+        data: transitions.map((transition) => ({
+          actorType: ActorType.system,
+          actorId: boardId,
+          action:
+            transition.nextState === 'ON'
+              ? 'IOT_DOOR_OPENED'
+              : 'IOT_DOOR_CLOSED',
+          entityType: 'IoTBoard',
+          entityId: boardId,
+          description: `Door ${transition.deviceId ?? 'unknown'} on board ${boardId} ${transition.nextState === 'ON' ? 'opened' : 'closed'}`,
+          metadata: {
+            apartmentId: transition.apartmentId,
+            boardId,
+            deviceId: transition.deviceId,
+            source: 'mqtt_status',
+            state: transition.nextState,
+            rawMessage: event.message,
+          } as Prisma.InputJsonValue,
+          status: ActivityStatus.success,
+          createdAt: event.receivedAt,
+        })),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to write door history activity logs for ${boardId}: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
   }
 
   private async logDoorPinUpdate(

@@ -25,8 +25,12 @@ import { RevenueService } from './revenue.service';
 import {
   PartnerMyRevenueOverviewDto,
   PartnerRevenueSummaryItemDto,
+  RevenueDashboardDto,
+  RevenueDashboardQueryDto,
   RevenueFilterQueryDto,
   RevenueOverviewDto,
+  RevenueTimeseriesDto,
+  RevenueTimeseriesQueryDto,
   RevenueTransactionListDto,
 } from './dto';
 import {
@@ -66,7 +70,7 @@ export class RevenueController {
   }
 
   @Get('overview')
-  @Roles(Role.USER)
+  @Roles(Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
     summary: 'System revenue overview',
     description:
@@ -82,7 +86,7 @@ export class RevenueController {
   }
 
   @Get('partners')
-  @Roles(Role.USER)
+  @Roles(Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
     summary: 'Partner revenue summaries',
     description:
@@ -99,7 +103,7 @@ export class RevenueController {
   }
 
   @Get('transactions')
-  @Roles(Role.USER)
+  @Roles(Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
     summary: 'Revenue transaction reconciliation list',
     description:
@@ -115,7 +119,7 @@ export class RevenueController {
   }
 
   @Get('partner/me/overview')
-  @Roles(Role.USER, Role.ADMIN)
+  @Roles(Role.USER)
   @ApiOperation({
     summary: 'Partner view own apartment revenue overview',
     description:
@@ -132,7 +136,7 @@ export class RevenueController {
   }
 
   @Get('partner/me/transactions')
-  @Roles(Role.USER, Role.ADMIN)
+  @Roles(Role.USER)
   @ApiOperation({
     summary: 'Partner view own apartment revenue transactions',
     description:
@@ -149,6 +153,38 @@ export class RevenueController {
       currentUser,
       query,
     );
+  }
+
+  @Get('dashboard')
+  @Roles(Role.OPERATOR, Role.ADMIN)
+  @ApiOperation({
+    summary: 'Dashboard statistics for operators and admins',
+    description:
+      'Aggregated user and partner ratios, apartment occupancy, apartment revenue ranking, and system revenue summary.',
+  })
+  @ApiJsonResponse(RevenueDashboardDto, {
+    description: 'Dashboard summary for operator/admin back office',
+  })
+  getDashboard(
+    @Query() query: RevenueDashboardQueryDto,
+  ): Promise<RevenueDashboardDto> {
+    return this.revenueService.getDashboardStatistics(query);
+  }
+
+  @Get('timeseries')
+  @Roles(Role.OPERATOR, Role.ADMIN)
+  @ApiOperation({
+    summary: 'System revenue timeseries',
+    description:
+      'System-wide paid revenue grouped by month or year for a selected time window.',
+  })
+  @ApiJsonResponse(RevenueTimeseriesDto, {
+    description: 'Revenue timeseries grouped by month or year',
+  })
+  getRevenueTimeseries(
+    @Query() query: RevenueTimeseriesQueryDto,
+  ): Promise<RevenueTimeseriesDto> {
+    return this.revenueService.getRevenueTimeseries(query);
   }
 
   @Get('staff/partner-payouts')

@@ -14,6 +14,8 @@ import { IoTService } from './iot.service';
 import {
   CreateIoTBoardDeviceDto,
   CreateIoTBoardDto,
+  DoorHistoryListDto,
+  DoorHistoryQueryDto,
   DirectMqttControlDto,
   IoTBoardDeleteResultDto,
   IoTBoardDeviceDeleteResultDto,
@@ -231,11 +233,24 @@ export class IoTController {
     return this.iotService.unlockDoor(boardId, deviceId, body.pin, currentUser);
   }
 
+  @Get('doors/history')
+  @ApiBearerAuth('JWT-auth')
+  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @ApiOperation({
+    summary: 'List door open and close history',
+  })
+  @ApiJsonResponse(DoorHistoryListDto, {
+    description: 'Door open and close history derived from MQTT board state updates',
+  })
+  async findDoorHistory(@Query() query: DoorHistoryQueryDto) {
+    return this.iotService.findDoorHistory(query);
+  }
+
   @Patch('doors/:boardId/:deviceId/pin')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @Roles(Role.USER)
   @ApiOperation({
-    summary: 'Update smart door PIN with old PIN verification and board acknowledgement',
+    summary: 'Update smart door PIN for tenant flow with old PIN verification and board acknowledgement',
   })
   @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
     description: 'Returns success only when the board confirms the PIN update',
