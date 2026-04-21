@@ -73,6 +73,7 @@ stateDiagram-v2
     pending --> occupied: activateWhenDepositPaid
     available --> maintenance: updateStatus
     occupied --> maintenance: updateStatus
+    maintenance --> [*]
 ```
 
 Evidence:
@@ -106,6 +107,7 @@ Enum values:
 ```mermaid
 stateDiagram-v2
     [*] --> available: create (default)
+    available --> [*]
 ```
 
 Evidence:
@@ -136,6 +138,8 @@ stateDiagram-v2
     inactive --> active: updateBoard [status set active]
     active --> maintenance: updateBoard [status set maintenance]
     active --> error: updateBoard [status set error]
+    maintenance --> [*]
+    error --> [*]
 ```
 
 Evidence:
@@ -168,6 +172,8 @@ stateDiagram-v2
     inactive --> active: updateBoardDevice [status set active]
     active --> maintenance: updateDevice [status set maintenance]
     active --> error: updateDevice [status set error]
+    maintenance --> [*]
+    error --> [*]
 ```
 
 Evidence:
@@ -200,6 +206,7 @@ stateDiagram-v2
     active --> faulty: updateMeter [status]
     inactive --> replaced: updateMeter [status]
     faulty --> replaced: updateMeter [status]
+    replaced --> [*]
 ```
 
 Evidence:
@@ -240,6 +247,8 @@ stateDiagram-v2
     signed --> expired: syncExpiredContractsByDate
     active --> expired: syncExpiredContractsByDate
     active --> terminated: cancelByUser
+    expired --> [*]
+    terminated --> [*]
 ```
 
 Evidence:
@@ -275,6 +284,7 @@ stateDiagram-v2
     pending --> signed: partnerSignCooperationContract
     pending --> cancelled: rejectPartnerCooperation/cancelPartnerCooperationContract
     signed --> cancelled: rejectPartnerCooperation
+    cancelled --> [*]
 ```
 
 Evidence:
@@ -302,6 +312,7 @@ Enum values:
 stateDiagram-v2
     [*] --> active: create/addMember
     active --> moved_out: cancelByUser
+    moved_out --> [*]
 ```
 
 Evidence:
@@ -329,6 +340,7 @@ stateDiagram-v2
     [*] --> active: buildUserApartmentActivationOperations
     [*] --> inactive: appendContractActivationOperations [startDate > today]
     active --> moved_out: cancelByUser
+    moved_out --> [*]
 ```
 
 Evidence:
@@ -361,6 +373,7 @@ Enum values:
 ```mermaid
 stateDiagram-v2
     [*] --> new: create (default)
+    new --> [*]
 ```
 
 Evidence:
@@ -387,6 +400,7 @@ Enum values:
 ```mermaid
 stateDiagram-v2
     [*] --> pending: create (default)
+    pending --> [*]
 ```
 
 Evidence:
@@ -415,6 +429,7 @@ stateDiagram-v2
     pending --> confirmed: contracts.uploadSignedPdf
     pending --> cancelled: reservations.cancel
     confirmed --> cancelled: contracts.cancelByUser
+    cancelled --> [*]
 ```
 
 Evidence:
@@ -447,6 +462,8 @@ stateDiagram-v2
     scheduled --> cancelled: denyViewingRequest/cancelAppointment
     confirmed --> completed: confirmDoneJob
     confirmed --> cancelled: cancelAppointment
+    completed --> [*]
+    cancelled --> [*]
 ```
 
 Evidence:
@@ -477,6 +494,7 @@ Enum values:
 ```mermaid
 stateDiagram-v2
     [*] --> pending: create (default)
+    pending --> [*]
 ```
 
 Evidence:
@@ -511,6 +529,8 @@ stateDiagram-v2
     assigned --> in_progress: maintenance.accept
     assigned --> cancelled: maintenance.reject
     in_progress --> completed: maintenance.complete
+    completed --> [*]
+    cancelled --> [*]
 ```
 
 Evidence:
@@ -547,6 +567,8 @@ stateDiagram-v2
     acknowledged --> cancelled: reject
     scheduled --> cancelled: reject
     in_progress --> completed: complete
+    completed --> [*]
+    cancelled --> [*]
 ```
 
 Evidence:
@@ -589,6 +611,8 @@ stateDiagram-v2
     issued --> paid: payments.confirm/handlePayOSWebhook
     draft --> paid: payments.confirm/handlePayOSWebhook
     issued --> cancelled: contracts.cancelByUser
+    paid --> [*]
+    cancelled --> [*]
 ```
 
 Evidence:
@@ -628,6 +652,8 @@ stateDiagram-v2
     processing --> failed: handlePayOSWebhook
     pending --> completed: handlePayOSWebhook [code==00]
     completed --> refunded: refund payout/deposit flows
+    failed --> [*]
+    refunded --> [*]
 ```
 
 Evidence:
@@ -659,6 +685,7 @@ Enum values:
 stateDiagram-v2
     [*] --> pending: create (default)
     pending --> paid: confirmPartnerMonthlyPayout
+    paid --> [*]
 ```
 
 Evidence:
@@ -688,6 +715,9 @@ stateDiagram-v2
     [*] --> success: createActivityLog [default]
     [*] --> failure: createActivityLog [dto.status]
     [*] --> pending: createActivityLog [dto.status]
+    success --> [*]
+    failure --> [*]
+    pending --> [*]
 ```
 
 Evidence:
@@ -715,6 +745,7 @@ stateDiagram-v2
     closed --> active: createOrReuseConversation
     active --> archived: archiveConversation
     closed --> archived: archiveConversation
+    archived --> [*]
 ```
 
 Evidence:

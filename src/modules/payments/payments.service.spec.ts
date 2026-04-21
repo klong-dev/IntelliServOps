@@ -404,7 +404,7 @@ describe('PaymentsService', () => {
       expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
     });
 
-    it('should not activate contract before startDate', async () => {
+    it('should provision door password even before startDate', async () => {
       const payment = mockPayment({ status: PaymentStatus.pending });
 
       prisma.payment.findUnique.mockResolvedValue({
@@ -435,15 +435,25 @@ describe('PaymentsService', () => {
         expect.objectContaining({
           create: expect.objectContaining({
             status: UserApartmentStatus.inactive,
-            apartmentDoorPassword: null,
+            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
           }),
           update: expect.objectContaining({
             status: UserApartmentStatus.inactive,
-            apartmentDoorPassword: null,
+            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
           }),
         }),
       );
-      expect(notificationsService.createAndPush).not.toHaveBeenCalled();
+      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+        'apt-123',
+        expect.stringMatching(/^\d{6}$/),
+      );
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientType: 'user',
+          recipientId: 'user-123',
+          message: expect.stringMatching(/^Dat coc .* Mat khau nha: \d{6}$/),
+        }),
+      );
     });
   });
 

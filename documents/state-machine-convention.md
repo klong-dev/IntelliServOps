@@ -35,7 +35,9 @@ Khong ap dung cho:
 ## 3. Diagram Visual Standard (theo mau)
 
 - Co start pseudo state [*] va end pseudo state [*] khi phu hop.
+- Ky hieu start: hinh tron den dac (initial state).
 - Node trang thai la hop bo goc (rounded rectangle).
+- Ky hieu end: hinh tron dong tam (vong ngoai + cham den ben trong, final state).
 - Nhan transition dung dong tu hanh dong ngan gon.
 - Label transition co format:
   - event
@@ -95,6 +97,8 @@ Moi trang domain phai co:
 - Font de nghi: Arial 13.
 - Border node: #222222.
 - Label transition: #10a44a.
+- Initial node: fill #111111.
+- Final node: outer ring #111111 + inner dot #111111.
 
 ---
 
