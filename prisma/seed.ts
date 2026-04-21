@@ -182,7 +182,7 @@ async function ensureApartment(
 ) {
   data = sanitizeSeedValue(data);
   if (!data.slug) {
-    const baseSlug = `${data.buildingName ?? ''} ${data.apartmentNumber ?? ''}`
+    const baseSlug = `${data.buildingName ?? ''}`
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/đ/g, 'd')
@@ -192,7 +192,7 @@ async function ensureApartment(
       .replace(/^-+|-+$/g, '')
       .replace(/-{2,}/g, '-');
 
-    data.slug = baseSlug || `apartment-${String(data.apartmentNumber ?? 'unit').toLowerCase()}`;
+    data.slug = baseSlug || 'apartment';
   }
 
   const existing = await prisma.apartment.findFirst({ where });
