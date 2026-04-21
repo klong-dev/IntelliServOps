@@ -379,8 +379,8 @@ describe('ContractsService', () => {
         depositAmount: 30000000,
         paymentDueDay: 5,
         paymentMethod: PaymentMethodType.bank_transfer,
-        specialConditions: 'Khong hut thuoc trong can ho.',
-        contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        specialConditions: 'Không hút thuốc trong căn hộ.',
+        contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
         landlordName: null,
         landlordIdNumber: null,
         landlordIdIssueDate: null,
@@ -402,13 +402,13 @@ describe('ContractsService', () => {
             memberType: 'primary',
             isPrimaryContact: true,
             user: {
-              fullName: 'Nguyen Van A',
+              fullName: 'Nguyễn Văn A',
               phone: '0901234567',
               email: 'tenant@example.com',
               identity: {
                 nationalId: '079203001234',
                 issueDate: '01/01/2022',
-                address: '123 Nguyen Hue, TP HCM',
+                address: '123 Nguyễn Huệ, TP HCM',
               },
             },
           },
@@ -420,14 +420,14 @@ describe('ContractsService', () => {
       expect(readFileMock).toHaveBeenCalled();
       expect(contractPdfService.generateContractPdf).toHaveBeenCalledWith(
         expect.objectContaining({
-          landlordName: 'Hoang Kim Long',
+          landlordName: 'Hoàng Kim Long',
           landlordIdNumber: '060204000351',
           landlordIdIssueDate: '19/04/2021',
           landlordAddress:
-            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+            'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
           landlordPhone: '0388969964',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          specialConditions: 'Không hút thuốc trong căn hộ.',
+          contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
           landlordSignature: Buffer.from('landlord-signature'),
         }),
       );
@@ -557,14 +557,14 @@ describe('ContractsService', () => {
       await service.updateContractPdfContent(
         'contract-123',
         {
-          landlordName: 'Hoang Kim Long',
+          landlordName: 'Hoàng Kim Long',
           landlordIdNumber: '060204000351',
           landlordIdIssueDate: '19/04/2021',
           landlordAddress:
-            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+            'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
           landlordPhone: '0388969964',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          specialConditions: 'Không hút thuốc trong căn hộ.',
+          contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
         },
         staff,
       );
@@ -572,14 +572,14 @@ describe('ContractsService', () => {
       expect(prisma.rentalContract.update).toHaveBeenCalledWith({
         where: { id: 'contract-123' },
         data: expect.objectContaining({
-          landlordName: 'Hoang Kim Long',
+          landlordName: 'Hoàng Kim Long',
           landlordIdNumber: '060204000351',
           landlordIdIssueDate: '19/04/2021',
           landlordAddress:
-            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+            'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
           landlordPhone: '0388969964',
-          specialConditions: 'Khong hut thuoc trong can ho.',
-          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          specialConditions: 'Không hút thuốc trong căn hộ.',
+          contractTerms: 'Thông báo trước 30 ngày nếu kết thúc sớm.',
         }),
       });
       expect(service.regenerateContractPdf).toHaveBeenCalledWith(
@@ -790,7 +790,7 @@ describe('ContractsService', () => {
 
       const result = await service.cancelByUser(
         'contract-123',
-        { reason: 'Khong thue nua' },
+        { reason: 'Không thuê nữa' },
         user,
       );
 
@@ -833,7 +833,7 @@ describe('ContractsService', () => {
       await expect(
         service.cancelByUser(
           'contract-123',
-          { reason: 'Khong thue nua' },
+          { reason: 'Không thuê nữa' },
           user,
         ),
       ).rejects.toThrow(NotFoundException);
@@ -857,7 +857,7 @@ describe('ContractsService', () => {
       await expect(
         service.cancelByUser(
           'contract-123',
-          { reason: 'Khong thue nua' },
+          { reason: 'Không thuê nữa' },
           user,
         ),
       ).rejects.toThrow(ForbiddenException);
@@ -898,7 +898,7 @@ describe('ContractsService', () => {
 
       await service.cancelByUser(
         'contract-123',
-        { reason: 'Khong thue nua' },
+        { reason: 'Không thuê nữa' },
         user,
       );
 

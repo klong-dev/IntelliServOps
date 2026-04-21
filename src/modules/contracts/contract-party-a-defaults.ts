@@ -1,8 +1,8 @@
 export const DEFAULT_CONTRACT_PARTY_A = {
-  landlordName: 'Hoang Kim Long',
+  landlordName: 'Hoàng Kim Long',
   landlordIdNumber: '060204000351',
   landlordIdIssueDate: '19/04/2021',
-  landlordAddress: 'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+  landlordAddress: 'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
   landlordPhone: '0388969964',
 } as const;
 

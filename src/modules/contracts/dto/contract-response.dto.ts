@@ -32,7 +32,7 @@ class ContractApartmentDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: 'Thanh pho Ho Chi Minh',
+    example: 'Thành phố Hồ Chí Minh',
   })
   provinceName?: string | null;
 
@@ -63,7 +63,7 @@ class WardAddressDto {
   @ApiProperty({ example: 26728 })
   wardCode: number;
 
-  @ApiPropertyOptional({ type: String, example: 'Xa Chau Pha', nullable: true })
+  @ApiPropertyOptional({ type: String, example: 'Xã Châu Pha', nullable: true })
   wardName: string | null;
 
   @ApiPropertyOptional({ type: Number, example: 754, nullable: true })
@@ -81,14 +81,14 @@ class WardAddressDto {
 
   @ApiPropertyOptional({
     type: String,
-    example: 'Thanh pho Ho Chi Minh',
+    example: 'Thành phố Hồ Chí Minh',
     nullable: true,
   })
   provinceName: string | null;
 
   @ApiPropertyOptional({
     type: String,
-    example: 'Xa Chau Pha, Thanh pho Ho Chi Minh',
+    example: 'Xã Châu Pha, Thành phố Hồ Chí Minh',
     nullable: true,
   })
   fullAddress: string | null;
@@ -98,7 +98,7 @@ class ContractMemberUserDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 'Nguyen Van A' })
+  @ApiProperty({ example: 'Nguyễn Văn A' })
   fullName: string;
 
   @ApiProperty({ example: 'user@example.com' })
@@ -167,7 +167,7 @@ class ContractListMemberUserDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 'Nguyen Van A' })
+  @ApiProperty({ example: 'Nguyễn Văn A' })
   fullName: string;
 
   @ApiProperty({ example: 'user@example.com' })
@@ -189,7 +189,7 @@ class ContractCreatorDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 'Le Van B' })
+  @ApiProperty({ example: 'Lê Văn B' })
   fullName: string;
 }
 
@@ -364,7 +364,7 @@ export class ContractDetailDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: 'Hoang Kim Long',
+    example: 'Hoàng Kim Long',
   })
   landlordName: string | null;
 
@@ -392,7 +392,7 @@ export class ContractDetailDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: 'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+    example: 'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
   })
   landlordAddress: string | null;
 

@@ -13,7 +13,7 @@ import { PaymentMethodType } from '@prisma/client';
 export class UpdateContractPdfContentDto {
   @ApiPropertyOptional({
     description: 'Landlord name displayed in PDF (Party A)',
-    example: 'Hoang Kim Long',
+    example: 'Hoàng Kim Long',
   })
   @IsString()
   @IsOptional()
@@ -46,7 +46,7 @@ export class UpdateContractPdfContentDto {
 
   @ApiPropertyOptional({
     description: 'Landlord business address displayed in PDF',
-    example: 'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+    example: 'Chung cư Vinhomes Grand Park, phường Long Bình, TP Thủ Đức',
   })
   @IsString()
   @IsOptional()
@@ -115,7 +115,7 @@ export class UpdateContractPdfContentDto {
 
   @ApiPropertyOptional({
     description: 'Special conditions shown in contract PDF',
-    example: 'Khong nuoi thu cung trong can ho.',
+    example: 'Không nuôi thú cưng trong căn hộ.',
   })
   @IsString()
   @IsOptional()
@@ -123,7 +123,7 @@ export class UpdateContractPdfContentDto {
 
   @ApiPropertyOptional({
     description: 'Additional contract terms shown in contract PDF',
-    example: 'Khong thay doi ket cau can ho trong thoi han thue.',
+    example: 'Không thay đổi kết cấu căn hộ trong thời hạn thuê.',
   })
   @IsString()
   @IsOptional()
