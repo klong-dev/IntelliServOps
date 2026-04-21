@@ -26,6 +26,11 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { readFile } from 'fs/promises';
+
+jest.mock('fs/promises', () => ({
+  readFile: jest.fn(),
+}));
 
 describe('ContractsService', () => {
   let service: ContractsService;
@@ -40,6 +45,7 @@ describe('ContractsService', () => {
   const notificationsService = {
     createAndPush: jest.fn(),
   };
+  const readFileMock = readFile as jest.MockedFunction<typeof readFile>;
 
   const mockContract = (overrides = {}) => ({
     id: 'contract-123',
@@ -61,6 +67,13 @@ describe('ContractsService', () => {
     apartmentsService = {
       updateStatus: jest.fn(),
     };
+    readFileMock
+      .mockReset()
+      .mockResolvedValue(Buffer.from('landlord-signature'));
+    contractPdfService.generateContractPdf.mockReset();
+    contractPdfService.generateContractPdf.mockResolvedValue(
+      Buffer.from('pdf'),
+    );
     ioTService.syncApartmentDoorPin.mockResolvedValue({
       success: true,
       skipped: false,
@@ -348,6 +361,82 @@ describe('ContractsService', () => {
     });
   });
 
+  describe('regenerateContractPdf', () => {
+    it('should include fallback landlord signature and additional terms in generated PDF data', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        contractNumber: 'CTR-2026-00001',
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2027-03-31T00:00:00.000Z'),
+        monthlyRent: 15000000,
+        depositAmount: 30000000,
+        paymentDueDay: 5,
+        paymentMethod: PaymentMethodType.bank_transfer,
+        specialConditions: 'Khong hut thuoc trong can ho.',
+        contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        landlordName: 'Hoang Kim Long',
+        landlordIdNumber: '060204000351',
+        landlordIdIssueDate: '19/04/2021',
+        landlordIdIssuePlace: 'Legacy issue place',
+        landlordAddress:
+          'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+        landlordPhone: '0388969964',
+        landlordSignature: null,
+        tenantSignature: null,
+        apartment: {
+          apartmentNumber: 'A-101',
+          buildingName: 'Vinhomes Grand Park',
+          totalArea: 70,
+          usableArea: 65,
+          numberOfBedrooms: 2,
+          numberOfBathrooms: 1,
+        },
+        members: [
+          {
+            memberType: 'primary',
+            isPrimaryContact: true,
+            user: {
+              fullName: 'Nguyen Van A',
+              phone: '0901234567',
+              email: 'tenant@example.com',
+              identity: {
+                nationalId: '079203001234',
+                issueDate: '01/01/2022',
+                address: '123 Nguyen Hue, TP HCM',
+              },
+            },
+          },
+        ],
+      } as any);
+
+      await service.regenerateContractPdf('contract-123');
+
+      expect(readFileMock).toHaveBeenCalled();
+      expect(contractPdfService.generateContractPdf).toHaveBeenCalledWith(
+        expect.objectContaining({
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          landlordSignature: Buffer.from('landlord-signature'),
+        }),
+      );
+
+      const updateCall = prisma.rentalContract.update.mock.calls[0]?.[0];
+      expect(updateCall.where).toEqual({ id: 'contract-123' });
+      expect(Buffer.from(updateCall.data.contractPdfData)).toEqual(
+        Buffer.from('pdf'),
+      );
+      expect(Buffer.from(updateCall.data.landlordSignature)).toEqual(
+        Buffer.from('landlord-signature'),
+      );
+    });
+  });
+
   describe('uploadSignedPdf', () => {
     it('should auto-create deposit invoice when signing contract', async () => {
       const user = mockUserJwtPayload();
@@ -425,6 +514,57 @@ describe('ContractsService', () => {
       await expect(service.update('non-existent', updateDto)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('updateContractPdfContent', () => {
+    it('should persist editable PDF fields and regenerate the contract PDF', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        status: ContractStatus.draft,
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2027-03-31T00:00:00.000Z'),
+      } as any);
+      prisma.rentalContract.update.mockResolvedValue({} as any);
+
+      jest.spyOn(service, 'regenerateContractPdf').mockResolvedValue();
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 'contract-123',
+      } as any);
+
+      await service.updateContractPdfContent(
+        'contract-123',
+        {
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        },
+        staff,
+      );
+
+      expect(prisma.rentalContract.update).toHaveBeenCalledWith({
+        where: { id: 'contract-123' },
+        data: expect.objectContaining({
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        }),
+      });
+      expect(service.regenerateContractPdf).toHaveBeenCalledWith(
+        'contract-123',
+      );
+      expect(service.findOne).toHaveBeenCalledWith('contract-123', staff);
     });
   });
 
@@ -1309,7 +1449,9 @@ describe('ContractsService', () => {
           previousReadingValue: 30,
           consumption: 12,
         } as any);
-      prisma.utilityReading.update.mockResolvedValue({ id: 'snapshot-end' } as any);
+      prisma.utilityReading.update.mockResolvedValue({
+        id: 'snapshot-end',
+      } as any);
       prisma.utilityReading.updateMany.mockResolvedValue({ count: 2 } as any);
       prisma.invoice.count.mockResolvedValue(0);
       prisma.invoice.create.mockResolvedValue({
