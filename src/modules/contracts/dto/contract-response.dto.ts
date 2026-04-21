@@ -364,42 +364,42 @@ export class ContractDetailDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: 'Cong ty TNHH IntelliServOps',
+    example: 'Hoang Kim Long',
   })
   landlordName: string | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: '0312345678',
+    example: '060204000351',
   })
   landlordIdNumber: string | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: '01/01/2020',
+    example: '19/04/2021',
   })
   landlordIdIssueDate: string | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: 'So KH&DT TP. Ho Chi Minh',
+    example: 'Legacy field - not rendered in rental contract PDF',
   })
   landlordIdIssuePlace: string | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: 'TP. Ho Chi Minh, Viet Nam',
+    example: 'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
   })
   landlordAddress: string | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    example: '1900 0000',
+    example: '0388969964',
   })
   landlordPhone: string | null;
 

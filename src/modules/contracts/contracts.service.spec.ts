@@ -26,6 +26,11 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { readFile } from 'fs/promises';
+
+jest.mock('fs/promises', () => ({
+  readFile: jest.fn(),
+}));
 
 describe('ContractsService', () => {
   let service: ContractsService;
@@ -40,6 +45,7 @@ describe('ContractsService', () => {
   const notificationsService = {
     createAndPush: jest.fn(),
   };
+  const readFileMock = readFile as jest.MockedFunction<typeof readFile>;
 
   const mockContract = (overrides = {}) => ({
     id: 'contract-123',
@@ -61,6 +67,13 @@ describe('ContractsService', () => {
     apartmentsService = {
       updateStatus: jest.fn(),
     };
+    readFileMock
+      .mockReset()
+      .mockResolvedValue(Buffer.from('landlord-signature'));
+    contractPdfService.generateContractPdf.mockReset();
+    contractPdfService.generateContractPdf.mockResolvedValue(
+      Buffer.from('pdf'),
+    );
     ioTService.syncApartmentDoorPin.mockResolvedValue({
       success: true,
       skipped: false,
@@ -350,6 +363,82 @@ describe('ContractsService', () => {
     });
   });
 
+  describe('regenerateContractPdf', () => {
+    it('should include fallback landlord signature and additional terms in generated PDF data', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        contractNumber: 'CTR-2026-00001',
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2027-03-31T00:00:00.000Z'),
+        monthlyRent: 15000000,
+        depositAmount: 30000000,
+        paymentDueDay: 5,
+        paymentMethod: PaymentMethodType.bank_transfer,
+        specialConditions: 'Khong hut thuoc trong can ho.',
+        contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        landlordName: 'Hoang Kim Long',
+        landlordIdNumber: '060204000351',
+        landlordIdIssueDate: '19/04/2021',
+        landlordIdIssuePlace: 'Legacy issue place',
+        landlordAddress:
+          'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+        landlordPhone: '0388969964',
+        landlordSignature: null,
+        tenantSignature: null,
+        apartment: {
+          apartmentNumber: 'A-101',
+          buildingName: 'Vinhomes Grand Park',
+          totalArea: 70,
+          usableArea: 65,
+          numberOfBedrooms: 2,
+          numberOfBathrooms: 1,
+        },
+        members: [
+          {
+            memberType: 'primary',
+            isPrimaryContact: true,
+            user: {
+              fullName: 'Nguyen Van A',
+              phone: '0901234567',
+              email: 'tenant@example.com',
+              identity: {
+                nationalId: '079203001234',
+                issueDate: '01/01/2022',
+                address: '123 Nguyen Hue, TP HCM',
+              },
+            },
+          },
+        ],
+      } as any);
+
+      await service.regenerateContractPdf('contract-123');
+
+      expect(readFileMock).toHaveBeenCalled();
+      expect(contractPdfService.generateContractPdf).toHaveBeenCalledWith(
+        expect.objectContaining({
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+          landlordSignature: Buffer.from('landlord-signature'),
+        }),
+      );
+
+      const updateCall = prisma.rentalContract.update.mock.calls[0]?.[0];
+      expect(updateCall.where).toEqual({ id: 'contract-123' });
+      expect(Buffer.from(updateCall.data.contractPdfData)).toEqual(
+        Buffer.from('pdf'),
+      );
+      expect(Buffer.from(updateCall.data.landlordSignature)).toEqual(
+        Buffer.from('landlord-signature'),
+      );
+    });
+  });
+
   describe('uploadSignedPdf', () => {
     it('should auto-create deposit invoice when signing contract', async () => {
       const user = mockUserJwtPayload();
@@ -425,6 +514,225 @@ describe('ContractsService', () => {
       prisma.rentalContract.findUnique.mockResolvedValue(null);
 
       await expect(service.update('non-existent', updateDto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('updateContractPdfContent', () => {
+    it('should persist editable PDF fields and regenerate the contract PDF', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        status: ContractStatus.draft,
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2027-03-31T00:00:00.000Z'),
+      } as any);
+      prisma.rentalContract.update.mockResolvedValue({} as any);
+
+      jest.spyOn(service, 'regenerateContractPdf').mockResolvedValue();
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 'contract-123',
+      } as any);
+
+      await service.updateContractPdfContent(
+        'contract-123',
+        {
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        },
+        staff,
+      );
+
+      expect(prisma.rentalContract.update).toHaveBeenCalledWith({
+        where: { id: 'contract-123' },
+        data: expect.objectContaining({
+          landlordName: 'Hoang Kim Long',
+          landlordIdNumber: '060204000351',
+          landlordIdIssueDate: '19/04/2021',
+          landlordAddress:
+            'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
+          landlordPhone: '0388969964',
+          specialConditions: 'Khong hut thuoc trong can ho.',
+          contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
+        }),
+      });
+      expect(service.regenerateContractPdf).toHaveBeenCalledWith(
+        'contract-123',
+      );
+      expect(service.findOne).toHaveBeenCalledWith('contract-123', staff);
+    });
+  });
+
+  describe('activate', () => {
+    it('should activate contract', async () => {
+      const contract = mockContract({
+        status: ContractStatus.pending,
+        apartmentId: 'apt-123',
+      });
+      const activated = { ...contract, status: ContractStatus.active };
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+      // Service uses array-style $transaction for activate
+      prisma.$transaction.mockResolvedValue([activated, {}]);
+
+      const result = await service.activate('contract-123');
+
+      expect(result[0].status).toBe(ContractStatus.active);
+    });
+
+    it('should throw NotFoundException if not found', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue(null);
+
+      await expect(service.activate('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw ConflictException if not pending', async () => {
+      const contract = mockContract({ status: ContractStatus.active });
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+
+      await expect(service.activate('contract-123')).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should throw ConflictException when startDate is in the future', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        startDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        endDate: new Date(Date.now() + 40 * 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+
+      await expect(service.activate('contract-123')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should mark contract expired and reject activation when endDate has passed', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        startDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+        endDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+
+      await expect(service.activate('contract-123')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.rentalContract.update).toHaveBeenCalledWith({
+        where: { id: 'contract-123' },
+        data: { status: ContractStatus.expired },
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should upsert userApartment records for active members on activation', async () => {
+      const contract = mockContract({
+        status: ContractStatus.pending,
+        apartmentId: 'apt-123',
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+        members: [
+          {
+            userId: 'user-1',
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
+      } as any);
+      prisma.$transaction.mockResolvedValue([
+        { ...contract, status: ContractStatus.active },
+        {},
+        {},
+      ] as any);
+
+      await service.activate('contract-123');
+
+      expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId_apartmentId_rentalContractId: {
+              userId: 'user-1',
+              apartmentId: 'apt-123',
+              rentalContractId: 'contract-123',
+            },
+          },
+          create: expect.objectContaining({
+            status: 'active',
+            isPrimaryTenant: true,
+          }),
+          update: expect.objectContaining({
+            status: 'active',
+            moveOutDate: contract.endDate,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('terminate', () => {
+    it('should terminate active contract', async () => {
+      const contract = mockContract({
+        status: ContractStatus.active,
+        apartmentId: 'apt-123',
+      });
+      const terminated = { ...contract, status: ContractStatus.terminated };
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+      // Service uses array-style $transaction for terminate
+      prisma.$transaction.mockResolvedValue([terminated, {}, {}]);
+
+      const result = await service.terminate(
+        'contract-123',
+        'Early termination',
+        5000000,
+      );
+
+      expect(result[0].status).toBe(ContractStatus.terminated);
+      expect(prisma.invoice.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ rentalContractId: 'contract-123' }),
+          data: expect.objectContaining({ status: 'cancelled' }),
+        }),
+      );
+    });
+
+    it('should throw NotFoundException if not found', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue(null);
+
+      await expect(service.terminate('non-existent', 'reason')).rejects.toThrow(
         NotFoundException,
       );
     });

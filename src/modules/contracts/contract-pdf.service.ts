@@ -173,6 +173,7 @@ export class ContractPdfService {
       this.renderArticle5(doc);
       this.renderArticle6(doc);
       this.renderArticle7(doc);
+      this.renderAdditionalTerms(doc, data);
       this.renderSignatures(doc, data);
 
       doc.end();
@@ -474,10 +475,7 @@ export class ContractPdfService {
         `     Ngày cấp: ${data.landlordIdIssueDate || '....................'}`,
     );
     doc.text(
-      `Nơi cấp: ${data.landlordIdIssuePlace || '.........................................'}`,
-    );
-    doc.text(
-      `Nơi ĐKTT: ${data.landlordAddress || '........................................'}`,
+      `Địa chỉ kinh doanh: ${data.landlordAddress || '................................'}`,
     );
     doc.text(
       `Điện thoại: ${data.landlordPhone || '........................................'}`,
@@ -755,6 +753,37 @@ export class ContractPdfService {
     doc.moveDown(1);
   }
 
+  private renderAdditionalTerms(
+    doc: PDFKit.PDFDocument,
+    data: ContractPdfData,
+  ) {
+    const additionalSections = [
+      data.specialConditions
+        ? `Điều kiện đặc biệt: ${data.specialConditions}`
+        : null,
+      data.contractTerms ? `Điều khoản bổ sung: ${data.contractTerms}` : null,
+    ].filter((value): value is string => !!value);
+
+    if (!additionalSections.length) {
+      return;
+    }
+
+    if (doc.y > doc.page.height - 240) {
+      doc.addPage();
+    }
+
+    doc.font('Bold').fontSize(12).text('Điều 8. Điều khoản bổ sung:');
+    doc.moveDown(0.3);
+    doc.font('Regular').fontSize(11);
+
+    additionalSections.forEach((content, index) => {
+      doc.text(`8.${index + 1}. ${content}`);
+      doc.moveDown(0.2);
+    });
+
+    doc.moveDown(0.6);
+  }
+
   private renderSignatures(doc: PDFKit.PDFDocument, data: ContractPdfData) {
     if (doc.y > doc.page.height - 200) {
       doc.addPage();
@@ -809,7 +838,7 @@ export class ContractPdfService {
           width: colWidth,
           align: 'center',
         })
-        .text('IntelliServOps', leftX, signatureY + 32, {
+        .text(data.landlordName || 'Bên A', leftX, signatureY + 32, {
           width: colWidth,
           align: 'center',
         });
