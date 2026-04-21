@@ -28,6 +28,9 @@ import {
   Prisma,
   PartnerCooperationContractStatus,
   PartnerMonthlyPayoutStatus,
+  NotificationType,
+  NotificationChannel,
+  Priority,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -927,6 +930,12 @@ export class PaymentsService {
                 apartmentId: true,
                 startDate: true,
                 endDate: true,
+                apartment: {
+                  select: {
+                    apartmentNumber: true,
+                    buildingName: true,
+                  },
+                },
                 members: {
                   select: {
                     userId: true,
@@ -972,10 +981,7 @@ export class PaymentsService {
 
     const txResult = await this.prisma.$transaction(txOperations);
 
-    if (
-      activationContext.activated &&
-      activationContext.apartmentDoorPassword
-    ) {
+    if (activationContext.apartmentDoorPassword) {
       await this.syncApartmentDoorPasswordToBoard(
         payment.invoice.rentalContract.apartmentId,
         payment.invoice.rentalContract.id,
@@ -986,6 +992,7 @@ export class PaymentsService {
         await this.notifyMembersApartmentPassword(
           activationContext.memberUserIds,
           activationContext.apartmentDoorPassword,
+          activationContext.apartmentLabel,
           payment.invoice.rentalContract.id,
           payment.invoice.invoiceNumber,
         );
@@ -1333,6 +1340,12 @@ export class PaymentsService {
                 apartmentId: true,
                 startDate: true,
                 endDate: true,
+                apartment: {
+                  select: {
+                    apartmentNumber: true,
+                    buildingName: true,
+                  },
+                },
                 members: {
                   select: {
                     userId: true,
@@ -1406,10 +1419,7 @@ export class PaymentsService {
 
       await this.prisma.$transaction(txOperations);
 
-      if (
-        activationContext.activated &&
-        activationContext.apartmentDoorPassword
-      ) {
+      if (activationContext.apartmentDoorPassword) {
         await this.syncApartmentDoorPasswordToBoard(
           payment.invoice.rentalContract.apartmentId,
           payment.invoice.rentalContract.id,
@@ -1420,6 +1430,7 @@ export class PaymentsService {
           await this.notifyMembersApartmentPassword(
             activationContext.memberUserIds,
             activationContext.apartmentDoorPassword,
+            activationContext.apartmentLabel,
             payment.invoice.rentalContract.id,
             payment.invoice.invoiceNumber,
           );
@@ -1497,6 +1508,10 @@ export class PaymentsService {
       apartmentId: string;
       startDate: Date;
       endDate: Date;
+      apartment?: {
+        apartmentNumber?: string | null;
+        buildingName?: string | null;
+      } | null;
       members: Array<{
         userId: string;
         memberType: string;
@@ -1507,6 +1522,7 @@ export class PaymentsService {
     activated: boolean;
     apartmentDoorPassword: string | null;
     memberUserIds: string[];
+    apartmentLabel: string | null;
   } {
     if (
       rentalContract.status !== ContractStatus.signed ||
@@ -1516,10 +1532,12 @@ export class PaymentsService {
         activated: false,
         apartmentDoorPassword: null,
         memberUserIds: [],
+        apartmentLabel: null,
       };
     }
 
     const members = rentalContract.members ?? [];
+    const apartmentLabel = this.buildApartmentLabel(rentalContract.apartment);
 
     const buildUserApartmentUpserts = (
       status: UserApartmentStatus,
@@ -1561,16 +1579,21 @@ export class PaymentsService {
       );
 
     const todayStart = this.getUtcDayStart();
+    const apartmentDoorPassword = this.generateSixDigitPassword();
 
     if (rentalContract.startDate > todayStart) {
       txOperations.push(
-        ...buildUserApartmentUpserts(UserApartmentStatus.inactive, null),
+        ...buildUserApartmentUpserts(
+          UserApartmentStatus.active,
+          apartmentDoorPassword,
+        ),
       );
 
       return {
         activated: false,
-        apartmentDoorPassword: null,
+        apartmentDoorPassword,
         memberUserIds: members.map((member) => member.userId),
+        apartmentLabel,
       };
     }
 
@@ -1586,10 +1609,9 @@ export class PaymentsService {
         activated: false,
         apartmentDoorPassword: null,
         memberUserIds: [],
+        apartmentLabel,
       };
     }
-
-    const apartmentDoorPassword = this.generateSixDigitPassword();
 
     txOperations.push(
       this.prisma.rentalContract.update({
@@ -1616,32 +1638,52 @@ export class PaymentsService {
       activated: true,
       apartmentDoorPassword,
       memberUserIds: members.map((member) => member.userId),
+      apartmentLabel,
     };
   }
 
   private async notifyMembersApartmentPassword(
     memberUserIds: string[],
     apartmentDoorPassword: string,
+    apartmentLabel: string | null,
     rentalContractId: string,
     invoiceNumber: string,
   ): Promise<void> {
+    const apartmentMessage = apartmentLabel
+      ? `Thông tin căn hộ: ${apartmentLabel}. `
+      : '';
+
     await Promise.allSettled(
       memberUserIds.map((memberUserId) =>
         this.notificationsService.createAndPush({
           recipientType: ActorType.user,
           recipientId: memberUserId,
-          notificationType: 'info',
-          channel: 'in_app',
-          title: 'K├¡ch hoß║ít hß╗úp ─æß╗ông th├ánh c├┤ng',
-          message: `H├│a ─æ╞ín ─æß║╖t cß╗ìc ${invoiceNumber} ─æ├ú thanh to├ín th├ánh c├┤ng. Mß║¡t khß║⌐u cß╗¡a nh├á: ${apartmentDoorPassword}`,
+          notificationType: NotificationType.success,
+          channel: NotificationChannel.push,
+          title: 'Thanh toán thành công',
+          message: `Hóa đơn ${invoiceNumber} đã được thanh toán thành công. ${apartmentMessage}Mật khẩu cửa hiện tại: ${apartmentDoorPassword}.`,
           actionUrl: `/contracts/${rentalContractId}`,
-          actionLabel: 'Xem hß╗úp ─æß╗ông',
-          priority: 'high',
+          actionLabel: 'Xem hợp đồng',
+          priority: Priority.high,
           relatedEntityType: 'RentalContract',
           relatedEntityId: rentalContractId,
         }),
       ),
     );
+  }
+
+  private buildApartmentLabel(
+    apartment?: {
+      apartmentNumber?: string | null;
+      buildingName?: string | null;
+    } | null,
+  ): string | null {
+    const parts = [apartment?.apartmentNumber, apartment?.buildingName].filter(
+      (value): value is string =>
+        typeof value === 'string' && value.trim().length > 0,
+    );
+
+    return parts.length > 0 ? parts.join(' - ') : null;
   }
 
   private async syncApartmentDoorPasswordToBoard(
