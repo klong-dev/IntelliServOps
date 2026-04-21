@@ -27,6 +27,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { readFile } from 'fs/promises';
+import { DEFAULT_CONTRACT_PARTY_A } from './contract-party-a-defaults';
 
 jest.mock('fs/promises', () => ({
   readFile: jest.fn(),
@@ -296,6 +297,7 @@ describe('ContractsService', () => {
       const operator = mockOperatorJwtPayload();
       const apartment = { id: 'apt-123', status: ApartmentStatus.available };
       const created = mockContract();
+      const createContractInTx = jest.fn().mockResolvedValue(created);
 
       prisma.apartment.findUnique.mockResolvedValue(apartment as any);
       prisma.rentalContract.findFirst.mockResolvedValue(null);
@@ -320,7 +322,7 @@ describe('ContractsService', () => {
       // Service uses callback-style $transaction
       prisma.$transaction.mockImplementation(async (callback) =>
         callback({
-          rentalContract: { create: jest.fn().mockResolvedValue(created) },
+          rentalContract: { create: createContractInTx },
           userContractMember: { createMany: jest.fn().mockResolvedValue({}) },
         }),
       );
@@ -334,6 +336,11 @@ describe('ContractsService', () => {
         pdfUrl: `/contracts/${created.id}/pdf`,
         hasPdf: false,
       });
+      expect(createContractInTx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining(DEFAULT_CONTRACT_PARTY_A),
+        }),
+      );
     });
 
     it('should throw NotFoundException if apartment not found', async () => {
@@ -374,13 +381,12 @@ describe('ContractsService', () => {
         paymentMethod: PaymentMethodType.bank_transfer,
         specialConditions: 'Khong hut thuoc trong can ho.',
         contractTerms: 'Thong bao truoc 30 ngay neu ket thuc som.',
-        landlordName: 'Hoang Kim Long',
-        landlordIdNumber: '060204000351',
-        landlordIdIssueDate: '19/04/2021',
+        landlordName: null,
+        landlordIdNumber: null,
+        landlordIdIssueDate: null,
         landlordIdIssuePlace: 'Legacy issue place',
-        landlordAddress:
-          'Chung cu Vinhomes Grand Park, phuong Long Binh, TP Thu Duc',
-        landlordPhone: '0388969964',
+        landlordAddress: null,
+        landlordPhone: null,
         landlordSignature: null,
         tenantSignature: null,
         apartment: {
@@ -430,6 +436,21 @@ describe('ContractsService', () => {
       expect(updateCall.where).toEqual({ id: 'contract-123' });
       expect(Buffer.from(updateCall.data.contractPdfData)).toEqual(
         Buffer.from('pdf'),
+      );
+      expect(updateCall.data.landlordName).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordName,
+      );
+      expect(updateCall.data.landlordIdNumber).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordIdNumber,
+      );
+      expect(updateCall.data.landlordIdIssueDate).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordIdIssueDate,
+      );
+      expect(updateCall.data.landlordAddress).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordAddress,
+      );
+      expect(updateCall.data.landlordPhone).toBe(
+        DEFAULT_CONTRACT_PARTY_A.landlordPhone,
       );
       expect(Buffer.from(updateCall.data.landlordSignature)).toEqual(
         Buffer.from('landlord-signature'),

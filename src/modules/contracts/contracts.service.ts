@@ -41,6 +41,10 @@ import { ApartmentsService } from '../apartments/apartments.service';
 import { IoTService } from '../iot/iot.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContractPdfData, ContractPdfService } from './contract-pdf.service';
+import {
+  isMissingContractPartyAField,
+  resolveContractPartyAFields,
+} from './contract-party-a-defaults';
 import * as crypto from 'crypto';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
@@ -1007,18 +1011,25 @@ export class ContractsService {
       email: member.user.email || undefined,
       memberType: member.memberType,
     }));
+    const partyAFields = resolveContractPartyAFields({
+      landlordName: contract.landlordName,
+      landlordIdNumber: contract.landlordIdNumber,
+      landlordIdIssueDate: contract.landlordIdIssueDate,
+      landlordAddress: contract.landlordAddress,
+      landlordPhone: contract.landlordPhone,
+    });
     const landlordSignature = contract.landlordSignature
       ? Buffer.from(contract.landlordSignature)
       : await this.getDefaultLandlordSignature();
 
     const pdfData: ContractPdfData = {
       contractNumber: contract.contractNumber,
-      landlordName: contract.landlordName || undefined,
-      landlordIdNumber: contract.landlordIdNumber || undefined,
-      landlordIdIssueDate: contract.landlordIdIssueDate || undefined,
+      landlordName: partyAFields.landlordName,
+      landlordIdNumber: partyAFields.landlordIdNumber,
+      landlordIdIssueDate: partyAFields.landlordIdIssueDate,
       landlordIdIssuePlace: contract.landlordIdIssuePlace || undefined,
-      landlordAddress: contract.landlordAddress || undefined,
-      landlordPhone: contract.landlordPhone || undefined,
+      landlordAddress: partyAFields.landlordAddress,
+      landlordPhone: partyAFields.landlordPhone,
       tenantName: primaryMember?.user.fullName || undefined,
       tenantIdNumber: primaryMember?.user.identity?.nationalId || undefined,
       tenantIdIssueDate: primaryMember?.user.identity?.issueDate || undefined,
@@ -1053,6 +1064,26 @@ export class ContractsService {
     const updateData: Prisma.RentalContractUpdateInput = {
       contractPdfData: new Uint8Array(pdfBuffer),
     };
+
+    if (isMissingContractPartyAField(contract.landlordName)) {
+      updateData.landlordName = partyAFields.landlordName;
+    }
+
+    if (isMissingContractPartyAField(contract.landlordIdNumber)) {
+      updateData.landlordIdNumber = partyAFields.landlordIdNumber;
+    }
+
+    if (isMissingContractPartyAField(contract.landlordIdIssueDate)) {
+      updateData.landlordIdIssueDate = partyAFields.landlordIdIssueDate;
+    }
+
+    if (isMissingContractPartyAField(contract.landlordAddress)) {
+      updateData.landlordAddress = partyAFields.landlordAddress;
+    }
+
+    if (isMissingContractPartyAField(contract.landlordPhone)) {
+      updateData.landlordPhone = partyAFields.landlordPhone;
+    }
 
     if (!contract.landlordSignature && landlordSignature) {
       updateData.landlordSignature = new Uint8Array(landlordSignature);
@@ -2029,6 +2060,7 @@ export class ContractsService {
 
     // Generate contract number
     const contractNumber = await this.generateContractNumber();
+    const defaultPartyAFields = resolveContractPartyAFields();
 
     // Create contract with members in transaction
     const createdContract = await this.prisma.$transaction(async (tx) => {
@@ -2046,6 +2078,7 @@ export class ContractsService {
           utilitiesCharges: createDto.utilitiesCharges as any,
           contractTerms: createDto.contractTerms,
           specialConditions: createDto.specialConditions,
+          ...defaultPartyAFields,
           status: ContractStatus.draft,
           createdByStaff:
             currentUser.actorType === 'staff'
@@ -2557,6 +2590,11 @@ export class ContractsService {
         utilitiesCharges: true,
         contractTerms: true,
         specialConditions: true,
+        landlordName: true,
+        landlordIdNumber: true,
+        landlordIdIssueDate: true,
+        landlordAddress: true,
+        landlordPhone: true,
         status: true,
         apartment: {
           select: {
@@ -2789,6 +2827,13 @@ export class ContractsService {
     }
 
     const contractNumber = await this.generateContractNumber();
+    const partyAFields = resolveContractPartyAFields({
+      landlordName: sourceContract.landlordName,
+      landlordIdNumber: sourceContract.landlordIdNumber,
+      landlordIdIssueDate: sourceContract.landlordIdIssueDate,
+      landlordAddress: sourceContract.landlordAddress,
+      landlordPhone: sourceContract.landlordPhone,
+    });
 
     const renewedContract = await this.prisma.$transaction(async (tx) => {
       const created = await tx.rentalContract.create({
@@ -2805,6 +2850,7 @@ export class ContractsService {
           utilitiesCharges: sourceContract.utilitiesCharges as any,
           contractTerms: sourceContract.contractTerms,
           specialConditions: sourceContract.specialConditions,
+          ...partyAFields,
           status: ContractStatus.draft,
           category: 'renewal',
           renewedFromContract: { connect: { id: sourceContract.id } },
