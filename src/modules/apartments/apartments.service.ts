@@ -195,6 +195,79 @@ export class ApartmentsService {
     };
   }
 
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    );
+  }
+
+  private buildApartmentSlugSource(params: {
+    buildingName?: string | null;
+    apartmentNumber?: string | null;
+  }): string {
+    return [params.buildingName, params.apartmentNumber]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value))
+      .join(' ');
+  }
+
+  private slugifyApartmentSource(value: string): string {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-{2,}/g, '-');
+  }
+
+  private buildBaseApartmentSlug(params: {
+    buildingName?: string | null;
+    apartmentNumber?: string | null;
+  }): string {
+    const combined = this.slugifyApartmentSource(
+      this.buildApartmentSlugSource(params),
+    );
+
+    if (combined) {
+      return combined;
+    }
+
+    const apartmentNumberSlug = this.slugifyApartmentSource(
+      params.apartmentNumber ?? '',
+    );
+    return apartmentNumberSlug || 'apartment';
+  }
+
+  private async generateUniqueApartmentSlug(params: {
+    buildingName?: string | null;
+    apartmentNumber?: string | null;
+    excludedId?: string;
+  }): Promise<string> {
+    const baseSlug = this.buildBaseApartmentSlug(params);
+    const existingSlugs = await this.prisma.apartment.findMany({
+      where: {
+        slug: { startsWith: baseSlug },
+        ...(params.excludedId ? { NOT: { id: params.excludedId } } : {}),
+      },
+      select: { slug: true },
+    });
+
+    const usedSlugs = new Set(existingSlugs.map((item) => item.slug));
+    if (!usedSlugs.has(baseSlug)) {
+      return baseSlug;
+    }
+
+    let suffix = 2;
+    while (usedSlugs.has(`${baseSlug}-${suffix}`)) {
+      suffix += 1;
+    }
+
+    return `${baseSlug}-${suffix}`;
+  }
+
   async getCooperationContractPdf(contractId: string, currentUser: JwtPayload) {
     const contract = await this.prisma.partnerCooperationContract.findUnique({
       where: { id: contractId },
@@ -702,6 +775,7 @@ export class ApartmentsService {
 
     const apartmentSelect = Prisma.validator<Prisma.ApartmentSelect>()({
       id: true,
+      slug: true,
       buildingName: true,
       apartmentNumber: true,
       floorNumber: true,
@@ -798,118 +872,125 @@ export class ApartmentsService {
    * Get apartment by ID with full details
    */
   async findOne(id: string, currentUser?: JwtPayload) {
-    const [apartment, ratingAggregate] = await Promise.all([
-      this.prisma.apartment.findUnique({
-        where: { id },
-
-        include: {
-          rooms: {
-            select: {
-              id: true,
-              roomNumber: true,
-              roomType: true,
-              area: true,
-              status: true,
+    const apartmentDetailQuery = {
+      include: {
+        rooms: {
+          select: {
+            id: true,
+            roomNumber: true,
+            roomType: true,
+            area: true,
+            status: true,
+          },
+        },
+        owner: {
+          select: {
+            id: true,
+            companyName: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            profileImageUrl: true,
+          },
+        },
+        iotDevices: {
+          where: { status: 'active' },
+          select: {
+            id: true,
+            deviceName: true,
+            deviceType: true,
+            status: true,
+          },
+        },
+        utilityMeters: {
+          where: { status: 'active' },
+          select: {
+            id: true,
+            meterNumber: true,
+            meterType: true,
+            currentReading: true,
+          },
+        },
+        userApartments: {
+          where: {
+            rentalContract: {
+              status: ContractStatus.active,
             },
           },
-          owner: {
-            select: {
-              id: true,
-              companyName: true,
-              fullName: true,
-              email: true,
-              phone: true,
-              profileImageUrl: true,
-            },
-          },
-          iotDevices: {
-            where: { status: 'active' },
-            select: {
-              id: true,
-              deviceName: true,
-              deviceType: true,
-              status: true,
-            },
-          },
-          utilityMeters: {
-            where: { status: 'active' },
-            select: {
-              id: true,
-              meterNumber: true,
-              meterType: true,
-              currentReading: true,
-            },
-          },
-          userApartments: {
-            where: {
-              rentalContract: {
-                status: ContractStatus.active,
+          select: {
+            id: true,
+            status: true,
+            isPrimaryTenant: true,
+            moveInDate: true,
+            moveOutDate: true,
+            user: {
+              select: {
+                id: true,
+                fullName: true,
               },
             },
-            select: {
-              id: true,
-              status: true,
-              isPrimaryTenant: true,
-              moveInDate: true,
-              moveOutDate: true,
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                },
-              },
-              rentalContract: {
-                select: {
-                  id: true,
-                  contractNumber: true,
-                  status: true,
-                  members: {
-                    select: {
-                      id: true,
-                      memberType: true,
-                      isPrimaryContact: true,
-                      status: true,
-                      user: {
-                        select: {
-                          id: true,
-                          fullName: true,
-                        },
+            rentalContract: {
+              select: {
+                id: true,
+                contractNumber: true,
+                status: true,
+                members: {
+                  select: {
+                    id: true,
+                    memberType: true,
+                    isPrimaryContact: true,
+                    status: true,
+                    user: {
+                      select: {
+                        id: true,
+                        fullName: true,
                       },
                     },
-                    orderBy: {
-                      createdAt: 'asc',
-                    },
+                  },
+                  orderBy: {
+                    createdAt: 'asc',
                   },
                 },
               },
             },
-            orderBy: {
-              createdAt: 'asc',
-            },
           },
-          apartmentAmenities: {
-            select: {
-              amenity: {
-                select: {
-                  id: true,
-                  code: true,
-                  name: true,
-                  icon: true,
-                },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+        apartmentAmenities: {
+          select: {
+            amenity: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                icon: true,
               },
             },
           },
         },
-      }),
-      this.prisma.apartmentRating.aggregate({
-        where: { apartmentId: id },
-        _avg: { rating: true },
-      }),
-    ]);
+      },
+    } satisfies Omit<Prisma.ApartmentFindUniqueArgs, 'where'>;
+
+    const apartment = this.isUuid(id)
+      ? await this.prisma.apartment.findUnique({
+          where: { id },
+          ...apartmentDetailQuery,
+        })
+      : await this.prisma.apartment.findUnique({
+          where: { slug: id },
+          ...apartmentDetailQuery,
+        });
 
     if (!apartment) {
       throw new NotFoundException('Apartment not found');
     }
+
+    const ratingAggregate = await this.prisma.apartmentRating.aggregate({
+      where: { apartmentId: apartment.id },
+      _avg: { rating: true },
+    });
 
     let canRateApartment = false;
     let hasRatedApartment = false;
@@ -934,7 +1015,7 @@ export class ApartmentsService {
             status: MemberStatus.active,
             rentalContract: {
               status: ContractStatus.active,
-              apartmentId: id,
+              apartmentId: apartment.id,
             },
           },
           select: { id: true },
@@ -943,7 +1024,7 @@ export class ApartmentsService {
           where: {
             userId_apartmentId: {
               userId: currentUser.sub,
-              apartmentId: id,
+              apartmentId: apartment.id,
             },
           },
           select: { id: true },
@@ -1084,10 +1165,15 @@ export class ApartmentsService {
       ...(media?.imageUrls ?? []),
     ];
     const videoTourUrl = media?.videoUrl ?? createDto.videoTourUrl;
+    const slug = await this.generateUniqueApartmentSlug({
+      buildingName: createDto.buildingName,
+      apartmentNumber: createDto.apartmentNumber,
+    });
 
     const data: Prisma.ApartmentCreateInput = {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
+      slug,
       floorNumber: createDto.floorNumber,
       wardCode: createDto.wardCode,
       provinceCode,
@@ -1129,6 +1215,7 @@ export class ApartmentsService {
       data,
       select: {
         id: true,
+        slug: true,
         apartmentNumber: true,
         wardCode: true,
         provinceCode: true,
@@ -1179,10 +1266,15 @@ export class ApartmentsService {
     const imageUrls = media?.imageUrls ?? [];
     const videoUrl = media?.videoUrl;
     const shouldSetVerified = imageUrls.length > 0 && Boolean(videoUrl);
+    const slug = await this.generateUniqueApartmentSlug({
+      buildingName: createDto.buildingName,
+      apartmentNumber: createDto.apartmentNumber,
+    });
 
     const data: Prisma.ApartmentCreateInput = {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
+      slug,
       floorNumber: createDto.floorNumber,
       wardCode: createDto.wardCode,
       streetAddress: createDto.streetAddress,
@@ -1219,6 +1311,7 @@ export class ApartmentsService {
       data,
       select: {
         id: true,
+        slug: true,
         apartmentNumber: true,
         status: true,
         ownerId: true,
@@ -1261,6 +1354,8 @@ export class ApartmentsService {
       where: { id },
       select: {
         id: true,
+        slug: true,
+        buildingName: true,
         apartmentNumber: true,
         ownerId: true,
         status: true,
@@ -1335,6 +1430,18 @@ export class ApartmentsService {
             ? await this.resolveProvinceCodeFromWard(updateDto.wardCode)
             : null;
       }
+
+      if (
+        updateDto.buildingName !== undefined ||
+        updateDto.apartmentNumber !== undefined
+      ) {
+        apartmentUpdateData.slug = await this.generateUniqueApartmentSlug({
+          buildingName: updateDto.buildingName ?? apartment.buildingName,
+          apartmentNumber:
+            updateDto.apartmentNumber ?? apartment.apartmentNumber,
+          excludedId: id,
+        });
+      }
     }
 
     if (updateDto?.amenityIds) {
@@ -1362,6 +1469,7 @@ export class ApartmentsService {
         },
         select: {
           id: true,
+          slug: true,
           apartmentNumber: true,
           status: true,
           images: true,
@@ -1470,7 +1578,13 @@ export class ApartmentsService {
   ) {
     const apartment = await this.prisma.apartment.findUnique({
       where: { id },
-      select: { id: true, ownerId: true, images: true },
+      select: {
+        id: true,
+        ownerId: true,
+        images: true,
+        buildingName: true,
+        apartmentNumber: true,
+      },
     });
 
     if (!apartment) {
@@ -1518,6 +1632,17 @@ export class ApartmentsService {
       await this.validateAmenityIds(updateDto.amenityIds);
     }
 
+    if (
+      updateDto.buildingName !== undefined ||
+      updateDto.apartmentNumber !== undefined
+    ) {
+      data.slug = await this.generateUniqueApartmentSlug({
+        buildingName: updateDto.buildingName ?? apartment.buildingName,
+        apartmentNumber: updateDto.apartmentNumber ?? apartment.apartmentNumber,
+        excludedId: id,
+      });
+    }
+
     const updatedApartment = await this.prisma.$transaction(async (tx) => {
       if (updateDto.amenityIds) {
         await tx.apartmentAmenity.deleteMany({ where: { apartmentId: id } });
@@ -1539,6 +1664,7 @@ export class ApartmentsService {
         },
         select: {
           id: true,
+          slug: true,
           apartmentNumber: true,
           wardCode: true,
           provinceCode: true,

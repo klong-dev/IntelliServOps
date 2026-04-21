@@ -220,6 +220,9 @@ export class ApartmentListItemDto {
   @ApiProperty({ example: 'd6e0a098-c1e9-4b5d-9207-e507e9a5974d' })
   id: string;
 
+  @ApiProperty({ example: 'vinhomes-central-park-a-1501' })
+  slug: string;
+
   @ApiPropertyOptional({
     type: String,
     example: 'Saigon Pearl',
@@ -396,6 +399,9 @@ export class ApartmentListItemDto {
 export class ApartmentDetailDto {
   @ApiProperty({ example: 'd6e0a098-c1e9-4b5d-9207-e507e9a5974d' })
   id: string;
+
+  @ApiProperty({ example: 'vinhomes-central-park-a-1501' })
+  slug: string;
 
   @ApiPropertyOptional({
     type: String,

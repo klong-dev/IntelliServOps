@@ -181,6 +181,20 @@ async function ensureApartment(
   data: Prisma.ApartmentUncheckedCreateInput,
 ) {
   data = sanitizeSeedValue(data);
+  if (!data.slug) {
+    const baseSlug = `${data.buildingName ?? ''} ${data.apartmentNumber ?? ''}`
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-{2,}/g, '-');
+
+    data.slug = baseSlug || `apartment-${String(data.apartmentNumber ?? 'unit').toLowerCase()}`;
+  }
+
   const existing = await prisma.apartment.findFirst({ where });
 
   if (existing) {
