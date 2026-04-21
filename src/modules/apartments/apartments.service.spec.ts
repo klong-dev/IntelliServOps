@@ -30,7 +30,7 @@ describe('ApartmentsService', () => {
 
   const mockApartmentListItem = (overrides = {}) => ({
     id: 'apt-123',
-    slug: 'vinhomes-central-park-a-1501',
+    slug: 'vinhomes-central-park',
     buildingName: 'Vinhomes Central Park',
     apartmentNumber: 'A-1501',
     floorNumber: 15,
@@ -169,12 +169,12 @@ describe('ApartmentsService', () => {
       _avg: { rating: 4.5 },
     } as any);
 
-    const result = await service.findOne('vinhomes-central-park-a-1501');
+    const result = await service.findOne('vinhomes-central-park');
 
-    expect(result.slug).toBe('vinhomes-central-park-a-1501');
+    expect(result.slug).toBe('vinhomes-central-park');
     expect(prisma.apartment.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { slug: 'vinhomes-central-park-a-1501' },
+        where: { slug: 'vinhomes-central-park' },
       }),
     );
   });
@@ -242,7 +242,7 @@ describe('ApartmentsService', () => {
   it('should create apartment for owner and merge uploaded media', async () => {
     prisma.apartment.create.mockResolvedValue({
       id: 'apt-123',
-      slug: 'a-1501',
+      slug: 'chung-cu-phong-xich-lan',
       apartmentNumber: 'A-1501',
       wardCode: null,
       provinceCode: undefined,
@@ -257,6 +257,7 @@ describe('ApartmentsService', () => {
 
     const result = await service.create(
       {
+        buildingName: 'Chung cư Phong Xích Lan',
         apartmentNumber: 'A-1501',
         totalArea: 75.5,
         numberOfBedrooms: 2,
@@ -276,7 +277,7 @@ describe('ApartmentsService', () => {
     expect(prisma.apartment.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          slug: 'a-1501',
+          slug: 'chung-cu-phong-xich-lan',
           owner: { connect: { id: 'user-123' } },
           images: [
             'https://existing.example.com/img.jpg',
@@ -314,7 +315,7 @@ describe('ApartmentsService', () => {
     } as any);
     prisma.apartment.update.mockResolvedValue({
       id: 'apt-123',
-      slug: 'vinhomes-grand-park-a-1501',
+      slug: 'vinhomes-grand-park',
       apartmentNumber: 'A-1501',
       wardCode: null,
       provinceCode: null,
@@ -367,7 +368,7 @@ describe('ApartmentsService', () => {
       .mockResolvedValueOnce(null as any);
     prisma.apartment.update.mockResolvedValue({
       id: 'apt-123',
-      slug: 'masteri-thao-dien-a-1501',
+      slug: 'chung-cu-phong-xich-lan',
       apartmentNumber: 'A-1501',
       wardCode: null,
       provinceCode: null,
@@ -385,14 +386,14 @@ describe('ApartmentsService', () => {
 
     await service.update(
       'apt-123',
-      { buildingName: 'Masteri Thao Dien' },
+      { buildingName: 'Chung cư Phong Xích Lan' },
       mockUserJwtPayload(),
     );
 
     expect(prisma.apartment.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          slug: 'masteri-thao-dien-a-1501',
+          slug: 'chung-cu-phong-xich-lan',
         }),
       }),
     );

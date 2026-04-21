@@ -244,12 +244,24 @@ export class IoTService {
 
   async updateBoard(boardId: string, updateDto: UpdateIoTBoardDto) {
     const board = await this.findOneBoard(boardId);
+    const currentApartmentId = board.apartment?.id ?? null;
+
+    if (
+      updateDto.apartmentId &&
+      currentApartmentId &&
+      currentApartmentId !== updateDto.apartmentId
+    ) {
+      throw new ConflictException(
+        'IoT board is already linked to an apartment. Please unlink it before linking to another apartment.',
+      );
+    }
 
     if (updateDto.apartmentId) {
       await this.ensureApartmentExists(updateDto.apartmentId);
     }
 
-    const targetApartmentId = updateDto.apartmentId ?? board.apartment?.id;
+    const targetApartmentId = updateDto.apartmentId ?? currentApartmentId;
+    const targetStatus = updateDto.status ?? board.status;
 
     await this.upsertStoredBoardRecord({
       where: { id: boardId },
@@ -257,25 +269,45 @@ export class IoTService {
         id: boardId,
         name: board.name,
         ...(targetApartmentId && { apartmentId: targetApartmentId }),
-        status: board.status,
+        status: targetStatus,
         ...(board.lastOnlineAt && { lastOnlineAt: board.lastOnlineAt }),
       },
       update: {
         ...(targetApartmentId !== undefined
           ? { apartmentId: targetApartmentId }
           : {}),
+        ...(updateDto.status !== undefined ? { status: updateDto.status } : {}),
       },
       select: { id: true },
     });
 
-    if (updateDto.apartmentId) {
-      await this.prisma.ioTDevice.updateMany({
-        where: {
-          id: { in: board.devices.map((device) => device.id) },
-        },
-        data: { apartmentId: updateDto.apartmentId },
-      });
+    const boardDeviceIds = board.devices.map((device) => device.id);
+    const shouldSyncApartment =
+      updateDto.apartmentId !== undefined &&
+      currentApartmentId !== updateDto.apartmentId;
 
+    if (boardDeviceIds.length > 0) {
+      const updateDeviceData: Prisma.IoTDeviceUncheckedUpdateManyInput = {};
+
+      if (updateDto.status !== undefined) {
+        updateDeviceData.status = updateDto.status;
+      }
+
+      if (shouldSyncApartment) {
+        updateDeviceData.apartmentId = updateDto.apartmentId;
+      }
+
+      if (Object.keys(updateDeviceData).length > 0) {
+        await this.prisma.ioTDevice.updateMany({
+          where: {
+            id: { in: boardDeviceIds },
+          },
+          data: updateDeviceData,
+        });
+      }
+    }
+
+    if (shouldSyncApartment && updateDto.apartmentId) {
       await Promise.all(
         board.devices.map((device) =>
           this.syncUtilityMeterForExistingBoardDevice(

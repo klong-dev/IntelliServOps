@@ -205,10 +205,7 @@ export class ApartmentsService {
     buildingName?: string | null;
     apartmentNumber?: string | null;
   }): string {
-    return [params.buildingName, params.apartmentNumber]
-      .map((value) => value?.trim())
-      .filter((value): value is string => Boolean(value))
-      .join(' ');
+    return params.buildingName?.trim() ?? '';
   }
 
   private slugifyApartmentSource(value: string): string {
@@ -227,18 +224,11 @@ export class ApartmentsService {
     buildingName?: string | null;
     apartmentNumber?: string | null;
   }): string {
-    const combined = this.slugifyApartmentSource(
+    const buildingNameSlug = this.slugifyApartmentSource(
       this.buildApartmentSlugSource(params),
     );
 
-    if (combined) {
-      return combined;
-    }
-
-    const apartmentNumberSlug = this.slugifyApartmentSource(
-      params.apartmentNumber ?? '',
-    );
-    return apartmentNumberSlug || 'apartment';
+    return buildingNameSlug || 'apartment';
   }
 
   private async generateUniqueApartmentSlug(params: {
