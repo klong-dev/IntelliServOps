@@ -16,6 +16,7 @@ import {
   ContractStatus,
   ApartmentStatus,
   MemberStatus,
+  PaymentMethodType,
   ReservationStatus,
 } from '@prisma/client';
 import {
@@ -1226,6 +1227,128 @@ describe('ContractsService', () => {
         expect.stringContaining('contract-1'),
         expect.any(String),
       );
+    });
+  });
+
+  describe('monthly rent invoice utilities', () => {
+    it('should merge electricity and water charges into the monthly invoice using meter readings', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-utility-1',
+        apartmentId: 'apt-utility-1',
+        contractNumber: 'CTR-UTILITY-00001',
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2026-12-31T00:00:00.000Z'),
+        monthlyRent: 10000000,
+        paymentMethod: PaymentMethodType.bank_transfer,
+        paymentDueDay: 5,
+        utilitiesIncluded: { electricity: false, water: false },
+        utilitiesCharges: { electricity: 3500, water: 15000 },
+        status: ContractStatus.active,
+        members: [{ userId: 'user-1' }],
+      } as any);
+
+      prisma.invoice.findFirst.mockResolvedValue(null as any);
+      prisma.utilityMeter.findMany.mockResolvedValue([
+        {
+          id: 'meter-electricity',
+          meterType: 'electricity',
+          meterNumber: 'PE-001',
+          ratePerUnit: 4000,
+          readings: [{ id: 'reading-electricity' }],
+        },
+        {
+          id: 'meter-water',
+          meterType: 'water',
+          meterNumber: 'PW-001',
+          ratePerUnit: 18000,
+          readings: [{ id: 'reading-water' }],
+        },
+      ] as any);
+      prisma.utilityReading.findFirst
+        .mockResolvedValueOnce({
+          id: 'snapshot-electricity-start',
+          readingDate: new Date('2026-04-01T00:00:00.000Z'),
+          readingValue: 1100,
+          previousReadingValue: 1000,
+          consumption: 100,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'snapshot-electricity-end',
+          readingDate: new Date('2026-04-30T00:00:00.000Z'),
+          readingValue: 1250,
+          previousReadingValue: 1100,
+          consumption: 150,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'snapshot-water-start',
+          readingDate: new Date('2026-04-01T00:00:00.000Z'),
+          readingValue: 30,
+          previousReadingValue: 20,
+          consumption: 10,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'snapshot-water-end',
+          readingDate: new Date('2026-04-30T00:00:00.000Z'),
+          readingValue: 42,
+          previousReadingValue: 30,
+          consumption: 12,
+        } as any);
+      prisma.utilityReading.update.mockResolvedValue({ id: 'snapshot-end' } as any);
+      prisma.utilityReading.updateMany.mockResolvedValue({ count: 2 } as any);
+      prisma.invoice.count.mockResolvedValue(0);
+      prisma.invoice.create.mockResolvedValue({
+        id: 'invoice-utility-1',
+        invoiceNumber: 'INV-REN-202604-00001',
+        dueDate: new Date('2026-04-05T00:00:00.000Z'),
+      } as any);
+
+      await (service as any).generateMissingMonthlyRentInvoicesForContract(
+        'contract-utility-1',
+        new Date('2026-04-30T00:00:00.000Z'),
+      );
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            invoiceType: 'rent',
+            baseRent: 10000000,
+            totalAmount: 10705000,
+            utilityCharges: expect.arrayContaining([
+              expect.objectContaining({
+                meterType: 'electricity',
+                oldReading: 1100,
+                newReading: 1250,
+                consumption: 150,
+                unitPrice: 3500,
+                amount: 525000,
+              }),
+              expect.objectContaining({
+                meterType: 'water',
+                oldReading: 30,
+                newReading: 42,
+                consumption: 12,
+                unitPrice: 15000,
+                amount: 180000,
+              }),
+            ]),
+            invoiceContent: expect.objectContaining({
+              items: expect.arrayContaining([
+                expect.objectContaining({ itemType: 'rent', amount: 10000000 }),
+                expect.objectContaining({
+                  itemType: 'utility_electricity',
+                  amount: 525000,
+                }),
+                expect.objectContaining({
+                  itemType: 'utility_water',
+                  amount: 180000,
+                }),
+              ]),
+            }),
+          }),
+        }),
+      );
+      expect(prisma.utilityReading.update).toHaveBeenCalledTimes(2);
+      expect(prisma.utilityReading.updateMany).toHaveBeenCalledTimes(2);
     });
   });
 });

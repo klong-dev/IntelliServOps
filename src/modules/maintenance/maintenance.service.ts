@@ -127,6 +127,14 @@ export class MaintenanceService {
     };
   }
 
+  private normalizeImageUrls(value: Prisma.JsonValue | null): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter((item): item is string => typeof item === 'string');
+  }
+
   private mapUrgencyToTaskPriority(urgency: Urgency): Priority {
     switch (urgency) {
       case Urgency.low:
@@ -251,6 +259,7 @@ export class MaintenanceService {
         category: true,
         urgency: true,
         status: true,
+        images: true,
         tenantRating: true,
         createdAt: true,
         preferredDate: true,
@@ -282,9 +291,10 @@ export class MaintenanceService {
           ? (wardAddressMap.get(item.apartment.wardCode) ?? null)
           : null;
 
-      const { tenantRating, ...rest } = item;
+      const { tenantRating, images, ...rest } = item;
       return {
         ...rest,
+        images: this.normalizeImageUrls(images),
         isRated: tenantRating !== null,
         apartment: this.mapMaintenanceApartmentWithAddress(
           item.apartment,
@@ -335,6 +345,8 @@ export class MaintenanceService {
           category: true,
           urgency: true,
           status: true,
+          images: true,
+          completionImages: true,
           tenantRating: true,
           createdAt: true,
           completedAt: true,
@@ -377,9 +389,11 @@ export class MaintenanceService {
           ? (wardAddressMap.get(item.apartment.wardCode) ?? null)
           : null;
 
-      const { tenantRating, ...rest } = item;
+      const { tenantRating, images, completionImages, ...rest } = item;
       return {
         ...rest,
+        images: this.normalizeImageUrls(images),
+        completionImages: this.normalizeImageUrls(completionImages),
         isRated: tenantRating !== null,
         apartment: this.mapMaintenanceApartmentWithAddress(
           item.apartment,
@@ -458,8 +472,12 @@ export class MaintenanceService {
         ? await this.resolveWardAddressFromWardCode(request.apartment.wardCode)
         : null;
 
+    const { images, completionImages, ...rest } = request;
+
     return {
-      ...request,
+      ...rest,
+      images: this.normalizeImageUrls(images),
+      completionImages: this.normalizeImageUrls(completionImages),
       isRated: request.tenantRating !== null,
       apartment: this.mapMaintenanceApartmentWithAddress(
         request.apartment,

@@ -18,13 +18,13 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:seed": "npx prisma db seed",
+    "db:seed": "node -r ts-node/register/transpile-only prisma/seed.ts",
     "db:reset": "npx prisma migrate reset --force",
     "db:backfill:user-apartments": "ts-node prisma/backfill-user-apartments.ts",
     "db:backfill:user-apartments:dry-run": "ts-node prisma/backfill-user-apartments.ts --dry-run"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "node -r ts-node/register/transpile-only prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",

@@ -15,6 +15,8 @@ import {
   InvoiceMeQueryDto,
   MonthlyUtilityInvoiceListDto,
   MonthlyUtilityQueryDto,
+  InvoiceOverdueListQueryDto,
+  OverdueApartmentTenantListDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
@@ -75,6 +77,22 @@ export class InvoicesController {
     @Query() query: MonthlyUtilityQueryDto,
   ) {
     return this.invoicesService.findMonthlyUtilityUsage(currentUser, query);
+  }
+
+  @Get('overdue/apartments-tenants')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'List apartments and tenants with overdue rent/utility invoices',
+  })
+  @ApiQuery({ name: 'minOverdueDays', required: false, type: Number })
+  @ApiJsonResponse(OverdueApartmentTenantListDto, {
+    description:
+      'Apartments and tenants that currently have overdue rent or utility invoices',
+  })
+  async listOverdueApartmentsAndTenants(
+    @Query() query: InvoiceOverdueListQueryDto,
+  ) {
+    return this.invoicesService.listOverdueApartmentsAndTenants(query);
   }
 
   @Get(':id')

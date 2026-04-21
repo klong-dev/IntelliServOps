@@ -5,3 +5,4 @@ export * from './invoice-list-query.dto';
 export * from './invoice-me-query.dto';
 export * from './invoice-me-response.dto';
 export * from './monthly-utility-query.dto';
+export * from './invoice-overdue.dto';

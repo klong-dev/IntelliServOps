@@ -29,6 +29,8 @@ import {
   type MqttDeviceTopic,
 } from './iot-mqtt.types';
 import {
+  InvoiceStatus,
+  InvoiceType,
   IoTDeviceType,
   IoTStatus,
   MeterStatus,
@@ -41,6 +43,7 @@ type UtilityMqttTopic = Extract<MqttDeviceTopic, 'electric' | 'water'>;
 const BOARD_ONLINE_WINDOW_MS = 30_000;
 const BOARD_CONTROL_ACK_TIMEOUT_MS = 7000;
 const DOOR_PIN_HASH_BCRYPT_ROUNDS = 12;
+const IOT_BLOCK_OVERDUE_DAYS = 15;
 
 @Injectable()
 export class IoTService {
@@ -105,7 +108,9 @@ export class IoTService {
     ]);
     const board = this.mergeStoredBoardsWithDevices(
       storedBoard ? [storedBoard] : [],
-      this.groupDevicesIntoBoards(devices).filter((item) => item.id === boardId),
+      this.groupDevicesIntoBoards(devices).filter(
+        (item) => item.id === boardId,
+      ),
     ).find((item) => item.id === boardId);
 
     if (!board) {
@@ -179,7 +184,8 @@ export class IoTService {
   async createBoard(createDto: CreateIoTBoardDto) {
     const boardId = this.normalizeBoardId(createDto);
     const boardName =
-      this.readString((createDto as { boardName?: string }).boardName) ?? boardId;
+      this.readString((createDto as { boardName?: string }).boardName) ??
+      boardId;
     const devices = (createDto.devices ?? []).map((device) =>
       this.normalizeBoardDeviceCreatePayload(device),
     );
@@ -241,7 +247,6 @@ export class IoTService {
     }
 
     const targetApartmentId = updateDto.apartmentId ?? board.apartment?.id;
-    const targetStatus = updateDto.status ?? board.status;
 
     await this.upsertStoredBoardRecord({
       where: { id: boardId },
@@ -249,12 +254,13 @@ export class IoTService {
         id: boardId,
         name: board.name,
         ...(targetApartmentId && { apartmentId: targetApartmentId }),
-        status: targetStatus,
+        status: board.status,
         ...(board.lastOnlineAt && { lastOnlineAt: board.lastOnlineAt }),
       },
       update: {
-        ...(targetApartmentId !== undefined ? { apartmentId: targetApartmentId } : {}),
-        ...(updateDto.status !== undefined ? { status: updateDto.status } : {}),
+        ...(targetApartmentId !== undefined
+          ? { apartmentId: targetApartmentId }
+          : {}),
       },
       select: { id: true },
     });
@@ -280,13 +286,6 @@ export class IoTService {
           ),
         ),
       );
-    }
-
-    if (updateDto.status !== undefined && board.devices.length > 0) {
-      await this.prisma.ioTDevice.updateMany({
-        where: { id: { in: board.devices.map((device) => device.id) } },
-        data: { status: updateDto.status },
-      });
     }
 
     return this.findOneBoard(boardId);
@@ -419,8 +418,7 @@ export class IoTService {
       throw new NotFoundException('IoT board device not found');
     }
 
-    const targetTopic =
-      updateDto.topic ?? boardDevice.topic ?? undefined;
+    const targetTopic = updateDto.topic ?? boardDevice.topic ?? undefined;
     const targetDeviceId =
       updateDto.deviceId ?? boardDevice.deviceId ?? undefined;
 
@@ -623,11 +621,8 @@ export class IoTService {
       throw new BadRequestException('newPin must be different from oldPin');
     }
 
-    const { board, doorDevice, boardDoorDeviceId } = await this.assertDoorAccess(
-      boardId,
-      currentUser,
-      true,
-    );
+    const { board, doorDevice, boardDoorDeviceId } =
+      await this.assertDoorAccess(boardId, currentUser, true);
     this.assertDoorDeviceMatch(boardDoorDeviceId, deviceId);
 
     const existingPinHash = this.readDoorPinHash(doorDevice.configuration);
@@ -638,7 +633,11 @@ export class IoTService {
       }
     }
 
-    const details = this.ioTMqttService.sendDoorPassword(boardId, deviceId, newPin);
+    const details = this.ioTMqttService.sendDoorPassword(
+      boardId,
+      deviceId,
+      newPin,
+    );
     const pinUpdateAck = await this.waitForDoorPinUpdateAck(boardId, deviceId);
 
     if (!pinUpdateAck.success) {
@@ -680,13 +679,15 @@ export class IoTService {
     this.assertValidDoorPin(newPin, 'newPin');
     this.assertStaffLevelActor(currentUser);
 
-    const { board, doorDevice, boardDoorDeviceId } = await this.assertDoorAccess(
-      boardId,
-      currentUser,
-    );
+    const { board, doorDevice, boardDoorDeviceId } =
+      await this.assertDoorAccess(boardId, currentUser);
     this.assertDoorDeviceMatch(boardDoorDeviceId, deviceId);
 
-    const details = this.ioTMqttService.sendDoorPassword(boardId, deviceId, newPin);
+    const details = this.ioTMqttService.sendDoorPassword(
+      boardId,
+      deviceId,
+      newPin,
+    );
     const pinUpdateAck = await this.waitForDoorPinUpdateAck(boardId, deviceId);
 
     if (!pinUpdateAck.success) {
@@ -829,6 +830,8 @@ export class IoTService {
       if (!hasAccess) {
         throw new ForbiddenException('No active contract for this apartment');
       }
+
+      await this.assertUserIotBillingAccess(currentUser.sub, apartmentId);
     }
 
     const devices = await this.prisma.ioTDevice.findMany({
@@ -902,6 +905,7 @@ export class IoTService {
         configuration: true,
         apartment: {
           select: {
+            id: true,
             rentalContracts: {
               where: { status: 'active' },
               select: {
@@ -933,6 +937,15 @@ export class IoTService {
 
       if (!hasAccess) {
         throw new ForbiddenException('No active contract for this apartment');
+      }
+
+      const apartmentIdForBilling =
+        updateDto.apartmentId ?? device.apartmentId ?? undefined;
+      if (apartmentIdForBilling) {
+        await this.assertUserIotBillingAccess(
+          currentUser.sub,
+          apartmentIdForBilling,
+        );
       }
     }
 
@@ -1035,6 +1048,7 @@ export class IoTService {
         configuration: true,
         apartment: {
           select: {
+            id: true,
             rentalContracts: {
               where: { status: 'active' },
               select: {
@@ -1074,6 +1088,13 @@ export class IoTService {
 
       if (!hasAccess) {
         throw new ForbiddenException('No active contract for this apartment');
+      }
+
+      if (device.apartment?.id) {
+        await this.assertUserIotBillingAccess(
+          currentUser.sub,
+          device.apartment.id,
+        );
       }
     }
 
@@ -1806,11 +1827,13 @@ export class IoTService {
     );
   }
 
-  private toApartmentSummary(apartment: {
-    id: string;
-    apartmentNumber: string;
-    streetAddress: string | null;
-  } | null) {
+  private toApartmentSummary(
+    apartment: {
+      id: string;
+      apartmentNumber: string;
+      streetAddress: string | null;
+    } | null,
+  ) {
     if (!apartment) {
       return null;
     }
@@ -1914,13 +1937,18 @@ export class IoTService {
     requirePrimaryTenant = false,
   ) {
     const board = await this.findOneBoard(boardId);
-    const boardDoorDevice = board.devices.find((device) => device.topic === 'door');
+    const boardDoorDevice = board.devices.find(
+      (device) => device.topic === 'door',
+    );
 
     if (!boardDoorDevice) {
       throw new NotFoundException('Door device not found on this board');
     }
 
-    const doorDevice = await this.findDoorDeviceRecord(boardId, boardDoorDevice.id);
+    const doorDevice = await this.findDoorDeviceRecord(
+      boardId,
+      boardDoorDevice.id,
+    );
 
     if (currentUser.actorType === 'user') {
       if (!board.apartment?.id) {
@@ -1943,6 +1971,11 @@ export class IoTService {
         throw new ForbiddenException('No active apartment membership');
       }
 
+      await this.assertUserIotBillingAccess(
+        currentUser.sub,
+        board.apartment.id,
+      );
+
       if (requirePrimaryTenant && !membership.isPrimaryTenant) {
         throw new ForbiddenException('Only primary tenant can update door PIN');
       }
@@ -1951,9 +1984,51 @@ export class IoTService {
     return { board, doorDevice, boardDoorDeviceId: boardDoorDevice.deviceId };
   }
 
-  private assertDoorDeviceMatch(actualDeviceId: number, expectedDeviceId: number) {
+  private assertDoorDeviceMatch(
+    actualDeviceId: number,
+    expectedDeviceId: number,
+  ) {
     if (actualDeviceId !== expectedDeviceId) {
       throw new NotFoundException('Door device id mismatch for this board');
+    }
+  }
+
+  private async assertUserIotBillingAccess(
+    userId: string,
+    apartmentId: string,
+  ): Promise<void> {
+    const thresholdDate = new Date(
+      Date.now() - IOT_BLOCK_OVERDUE_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    const blockedInvoice = await this.prisma.invoice.findFirst({
+      where: {
+        status: InvoiceStatus.overdue,
+        invoiceType: {
+          in: [InvoiceType.rent, InvoiceType.utility],
+        },
+        dueDate: {
+          lte: thresholdDate,
+        },
+        rentalContract: {
+          apartmentId,
+          status: 'active',
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (blockedInvoice) {
+      throw new ForbiddenException(
+        'IoT services are temporarily disabled because rent/utility invoices are overdue for more than 15 days',
+      );
     }
   }
 
@@ -1972,7 +2047,9 @@ export class IoTService {
       currentUser.actorType !== 'operator' &&
       currentUser.actorType !== 'admin'
     ) {
-      throw new ForbiddenException('Only staff/operator/admin can reset door PIN');
+      throw new ForbiddenException(
+        'Only staff/operator/admin can reset door PIN',
+      );
     }
   }
 
@@ -2071,7 +2148,9 @@ export class IoTService {
     });
 
     if (!device) {
-      throw new NotFoundException(`Door device record not found for board ${boardId}`);
+      throw new NotFoundException(
+        `Door device record not found for board ${boardId}`,
+      );
     }
 
     return {
@@ -2171,17 +2250,20 @@ export class IoTService {
     };
   }
 
-  private toDeviceListItem(device: {
-    configuration: unknown;
-    deviceType: string;
-    apartment: {
-      id: string;
-      apartmentNumber: string;
-      streetAddress: string | null;
-    } | null;
-    room: { id: string; roomNumber: string; roomType: string } | null;
-    [key: string]: any;
-  }, utilityLookup?: Map<string, any>) {
+  private toDeviceListItem(
+    device: {
+      configuration: unknown;
+      deviceType: string;
+      apartment: {
+        id: string;
+        apartmentNumber: string;
+        streetAddress: string | null;
+      } | null;
+      room: { id: string; roomNumber: string; roomType: string } | null;
+      [key: string]: any;
+    },
+    utilityLookup?: Map<string, any>,
+  ) {
     const metadata = this.extractMqttMetadata(
       device.configuration,
       device.deviceType,
@@ -2206,17 +2288,20 @@ export class IoTService {
     };
   }
 
-  private toDeviceDetail(device: {
-    configuration: unknown;
-    deviceType: string;
-    apartment: {
-      id: string;
-      apartmentNumber: string;
-      streetAddress: string | null;
-    } | null;
-    room: { id: string; roomNumber: string; roomType: string } | null;
-    [key: string]: any;
-  }, utilityLookup?: Map<string, any>) {
+  private toDeviceDetail(
+    device: {
+      configuration: unknown;
+      deviceType: string;
+      apartment: {
+        id: string;
+        apartmentNumber: string;
+        streetAddress: string | null;
+      } | null;
+      room: { id: string; roomNumber: string; roomType: string } | null;
+      [key: string]: any;
+    },
+    utilityLookup?: Map<string, any>,
+  ) {
     let mqttConfig: DeviceMqttControlConfig | null = null;
 
     try {
@@ -2378,22 +2463,19 @@ export class IoTService {
     apartmentId?: string;
     status: IoTStatus;
   }) {
-    return this.withStoredBoardFallback(
-      async () => {
-        await this.prisma.ioTBoard.create({
-          data: {
-            id: data.id,
-            name: data.name,
-            ...(data.apartmentId && { apartmentId: data.apartmentId }),
-            status: data.status,
-          },
-          select: { id: true },
-        });
+    return this.withStoredBoardFallback(async () => {
+      await this.prisma.ioTBoard.create({
+        data: {
+          id: data.id,
+          name: data.name,
+          ...(data.apartmentId && { apartmentId: data.apartmentId }),
+          status: data.status,
+        },
+        select: { id: true },
+      });
 
-        return true;
-      },
-      false,
-    );
+      return true;
+    }, false);
   }
 
   private async upsertStoredBoardRecord<T extends Prisma.IoTBoardUpsertArgs>(
@@ -2490,7 +2572,9 @@ export class IoTService {
     );
 
     return {
-      ...(updateDto.deviceName !== undefined && { deviceName: updateDto.deviceName }),
+      ...(updateDto.deviceName !== undefined && {
+        deviceName: updateDto.deviceName,
+      }),
       ...(updateDto.topic !== undefined && {
         deviceType: this.mapTopicToDeviceType(updateDto.topic),
       }),
@@ -2709,7 +2793,9 @@ export class IoTService {
         deviceName: device.deviceName,
         deviceId: metadata.deviceId ?? 1,
         status: device.status,
-        icon: this.readString(this.toPlainObject(device.configuration).icon) ?? null,
+        icon:
+          this.readString(this.toPlainObject(device.configuration).icon) ??
+          null,
         topic: metadata.topic ?? null,
         state: this.normalizeBoardDeviceState(metadata.state) ?? null,
       });
@@ -2803,9 +2889,12 @@ export class IoTService {
         name: storedBoard.name || existing.name,
         status:
           existing.devices.length > 0
-            ? this.resolveBoardStatus(existing.devices.map((device) => device.status))
+            ? this.resolveBoardStatus(
+                existing.devices.map((device) => device.status),
+              )
             : storedBoard.status,
-        apartment: this.toApartmentSummary(storedBoard.apartment) ?? existing.apartment,
+        apartment:
+          this.toApartmentSummary(storedBoard.apartment) ?? existing.apartment,
         createdAt: storedBoard.createdAt,
         updatedAt:
           storedBoard.updatedAt > existing.updatedAt
@@ -2846,11 +2935,11 @@ export class IoTService {
         this.readPositiveInteger(mqttConfig.doorPasswordChannelId) ??
         this.readPositiveInteger(rootConfig.doorPasswordDeviceId) ??
         this.readPositiveInteger(rootConfig.doorPasswordChannelId),
-      state:
-        this.normalizeBoardDeviceState(
-          this.readString(mqttConfig.state) ?? this.readString(rootConfig.state),
-        ),
-      icon: this.readString(mqttConfig.icon) ?? this.readString(rootConfig.icon),
+      state: this.normalizeBoardDeviceState(
+        this.readString(mqttConfig.state) ?? this.readString(rootConfig.state),
+      ),
+      icon:
+        this.readString(mqttConfig.icon) ?? this.readString(rootConfig.icon),
     };
   }
 
@@ -3023,7 +3112,10 @@ export class IoTService {
 
     let lastSeenAt: Date | null = storedBoard?.lastOnlineAt ?? null;
     for (const device of devices) {
-      if (device.lastOnlineAt && (!lastSeenAt || device.lastOnlineAt > lastSeenAt)) {
+      if (
+        device.lastOnlineAt &&
+        (!lastSeenAt || device.lastOnlineAt > lastSeenAt)
+      ) {
         lastSeenAt = device.lastOnlineAt;
       }
 
@@ -3124,7 +3216,8 @@ export class IoTService {
     apartmentId: string,
     meterType: MeterType,
   ) {
-    const typeLabel = meterType === MeterType.electricity ? 'electric' : 'water';
+    const typeLabel =
+      meterType === MeterType.electricity ? 'electric' : 'water';
     return `AUTO-${espId}-${apartmentId}-${typeLabel}`;
   }
 
@@ -3171,7 +3264,11 @@ export class IoTService {
 
     const normalized = value.trim().toUpperCase();
 
-    if (normalized === 'ON' || normalized === 'OPEN' || normalized === 'UNLOCK') {
+    if (
+      normalized === 'ON' ||
+      normalized === 'OPEN' ||
+      normalized === 'UNLOCK'
+    ) {
       return 'ON';
     }
 
