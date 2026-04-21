@@ -69,6 +69,12 @@ type MonthRange = {
   billingPeriodEndExclusive: Date;
 };
 
+type DoorPasswordSyncResult = {
+  success: boolean;
+  skipped: boolean;
+  message: string;
+};
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -971,17 +977,18 @@ export class PaymentsService {
 
     const txResult = await this.prisma.$transaction(txOperations);
 
-    if (
-      activationContext.activated &&
-      activationContext.apartmentDoorPassword
-    ) {
-      await this.syncApartmentDoorPasswordToBoard(
+    if (activationContext.apartmentDoorPassword) {
+      const syncResult = await this.syncApartmentDoorPasswordToBoard(
         payment.invoice.rentalContract.apartmentId,
         payment.invoice.rentalContract.id,
         activationContext.apartmentDoorPassword,
       );
 
-      if (activationContext.memberUserIds.length > 0) {
+      if (!syncResult.success) {
+        this.logger.warn(
+          `Skip door password notification for contract ${payment.invoice.rentalContract.id} because IoT sync failed: ${syncResult.message}`,
+        );
+      } else if (activationContext.memberUserIds.length > 0) {
         await this.notifyMembersApartmentPassword(
           activationContext.memberUserIds,
           activationContext.apartmentDoorPassword,
@@ -1373,17 +1380,18 @@ export class PaymentsService {
 
       await this.prisma.$transaction(txOperations);
 
-      if (
-        activationContext.activated &&
-        activationContext.apartmentDoorPassword
-      ) {
-        await this.syncApartmentDoorPasswordToBoard(
+      if (activationContext.apartmentDoorPassword) {
+        const syncResult = await this.syncApartmentDoorPasswordToBoard(
           payment.invoice.rentalContract.apartmentId,
           payment.invoice.rentalContract.id,
           activationContext.apartmentDoorPassword,
         );
 
-        if (activationContext.memberUserIds.length > 0) {
+        if (!syncResult.success) {
+          this.logger.warn(
+            `Skip door password notification for contract ${payment.invoice.rentalContract.id} because IoT sync failed: ${syncResult.message}`,
+          );
+        } else if (activationContext.memberUserIds.length > 0) {
           await this.notifyMembersApartmentPassword(
             activationContext.memberUserIds,
             activationContext.apartmentDoorPassword,
@@ -1530,13 +1538,18 @@ export class PaymentsService {
     const todayStart = this.getUtcDayStart();
 
     if (rentalContract.startDate > todayStart) {
+      const apartmentDoorPassword = this.generateSixDigitPassword();
+
       txOperations.push(
-        ...buildUserApartmentUpserts(UserApartmentStatus.inactive, null),
+        ...buildUserApartmentUpserts(
+          UserApartmentStatus.inactive,
+          apartmentDoorPassword,
+        ),
       );
 
       return {
         activated: false,
-        apartmentDoorPassword: null,
+        apartmentDoorPassword,
         memberUserIds: members.map((member) => member.userId),
       };
     }
@@ -1599,10 +1612,10 @@ export class PaymentsService {
           recipientId: memberUserId,
           notificationType: 'info',
           channel: 'in_app',
-          title: 'K├¡ch hoß║ít hß╗úp ─æß╗ông th├ánh c├┤ng',
-          message: `H├│a ─æ╞ín ─æß║╖t cß╗ìc ${invoiceNumber} ─æ├ú thanh to├ín th├ánh c├┤ng. Mß║¡t khß║⌐u cß╗¡a nh├á: ${apartmentDoorPassword}`,
+          title: 'Mat khau nha da san sang',
+          message: `Dat coc ${invoiceNumber} da thanh toan va dong bo IoT thanh cong. Mat khau nha: ${apartmentDoorPassword}`,
           actionUrl: `/contracts/${rentalContractId}`,
-          actionLabel: 'Xem hß╗úp ─æß╗ông',
+          actionLabel: 'Xem hop dong',
           priority: 'high',
           relatedEntityType: 'RentalContract',
           relatedEntityId: rentalContractId,
@@ -1615,7 +1628,7 @@ export class PaymentsService {
     apartmentId: string,
     rentalContractId: string,
     apartmentDoorPassword: string,
-  ): Promise<void> {
+  ): Promise<DoorPasswordSyncResult> {
     try {
       const syncResult = await this.ioTService.syncApartmentDoorPin(
         apartmentId,
@@ -1627,10 +1640,23 @@ export class PaymentsService {
           `Door PIN sync was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
         );
       }
+
+      return {
+        success: syncResult.success,
+        skipped: Boolean(syncResult.skipped),
+        message: syncResult.message,
+      };
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
       this.logger.warn(
-        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${message}`,
       );
+
+      return {
+        success: false,
+        skipped: false,
+        message,
+      };
     }
   }
 

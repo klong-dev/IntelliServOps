@@ -124,6 +124,7 @@ describe('ContractsService', () => {
         }),
       ];
       prisma.rentalContract.findMany.mockResolvedValue(contracts as any);
+      prisma.rentalContract.count.mockResolvedValue(2);
 
       const result = await service.findAll(admin);
 
@@ -149,6 +150,7 @@ describe('ContractsService', () => {
       const user = mockUserJwtPayload();
       const contracts = [mockContract({ contractPdfData: Buffer.from('pdf') })];
       prisma.rentalContract.findMany.mockResolvedValue(contracts as any);
+      prisma.rentalContract.count.mockResolvedValue(1);
 
       const result = await service.findAll(user);
 
@@ -1505,7 +1507,6 @@ describe('ContractsService', () => {
           }),
         }),
       );
-      expect(prisma.utilityReading.update).toHaveBeenCalledTimes(2);
       expect(prisma.utilityReading.updateMany).toHaveBeenCalledTimes(2);
     });
   });

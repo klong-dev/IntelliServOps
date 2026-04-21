@@ -40,8 +40,10 @@ function buildDiagram(name, entities, options = {}) {
     'rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#222222;strokeWidth=1.5;arcSize=15;align=center;verticalAlign=middle;fontSize=12;';
   const startStyle =
     'shape=ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#111111;strokeColor=#111111;';
-  const endStyle =
+  const finalOuterStyle =
     'shape=ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#111111;strokeWidth=2;';
+  const finalInnerStyle =
+    'shape=ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#111111;strokeColor=#111111;';
   const entityTitleStyle =
     'text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#111111;';
   const edgeStyle =
@@ -63,7 +65,12 @@ function buildDiagram(name, entities, options = {}) {
 
     const endNodeId = nextId();
     cells.push(
-      `<mxCell id="${endNodeId}" value="" style="${endStyle}" vertex="1" parent="1"><mxGeometry x="${blockX + 8}" y="${blockY + 90}" width="18" height="18" as="geometry"/></mxCell>`,
+      `<mxCell id="${endNodeId}" value="" style="${finalOuterStyle}" vertex="1" parent="1"><mxGeometry x="${blockX + 6}" y="${blockY + 88}" width="22" height="22" as="geometry"/></mxCell>`,
+    );
+
+    const endNodeInnerId = nextId();
+    cells.push(
+      `<mxCell id="${endNodeInnerId}" value="" style="${finalInnerStyle}" vertex="1" parent="1"><mxGeometry x="${blockX + 11}" y="${blockY + 93}" width="12" height="12" as="geometry"/></mxCell>`,
     );
 
     const states = [];
@@ -161,7 +168,7 @@ const conventionDiagram = buildDiagram(
           label: 'pin_authentication',
         },
       ],
-      note: 'Use rounded state nodes + black start/end marks + green transition labels.',
+      note: 'Use rounded state nodes + black start mark + bullseye end mark + green transition labels.',
     },
   ],
   {
@@ -204,11 +211,15 @@ const assetDiagram = buildDiagram('Asset Domain', [
       { from: 'pending', to: 'occupied', label: 'activateWhenDepositPaid' },
       { from: 'available', to: 'maintenance', label: 'updateStatus' },
       { from: 'occupied', to: 'maintenance', label: 'updateStatus' },
+      { from: 'maintenance', to: 'END', label: 'end' },
     ],
   },
   {
     name: 'Room',
-    transitions: [{ from: '*', to: 'available', label: 'default' }],
+    transitions: [
+      { from: '*', to: 'available', label: 'default' },
+      { from: 'available', to: 'END', label: 'end' },
+    ],
     note: 'No explicit production transition write observed for occupied/maintenance.',
   },
   {
@@ -223,6 +234,8 @@ const assetDiagram = buildDiagram('Asset Domain', [
       { from: 'inactive', to: 'active', label: 'updateBoard(status)' },
       { from: 'active', to: 'maintenance', label: 'updateBoard(status)' },
       { from: 'active', to: 'error', label: 'updateBoard(status)' },
+      { from: 'maintenance', to: 'END', label: 'end' },
+      { from: 'error', to: 'END', label: 'end' },
     ],
   },
   {
@@ -237,6 +250,8 @@ const assetDiagram = buildDiagram('Asset Domain', [
       { from: 'inactive', to: 'active', label: 'updateBoardDevice(status)' },
       { from: 'active', to: 'maintenance', label: 'updateDevice(status)' },
       { from: 'active', to: 'error', label: 'updateDevice(status)' },
+      { from: 'maintenance', to: 'END', label: 'end' },
+      { from: 'error', to: 'END', label: 'end' },
     ],
   },
   {
@@ -247,6 +262,7 @@ const assetDiagram = buildDiagram('Asset Domain', [
       { from: 'active', to: 'faulty', label: 'updateMeter(status)' },
       { from: 'inactive', to: 'replaced', label: 'updateMeter(status)' },
       { from: 'faulty', to: 'replaced', label: 'updateMeter(status)' },
+      { from: 'replaced', to: 'END', label: 'end' },
     ],
   },
 ]);
@@ -263,6 +279,8 @@ const contractDiagram = buildDiagram('Contract And Membership', [
       { from: 'signed', to: 'expired', label: 'syncExpiredContractsByDate' },
       { from: 'active', to: 'expired', label: 'syncExpiredContractsByDate' },
       { from: 'active', to: 'terminated', label: 'cancelByUser' },
+      { from: 'expired', to: 'END', label: 'end' },
+      { from: 'terminated', to: 'END', label: 'end' },
     ],
   },
   {
@@ -279,6 +297,7 @@ const contractDiagram = buildDiagram('Contract And Membership', [
       { from: 'pending', to: 'cancelled', label: 'reject/cancel cooperation' },
       { from: 'signed', to: 'cancelled', label: 'reject/cancel cooperation' },
       { from: 'active', to: 'cancelled', label: 'rejectPartnerCooperation' },
+      { from: 'cancelled', to: 'END', label: 'end' },
     ],
   },
   {
@@ -286,6 +305,7 @@ const contractDiagram = buildDiagram('Contract And Membership', [
     transitions: [
       { from: '*', to: 'active', label: 'create/addMember' },
       { from: 'active', to: 'moved_out', label: 'cancelByUser' },
+      { from: 'moved_out', to: 'END', label: 'end' },
     ],
   },
   {
@@ -294,6 +314,7 @@ const contractDiagram = buildDiagram('Contract And Membership', [
       { from: '*', to: 'active', label: 'contract activation upsert' },
       { from: '*', to: 'inactive', label: 'deposit paid before startDate' },
       { from: 'active', to: 'moved_out', label: 'cancelByUser' },
+      { from: 'moved_out', to: 'END', label: 'end' },
     ],
   },
 ]);
@@ -301,12 +322,18 @@ const contractDiagram = buildDiagram('Contract And Membership', [
 const requestDiagram = buildDiagram('Request And Scheduling', [
   {
     name: 'ContactRequest',
-    transitions: [{ from: '*', to: 'new', label: 'default' }],
+    transitions: [
+      { from: '*', to: 'new', label: 'default' },
+      { from: 'new', to: 'END', label: 'end' },
+    ],
     note: 'No explicit status transition write observed in production services.',
   },
   {
     name: 'BookingRequest',
-    transitions: [{ from: '*', to: 'pending', label: 'default' }],
+    transitions: [
+      { from: '*', to: 'pending', label: 'default' },
+      { from: 'pending', to: 'END', label: 'end' },
+    ],
     note: 'No explicit status transition write observed in production services.',
   },
   {
@@ -316,6 +343,7 @@ const requestDiagram = buildDiagram('Request And Scheduling', [
       { from: 'pending', to: 'confirmed', label: 'uploadSignedPdf' },
       { from: 'pending', to: 'cancelled', label: 'reservations.cancel' },
       { from: 'confirmed', to: 'cancelled', label: 'contracts.cancelByUser' },
+      { from: 'cancelled', to: 'END', label: 'end' },
     ],
   },
   {
@@ -326,11 +354,16 @@ const requestDiagram = buildDiagram('Request And Scheduling', [
       { from: 'scheduled', to: 'cancelled', label: 'deny/cancel' },
       { from: 'confirmed', to: 'completed', label: 'confirmDoneJob' },
       { from: 'confirmed', to: 'cancelled', label: 'cancelAppointment' },
+      { from: 'completed', to: 'END', label: 'end' },
+      { from: 'cancelled', to: 'END', label: 'end' },
     ],
   },
   {
     name: 'PendingGuestRegistration',
-    transitions: [{ from: '*', to: 'pending', label: 'default' }],
+    transitions: [
+      { from: '*', to: 'pending', label: 'default' },
+      { from: 'pending', to: 'END', label: 'end' },
+    ],
     note: 'No explicit transition in production services (only backup-file flow exists).',
   },
 ]);
@@ -344,6 +377,8 @@ const operationsDiagram = buildDiagram('Operations Domain', [
       { from: 'assigned', to: 'in_progress', label: 'maintenance.accept' },
       { from: 'assigned', to: 'cancelled', label: 'maintenance.reject' },
       { from: 'in_progress', to: 'completed', label: 'maintenance.complete' },
+      { from: 'completed', to: 'END', label: 'end' },
+      { from: 'cancelled', to: 'END', label: 'end' },
     ],
   },
   {
@@ -361,6 +396,8 @@ const operationsDiagram = buildDiagram('Operations Domain', [
       { from: 'in_progress', to: 'completed', label: 'complete' },
       { from: 'acknowledged', to: 'completed', label: 'complete' },
       { from: 'scheduled', to: 'completed', label: 'complete' },
+      { from: 'completed', to: 'END', label: 'end' },
+      { from: 'cancelled', to: 'END', label: 'end' },
     ],
   },
 ]);
@@ -382,6 +419,8 @@ const financeDiagram = buildDiagram('Finance Domain', [
       { from: 'draft', to: 'paid', label: 'payments.confirm/webhook' },
       { from: 'issued', to: 'paid', label: 'payments.confirm/webhook' },
       { from: 'issued', to: 'cancelled', label: 'contracts.cancelByUser' },
+      { from: 'paid', to: 'END', label: 'end' },
+      { from: 'cancelled', to: 'END', label: 'end' },
     ],
   },
   {
@@ -411,6 +450,8 @@ const financeDiagram = buildDiagram('Finance Domain', [
         to: 'refunded',
         label: 'refund payout/deposit flow',
       },
+      { from: 'failed', to: 'END', label: 'end' },
+      { from: 'refunded', to: 'END', label: 'end' },
     ],
   },
   {
@@ -418,6 +459,7 @@ const financeDiagram = buildDiagram('Finance Domain', [
     transitions: [
       { from: '*', to: 'pending', label: 'default' },
       { from: 'pending', to: 'paid', label: 'confirmPartnerMonthlyPayout' },
+      { from: 'paid', to: 'END', label: 'end' },
     ],
   },
 ]);
@@ -429,6 +471,9 @@ const platformDiagram = buildDiagram('Platform Domain', [
       { from: '*', to: 'success', label: 'createActivityLog default' },
       { from: '*', to: 'failure', label: 'createActivityLog dto.status' },
       { from: '*', to: 'pending', label: 'createActivityLog dto.status' },
+      { from: 'success', to: 'END', label: 'end' },
+      { from: 'failure', to: 'END', label: 'end' },
+      { from: 'pending', to: 'END', label: 'end' },
     ],
   },
   {
@@ -438,6 +483,7 @@ const platformDiagram = buildDiagram('Platform Domain', [
       { from: 'closed', to: 'active', label: 'createOrReuseConversation' },
       { from: 'active', to: 'archived', label: 'archiveConversation' },
       { from: 'closed', to: 'archived', label: 'archiveConversation' },
+      { from: 'archived', to: 'END', label: 'end' },
     ],
     note: 'Sending message to archived conversation is forbidden (no transition).',
   },

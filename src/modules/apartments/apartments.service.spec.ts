@@ -128,7 +128,9 @@ describe('ApartmentsService', () => {
 
     prisma.apartment.findMany.mockResolvedValue([
       mockApartmentListItem({
-        images: ['http://localhost:3006/uploads/apartment-images/apt-123/cover.jpg'],
+        images: [
+          'http://localhost:3006/uploads/apartment-images/apt-123/cover.jpg',
+        ],
         videoTourUrl:
           'http://localhost:3006/uploads/apartment-videos/apt-123/video.mp4',
       }),
