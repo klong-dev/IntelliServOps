@@ -17,11 +17,21 @@ import {
 } from '@prisma/client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { IoTService } from '../iot/iot.service';
+import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
 
 describe('PaymentsService', () => {
   let service: PaymentsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let configService: { get: jest.Mock };
+  const ioTService = {
+    syncApartmentDoorPin: jest.fn(),
+  };
+  const storageService = {
+    uploadFile: jest.fn(),
+    deleteFile: jest.fn(),
+    getPublicUrl: jest.fn(),
+  };
   const notificationsService = {
     createAndPush: jest.fn(),
   };
@@ -70,13 +80,22 @@ describe('PaymentsService', () => {
     configService = {
       get: jest.fn().mockReturnValue(undefined),
     };
+    ioTService.syncApartmentDoorPin.mockResolvedValue({
+      success: true,
+      skipped: false,
+      boardId: 'ESP_A101',
+      deviceId: 1,
+      message: 'Door PIN synced to board successfully.',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: configService },
+        { provide: IoTService, useValue: ioTService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: SupabaseStorageService, useValue: storageService },
       ],
     }).compile();
 
@@ -353,8 +372,12 @@ describe('PaymentsService', () => {
         expect.objectContaining({
           recipientType: 'user',
           recipientId: 'user-123',
-          message: expect.stringMatching(/Mật khẩu cửa nhà: \d{6}/),
+          message: expect.stringMatching(/\d{6}/),
         }),
+      );
+      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+        'apt-123',
+        expect.stringMatching(/^\d{6}$/),
       );
     });
 

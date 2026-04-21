@@ -803,6 +803,79 @@ export class IoTService {
     };
   }
 
+  async syncApartmentDoorPin(apartmentId: string, newPin: string) {
+    this.assertValidDoorPin(newPin, 'newPin');
+
+    const boards = await this.findAllBoards(apartmentId);
+    const board = boards.find(
+      (item) =>
+        item.apartment?.id === apartmentId &&
+        item.devices.some((device) => device.topic === 'door'),
+    );
+
+    if (!board) {
+      return {
+        success: false,
+        skipped: true,
+        boardId: null as string | null,
+        deviceId: null as number | null,
+        message: 'No board with a configured door device was found for this apartment.',
+      };
+    }
+
+    const boardDoorDevice = board.devices.find((device) => device.topic === 'door');
+    if (!boardDoorDevice) {
+      return {
+        success: false,
+        skipped: true,
+        boardId: board.id,
+        deviceId: null as number | null,
+        message: 'No door device was found on the apartment board.',
+      };
+    }
+
+    const doorDevice = await this.findDoorDeviceRecord(board.id, boardDoorDevice.id);
+    const ack = await this.ioTMqttService.sendDoorPasswordAndWaitForAck(
+      board.id,
+      boardDoorDevice.deviceId,
+      newPin,
+    );
+    const pinUpdateAck = this.toDoorPinUpdateAckResult(ack);
+
+    if (!pinUpdateAck.success) {
+      return {
+        success: false,
+        skipped: false,
+        boardId: board.id,
+        deviceId: boardDoorDevice.deviceId,
+        message: pinUpdateAck.message,
+      };
+    }
+
+    const pinHash = await bcrypt.hash(newPin, DOOR_PIN_HASH_BCRYPT_ROUNDS);
+    const updatedConfiguration = this.mergeDoorPinHashIntoConfiguration(
+      doorDevice.configuration,
+      pinHash,
+      pinUpdateAck.receivedAt ?? undefined,
+    );
+
+    await this.prisma.ioTDevice.update({
+      where: { id: doorDevice.id },
+      data: {
+        configuration: updatedConfiguration as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+
+    return {
+      success: true,
+      skipped: false,
+      boardId: board.id,
+      deviceId: boardDoorDevice.deviceId,
+      message: 'Door PIN synced to board successfully.',
+    };
+  }
+
   // ============================================================================
   // IoT Devices
   // ============================================================================

@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ApartmentsService } from '../apartments/apartments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContractPdfService } from './contract-pdf.service';
+import { IoTService } from '../iot/iot.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
@@ -30,6 +31,9 @@ describe('ContractsService', () => {
   let service: ContractsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let apartmentsService: Record<string, jest.Mock>;
+  const ioTService = {
+    syncApartmentDoorPin: jest.fn(),
+  };
   const contractPdfService = {
     generateContractPdf: jest.fn().mockResolvedValue(Buffer.from('pdf')),
   };
@@ -57,12 +61,20 @@ describe('ContractsService', () => {
     apartmentsService = {
       updateStatus: jest.fn(),
     };
+    ioTService.syncApartmentDoorPin.mockResolvedValue({
+      success: true,
+      skipped: false,
+      boardId: 'ESP_A101',
+      deviceId: 1,
+      message: 'Door PIN synced to board successfully.',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ApartmentsService, useValue: apartmentsService },
+        { provide: IoTService, useValue: ioTService },
         { provide: ContractPdfService, useValue: contractPdfService },
         { provide: NotificationsService, useValue: notificationsService },
       ],
@@ -1168,6 +1180,10 @@ describe('ContractsService', () => {
             moveOutDate: contract.endDate,
           }),
         }),
+      );
+      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+        'apt-123',
+        expect.stringMatching(/^\d{6}$/),
       );
     });
   });

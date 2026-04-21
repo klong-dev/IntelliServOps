@@ -4,6 +4,7 @@
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -42,6 +43,7 @@ import {
   InvoiceContentItem,
   PaymentInvoiceContent,
 } from './types';
+import { IoTService } from '../iot/iot.service';
 
 type PartnerPayoutDraft = {
   partnerId: string;
@@ -69,6 +71,7 @@ type MonthRange = {
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
   private readonly payosClient: PayOS | null;
   private readonly defaultPayOSReturnUrl: string;
   private readonly defaultPayOSCancelUrl: string;
@@ -76,6 +79,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly ioTService: IoTService,
     private readonly notificationsService: NotificationsService,
     private readonly storageService: SupabaseStorageService,
   ) {
@@ -969,15 +973,22 @@ export class PaymentsService {
 
     if (
       activationContext.activated &&
-      activationContext.apartmentDoorPassword &&
-      activationContext.memberUserIds.length > 0
+      activationContext.apartmentDoorPassword
     ) {
-      await this.notifyMembersApartmentPassword(
-        activationContext.memberUserIds,
-        activationContext.apartmentDoorPassword,
+      await this.syncApartmentDoorPasswordToBoard(
+        payment.invoice.rentalContract.apartmentId,
         payment.invoice.rentalContract.id,
-        payment.invoice.invoiceNumber,
+        activationContext.apartmentDoorPassword,
       );
+
+      if (activationContext.memberUserIds.length > 0) {
+        await this.notifyMembersApartmentPassword(
+          activationContext.memberUserIds,
+          activationContext.apartmentDoorPassword,
+          payment.invoice.rentalContract.id,
+          payment.invoice.invoiceNumber,
+        );
+      }
     }
 
     return txResult;
@@ -1364,15 +1375,22 @@ export class PaymentsService {
 
       if (
         activationContext.activated &&
-        activationContext.apartmentDoorPassword &&
-        activationContext.memberUserIds.length > 0
+        activationContext.apartmentDoorPassword
       ) {
-        await this.notifyMembersApartmentPassword(
-          activationContext.memberUserIds,
-          activationContext.apartmentDoorPassword,
+        await this.syncApartmentDoorPasswordToBoard(
+          payment.invoice.rentalContract.apartmentId,
           payment.invoice.rentalContract.id,
-          payment.invoice.invoiceNumber,
+          activationContext.apartmentDoorPassword,
         );
+
+        if (activationContext.memberUserIds.length > 0) {
+          await this.notifyMembersApartmentPassword(
+            activationContext.memberUserIds,
+            activationContext.apartmentDoorPassword,
+            payment.invoice.rentalContract.id,
+            payment.invoice.invoiceNumber,
+          );
+        }
       }
 
       return {
@@ -1591,6 +1609,29 @@ export class PaymentsService {
         }),
       ),
     );
+  }
+
+  private async syncApartmentDoorPasswordToBoard(
+    apartmentId: string,
+    rentalContractId: string,
+    apartmentDoorPassword: string,
+  ): Promise<void> {
+    try {
+      const syncResult = await this.ioTService.syncApartmentDoorPin(
+        apartmentId,
+        apartmentDoorPassword,
+      );
+
+      if (!syncResult.success) {
+        this.logger.warn(
+          `Door PIN sync was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
   }
 
   private resolvePayerUserId(
