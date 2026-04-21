@@ -61,10 +61,10 @@ describe('IoTController', () => {
     expect(controller.requestTelemetry('ESP_A101')).toEqual({ success: true });
   });
 
-  it('delegates health check request', () => {
-    iotService.checkHealth.mockReturnValue({ success: true });
+  it('delegates health check request', async () => {
+    iotService.checkHealth.mockResolvedValue({ success: true });
 
-    expect(controller.checkHealth('ESP_A101')).toEqual({ success: true });
+    await expect(controller.checkHealth('ESP_A101')).resolves.toEqual({ success: true });
   });
 
   it('delegates test sequence execution', async () => {
@@ -75,15 +75,15 @@ describe('IoTController', () => {
     ).resolves.toEqual({ success: true });
   });
 
-  it('delegates generic topic control', () => {
-    iotService.controlDeviceByTopic.mockReturnValue({ success: true });
+  it('delegates generic topic control', async () => {
+    iotService.controlDeviceByTopic.mockResolvedValue({ success: true });
 
-    expect(
+    await expect(
       controller.controlDeviceByTopic('ESP_A101', 1, {
         topic: 'light',
         action: 'ON',
       }),
-    ).toEqual({ success: true });
+    ).resolves.toEqual({ success: true });
   });
 
   it('delegates board listing', async () => {

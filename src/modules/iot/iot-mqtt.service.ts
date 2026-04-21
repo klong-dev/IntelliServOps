@@ -213,6 +213,82 @@ export class IoTMqttService implements OnModuleDestroy {
     });
   }
 
+  async sendDoorPasswordAndWaitForAck(
+    espId: string,
+    doorId: number,
+    password: string,
+    timeoutMs = DEFAULT_CONTROL_ACK_TIMEOUT_MS,
+  ): Promise<{
+    dispatch: IoTMqttSignalResult & { doorId: number; password: string };
+    statusEvent: IoTMqttStatusEvent | null;
+    timeoutMs: number;
+    timedOut: boolean;
+  }> {
+    const normalizedEspId = this.normalizeEspId(espId);
+    const normalizedDoorId = this.normalizeDeviceId(doorId);
+
+    return new Promise((resolve, reject) => {
+      let dispatch: IoTMqttSignalResult & { doorId: number; password: string };
+      let timer: NodeJS.Timeout | null = null;
+
+      const handler = (event: IoTMqttStatusEvent) => {
+        if (
+          event.espId !== normalizedEspId ||
+          event.type !== 'door_pin_update' ||
+          event.deviceTopic !== 'door'
+        ) {
+          return;
+        }
+
+        if (
+          event.deviceId !== undefined &&
+          event.deviceId !== normalizedDoorId
+        ) {
+          return;
+        }
+
+        cleanup();
+        resolve({
+          dispatch,
+          statusEvent: event,
+          timeoutMs,
+          timedOut: false,
+        });
+      };
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+        this.eventEmitter.off('iot.mqtt.status', handler);
+      };
+
+      this.eventEmitter.on('iot.mqtt.status', handler);
+
+      try {
+        dispatch = this.sendDoorPassword(
+          normalizedEspId,
+          normalizedDoorId,
+          password,
+        );
+      } catch (error) {
+        cleanup();
+        reject(error);
+        return;
+      }
+
+      timer = setTimeout(() => {
+        cleanup();
+        resolve({
+          dispatch,
+          statusEvent: null,
+          timeoutMs,
+          timedOut: true,
+        });
+      }, timeoutMs);
+    });
+  }
+
   waitForStatusEvent(
     matcher: (event: IoTMqttStatusEvent) => boolean,
     timeoutMs = DEFAULT_CONTROL_ACK_TIMEOUT_MS,
@@ -805,6 +881,9 @@ export class IoTMqttService implements OnModuleDestroy {
       normalized.includes('SUCCESS') ||
       normalized.includes('UPDATED') ||
       normalized.includes('CHANGED') ||
+      normalized.includes('SAVED') ||
+      normalized.includes('STORED') ||
+      normalized.includes('DONE') ||
       normalized.includes('SET_OK') ||
       normalized.includes('PIN_OK') ||
       normalized.includes('PASSWORD_OK') ||

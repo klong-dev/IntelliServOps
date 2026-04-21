@@ -18,6 +18,7 @@ import {
 import type { JwtPayload } from '../auth/auth.service';
 import axios from 'axios';
 import { PaymentsService } from '../payments/payments.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   InvoiceMeActorScope,
   InvoiceMeItemDto,
@@ -46,6 +47,24 @@ type UtilityBreakdown = {
   amount: string | null;
 };
 
+type OverdueRentUtilityInvoiceCandidate = {
+  id: string;
+  invoiceNumber: string;
+  invoiceType: InvoiceType;
+  dueDate: Date;
+  rentalContract: {
+    apartment: {
+      apartmentNumber: string;
+    };
+    members: Array<{
+      userId: string;
+      user: {
+        fullName: string;
+      };
+    }>;
+  };
+};
+
 @Injectable()
 export class InvoicesService {
   private readonly provincesBaseUrl = 'https://provinces.open-api.vn';
@@ -54,7 +73,72 @@ export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentsService: PaymentsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  private async notifyOverdueRentUtilityInvoices(
+    invoices: OverdueRentUtilityInvoiceCandidate[],
+    now: Date,
+  ): Promise<void> {
+    if (!invoices.length) {
+      return;
+    }
+
+    const millisecondsPerDay = 1000 * 60 * 60 * 24;
+    const sentKeys = new Set<string>();
+    const tasks: Promise<unknown>[] = [];
+
+    for (const invoice of invoices) {
+      const overdueDays = Math.max(
+        1,
+        Math.floor(
+          (now.getTime() - invoice.dueDate.getTime()) / millisecondsPerDay,
+        ),
+      );
+      const invoiceTypeLabel =
+        invoice.invoiceType === InvoiceType.utility ? 'utility' : 'rent';
+      const apartmentLabel =
+        invoice.rentalContract?.apartment?.apartmentNumber ?? 'unknown';
+      const members = invoice.rentalContract?.members ?? [];
+
+      if (!members.length) {
+        continue;
+      }
+
+      for (const member of members) {
+        const sentKey = `${invoice.id}:${member.userId}`;
+        if (sentKeys.has(sentKey)) {
+          continue;
+        }
+        sentKeys.add(sentKey);
+
+        const message =
+          overdueDays >= 15
+            ? `Invoice ${invoice.invoiceNumber} (${invoiceTypeLabel}) for apartment ${apartmentLabel} is overdue ${overdueDays} days. IoT services are temporarily disabled until payment is completed.`
+            : `Invoice ${invoice.invoiceNumber} (${invoiceTypeLabel}) for apartment ${apartmentLabel} is overdue ${overdueDays} days. If it reaches 15 overdue days, IoT services will be temporarily disabled.`;
+
+        tasks.push(
+          this.notificationsService.createAndPush({
+            recipientType: ActorType.user,
+            recipientId: member.userId,
+            notificationType: 'warning',
+            channel: 'in_app',
+            priority: 'high',
+            title: 'Invoice overdue',
+            message,
+            actionUrl: `/invoices/${invoice.id}`,
+            actionLabel: 'View invoice',
+            relatedEntityType: 'Invoice',
+            relatedEntityId: invoice.id,
+          }),
+        );
+      }
+    }
+
+    if (tasks.length > 0) {
+      await Promise.allSettled(tasks);
+    }
+  }
 
   private normalizeWardName(value: string | undefined): string | null {
     if (typeof value !== 'string') {
@@ -1180,7 +1264,8 @@ export class InvoicesService {
         invoiceNumber: invoice.invoiceNumber,
         status: invoice.status,
         billingMonth:
-          invoice.billingMonth ?? this.formatBillingMonth(invoice.billingPeriodStart),
+          invoice.billingMonth ??
+          this.formatBillingMonth(invoice.billingPeriodStart),
         billingPeriodStart: invoice.billingPeriodStart,
         billingPeriodEnd: invoice.billingPeriodEnd,
         issueDate: invoice.issueDate,
@@ -1277,6 +1362,161 @@ export class InvoicesService {
     };
   }
 
+  async listOverdueApartmentsAndTenants(query?: { minOverdueDays?: number }) {
+    await this.markOverdue();
+
+    const now = new Date();
+    const minOverdueDays = Math.max(1, query?.minOverdueDays ?? 1);
+    const thresholdDate = new Date(
+      now.getTime() - (minOverdueDays - 1) * 24 * 60 * 60 * 1000,
+    );
+    const millisecondsPerDay = 1000 * 60 * 60 * 24;
+
+    const overdueInvoices = await this.prisma.invoice.findMany({
+      where: {
+        status: InvoiceStatus.overdue,
+        invoiceType: {
+          in: [InvoiceType.rent, InvoiceType.utility],
+        },
+        dueDate: {
+          lt: thresholdDate,
+        },
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        invoiceType: true,
+        dueDate: true,
+        rentalContract: {
+          select: {
+            apartment: {
+              select: {
+                id: true,
+                apartmentNumber: true,
+              },
+            },
+            members: {
+              select: {
+                userId: true,
+                user: {
+                  select: {
+                    fullName: true,
+                    email: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const apartmentMap = new Map<
+      string,
+      {
+        apartmentId: string;
+        apartmentNumber: string;
+        overdueInvoiceCount: number;
+        maxOverdueDays: number;
+        invoices: Array<{
+          invoiceId: string;
+          invoiceNumber: string;
+          invoiceType: InvoiceType;
+          dueDate: Date;
+          overdueDays: number;
+        }>;
+        tenants: Map<
+          string,
+          {
+            userId: string;
+            fullName: string;
+            email: string;
+            phone: string | null;
+            overdueInvoiceCount: number;
+            maxOverdueDays: number;
+          }
+        >;
+      }
+    >();
+
+    for (const invoice of overdueInvoices) {
+      const apartment = invoice.rentalContract.apartment;
+      const overdueDays = Math.max(
+        1,
+        Math.floor(
+          (now.getTime() - invoice.dueDate.getTime()) / millisecondsPerDay,
+        ),
+      );
+
+      if (!apartmentMap.has(apartment.id)) {
+        apartmentMap.set(apartment.id, {
+          apartmentId: apartment.id,
+          apartmentNumber: apartment.apartmentNumber,
+          overdueInvoiceCount: 0,
+          maxOverdueDays: 0,
+          invoices: [],
+          tenants: new Map(),
+        });
+      }
+
+      const apartmentEntry = apartmentMap.get(apartment.id)!;
+      apartmentEntry.overdueInvoiceCount += 1;
+      apartmentEntry.maxOverdueDays = Math.max(
+        apartmentEntry.maxOverdueDays,
+        overdueDays,
+      );
+      apartmentEntry.invoices.push({
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        invoiceType: invoice.invoiceType,
+        dueDate: invoice.dueDate,
+        overdueDays,
+      });
+
+      for (const member of invoice.rentalContract.members) {
+        if (!apartmentEntry.tenants.has(member.userId)) {
+          apartmentEntry.tenants.set(member.userId, {
+            userId: member.userId,
+            fullName: member.user.fullName,
+            email: member.user.email,
+            phone: member.user.phone,
+            overdueInvoiceCount: 0,
+            maxOverdueDays: 0,
+          });
+        }
+
+        const tenantEntry = apartmentEntry.tenants.get(member.userId)!;
+        tenantEntry.overdueInvoiceCount += 1;
+        tenantEntry.maxOverdueDays = Math.max(
+          tenantEntry.maxOverdueDays,
+          overdueDays,
+        );
+      }
+    }
+
+    const items = [...apartmentMap.values()]
+      .map((entry) => ({
+        apartmentId: entry.apartmentId,
+        apartmentNumber: entry.apartmentNumber,
+        overdueInvoiceCount: entry.overdueInvoiceCount,
+        maxOverdueDays: entry.maxOverdueDays,
+        invoices: entry.invoices,
+        tenants: [...entry.tenants.values()].sort(
+          (a, b) => b.maxOverdueDays - a.maxOverdueDays,
+        ),
+      }))
+      .sort((a, b) => b.maxOverdueDays - a.maxOverdueDays);
+
+    return {
+      items,
+      total: items.length,
+      minOverdueDays,
+      generatedAt: now,
+    };
+  }
+
   async findOne(id: string, currentUser: JwtPayload) {
     await this.markOverdue();
 
@@ -1287,6 +1527,10 @@ export class InvoicesService {
           select: this.invoiceContractSelect,
         },
         payments: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 1,
           select: {
             id: true,
             amount: true,
@@ -1334,7 +1578,8 @@ export class InvoicesService {
     const invoiceNumber = await this.generateInvoiceNumber();
     const items = dto.items ?? [];
     const itemsTotal = items.reduce(
-      (sum, item) => sum + Number(item.amount ?? 0) * Number(item.quantity ?? 1),
+      (sum, item) =>
+        sum + Number(item.amount ?? 0) * Number(item.quantity ?? 1),
       0,
     );
 
@@ -1378,20 +1623,87 @@ export class InvoicesService {
 
   async markOverdue() {
     const now = new Date();
-    return this.prisma.invoice.updateMany({
+    const pendingStatuses: InvoiceStatus[] = [
+      InvoiceStatus.draft,
+      InvoiceStatus.issued,
+      InvoiceStatus.sent,
+      InvoiceStatus.partially_paid,
+    ];
+
+    const overdueRentUtilityCandidates = await this.prisma.invoice.findMany({
       where: {
         status: {
-          in: [
-            InvoiceStatus.draft,
-            InvoiceStatus.issued,
-            InvoiceStatus.sent,
-            InvoiceStatus.partially_paid,
-          ],
+          in: pendingStatuses,
         },
         dueDate: { lt: now },
+        invoiceType: {
+          in: [InvoiceType.rent, InvoiceType.utility],
+        },
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        invoiceType: true,
+        dueDate: true,
+        rentalContract: {
+          select: {
+            apartment: {
+              select: {
+                apartmentNumber: true,
+              },
+            },
+            members: {
+              select: {
+                userId: true,
+                user: {
+                  select: {
+                    fullName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const cancelledDepositInvoices = await this.prisma.invoice.updateMany({
+      where: {
+        status: {
+          in: pendingStatuses,
+        },
+        dueDate: { lt: now },
+        invoiceType: {
+          in: [InvoiceType.deposit, InvoiceType.contractDeposit],
+        },
+      },
+      data: { status: InvoiceStatus.cancelled },
+    });
+
+    const overdueInvoices = await this.prisma.invoice.updateMany({
+      where: {
+        status: {
+          in: pendingStatuses,
+        },
+        dueDate: { lt: now },
+        invoiceType: {
+          notIn: [InvoiceType.deposit, InvoiceType.contractDeposit],
+        },
       },
       data: { status: InvoiceStatus.overdue },
     });
+
+    await this.notifyOverdueRentUtilityInvoices(
+      Array.isArray(overdueRentUtilityCandidates)
+        ? overdueRentUtilityCandidates
+        : [],
+      now,
+    );
+
+    return {
+      count:
+        (cancelledDepositInvoices?.count ?? 0) + (overdueInvoices?.count ?? 0),
+    };
   }
 
   private async generateInvoiceNumber(): Promise<string> {
@@ -1403,7 +1715,9 @@ export class InvoicesService {
     return `INV-${year}${month}-${String(count + 1).padStart(5, '0')}`;
   }
 
-  private toJsonObject(value: Prisma.JsonValue | null): Record<string, unknown> {
+  private toJsonObject(
+    value: Prisma.JsonValue | null,
+  ): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return {};
     }
@@ -1418,7 +1732,9 @@ export class InvoicesService {
   ): UtilityBreakdown | null {
     const source = keys
       .map((key) => utilityCharges[key])
-      .find((value) => value && typeof value === 'object' && !Array.isArray(value));
+      .find(
+        (value) => value && typeof value === 'object' && !Array.isArray(value),
+      );
 
     if (!source) {
       return null;
@@ -1460,7 +1776,9 @@ export class InvoicesService {
       return explicit;
     }
 
-    const electricityAmount = this.toNullableNumber(electricity?.amount ?? null);
+    const electricityAmount = this.toNullableNumber(
+      electricity?.amount ?? null,
+    );
     const waterAmount = this.toNullableNumber(water?.amount ?? null);
     if (electricityAmount !== null || waterAmount !== null) {
       return ((electricityAmount ?? 0) + (waterAmount ?? 0)).toFixed(2);

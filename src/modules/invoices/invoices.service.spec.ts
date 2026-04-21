@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { InvoicesService } from './invoices.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   createPrismaMock,
   mockUserJwtPayload,
@@ -16,6 +17,7 @@ describe('InvoicesService', () => {
   let service: InvoicesService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let paymentsService: { getPartnerPayoutDueBreakdown: jest.Mock };
+  let notificationsService: { createAndPush: jest.Mock };
 
   const mockInvoice = (overrides = {}) => ({
     id: 'invoice-123',
@@ -37,12 +39,17 @@ describe('InvoicesService', () => {
     paymentsService = {
       getPartnerPayoutDueBreakdown: jest.fn(),
     };
+    notificationsService = {
+      createAndPush: jest.fn(),
+    };
+    prisma.invoice.findMany.mockResolvedValue([] as any);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InvoicesService,
         { provide: PrismaService, useValue: prisma },
         { provide: PaymentsService, useValue: paymentsService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -190,6 +197,45 @@ describe('InvoicesService', () => {
 
       await expect(service.findOne('non-existent', admin)).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('should query only the latest payment in invoice detail', async () => {
+      const admin = mockAdminJwtPayload();
+      prisma.invoice.updateMany.mockResolvedValue({ count: 0 } as any);
+      prisma.invoice.findUnique.mockResolvedValue({
+        ...mockInvoice(),
+        rentalContract: {
+          id: 'contract-123',
+          contractNumber: 'CTR-202601-00001',
+          apartment: {
+            apartmentNumber: 'A101',
+            wardCode: 26728,
+          },
+          members: [{ user: { id: 'user-123' } }],
+        },
+        payments: [
+          {
+            id: 'new-payment',
+            amount: 10000,
+            paymentMethod: 'bank_transfer',
+            status: 'pending',
+            paymentDate: new Date('2026-04-18T12:00:00.000Z'),
+          },
+        ],
+      } as any);
+
+      await service.findOne('invoice-123', admin);
+
+      expect(prisma.invoice.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            payments: expect.objectContaining({
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            }),
+          }),
+        }),
       );
     });
   });
@@ -365,13 +411,16 @@ describe('InvoicesService', () => {
   });
 
   describe('markOverdue', () => {
-    it('should mark overdue invoices', async () => {
-      prisma.invoice.updateMany.mockResolvedValue({ count: 5 } as any);
+    it('should cancel overdue deposit invoices and mark other overdue invoices', async () => {
+      prisma.invoice.findMany.mockResolvedValue([] as any);
+      prisma.invoice.updateMany
+        .mockResolvedValueOnce({ count: 2 } as any)
+        .mockResolvedValueOnce({ count: 3 } as any);
 
       const result = await service.markOverdue();
 
       expect(result.count).toBe(5);
-      expect(prisma.invoice.updateMany).toHaveBeenCalledWith({
+      expect(prisma.invoice.updateMany).toHaveBeenNthCalledWith(1, {
         where: {
           status: {
             in: [
@@ -382,8 +431,109 @@ describe('InvoicesService', () => {
             ],
           },
           dueDate: { lt: expect.any(Date) },
+          invoiceType: {
+            in: [InvoiceType.deposit, InvoiceType.contractDeposit],
+          },
+        },
+        data: { status: InvoiceStatus.cancelled },
+      });
+
+      expect(prisma.invoice.updateMany).toHaveBeenNthCalledWith(2, {
+        where: {
+          status: {
+            in: [
+              InvoiceStatus.draft,
+              InvoiceStatus.issued,
+              InvoiceStatus.sent,
+              InvoiceStatus.partially_paid,
+            ],
+          },
+          dueDate: { lt: expect.any(Date) },
+          invoiceType: {
+            notIn: [InvoiceType.deposit, InvoiceType.contractDeposit],
+          },
         },
         data: { status: InvoiceStatus.overdue },
+      });
+    });
+
+    it('should push overdue warning notifications for rent and utility invoices', async () => {
+      prisma.invoice.findMany.mockResolvedValue([
+        {
+          id: 'invoice-rent-1',
+          invoiceNumber: 'INV-202604-00001',
+          invoiceType: InvoiceType.rent,
+          dueDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+          rentalContract: {
+            apartment: { apartmentNumber: 'A101' },
+            members: [
+              { userId: 'user-1', user: { fullName: 'User One' } },
+              { userId: 'user-2', user: { fullName: 'User Two' } },
+            ],
+          },
+        },
+      ] as any);
+      prisma.invoice.updateMany
+        .mockResolvedValueOnce({ count: 0 } as any)
+        .mockResolvedValueOnce({ count: 1 } as any);
+
+      await service.markOverdue();
+
+      expect(notificationsService.createAndPush).toHaveBeenCalledTimes(2);
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientType: 'user',
+          recipientId: 'user-1',
+          notificationType: 'warning',
+        }),
+      );
+    });
+  });
+
+  describe('listOverdueApartmentsAndTenants', () => {
+    it('should return overdue apartments and tenant summaries', async () => {
+      prisma.invoice.findMany
+        .mockResolvedValueOnce([] as any)
+        .mockResolvedValueOnce([
+          {
+            id: 'invoice-1',
+            invoiceNumber: 'INV-202604-00003',
+            invoiceType: InvoiceType.utility,
+            dueDate: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
+            rentalContract: {
+              apartment: {
+                id: 'apt-123',
+                apartmentNumber: 'A101',
+              },
+              members: [
+                {
+                  userId: 'user-123',
+                  user: {
+                    fullName: 'Nguyen Van A',
+                    email: 'a@example.com',
+                    phone: '+84901234567',
+                  },
+                },
+              ],
+            },
+          },
+        ] as any);
+      prisma.invoice.updateMany
+        .mockResolvedValueOnce({ count: 0 } as any)
+        .mockResolvedValueOnce({ count: 1 } as any);
+
+      const result = await service.listOverdueApartmentsAndTenants({
+        minOverdueDays: 1,
+      });
+
+      expect(result.total).toBe(1);
+      expect(result.items[0]).toMatchObject({
+        apartmentId: 'apt-123',
+        apartmentNumber: 'A101',
+        overdueInvoiceCount: 1,
+      });
+      expect(result.items[0].tenants[0]).toMatchObject({
+        userId: 'user-123',
       });
     });
   });

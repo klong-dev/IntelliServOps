@@ -84,6 +84,16 @@ export class MaintenanceListItemDto {
   @ApiPropertyOptional({ type: Date, nullable: true })
   preferredDate: Date | null;
 
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    example: [
+      'https://cdn.example.com/maintenance/issue-1.jpg',
+      'https://cdn.example.com/maintenance/issue-2.jpg',
+    ],
+  })
+  images: string[];
+
   @ApiProperty({ example: false })
   isRated: boolean;
 
@@ -115,6 +125,20 @@ export class MaintenanceHistoryItemDto {
 
   @ApiProperty()
   updatedAt: Date;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    example: ['https://cdn.example.com/maintenance/issue-1.jpg'],
+  })
+  images: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    example: ['https://cdn.example.com/maintenance/completed-1.jpg'],
+  })
+  completionImages: string[];
 
   @ApiProperty({ example: true })
   isRated: boolean;
@@ -156,8 +180,12 @@ export class MaintenanceDetailDto {
   @ApiProperty({ example: 'medium' })
   urgency: string;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
-  images: any;
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    example: ['https://cdn.example.com/maintenance/issue-1.jpg'],
+  })
+  images: string[];
 
   @ApiPropertyOptional({ type: Date, nullable: true })
   preferredDate: Date | null;
@@ -174,8 +202,12 @@ export class MaintenanceDetailDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   assignedTaskId: string | null;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
-  completionImages: any;
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    example: ['https://cdn.example.com/maintenance/completed-1.jpg'],
+  })
+  completionImages: string[];
 
   @ApiPropertyOptional({ type: String, nullable: true })
   completionNotes: string | null;

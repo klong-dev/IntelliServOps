@@ -10,34 +10,42 @@
 | **Database** | PostgreSQL + Prisma ORM |
 | **Auth** | JWT (Access + Refresh Token) |
 | **Queue** | BullMQ + Redis |
-| **IoT** | Tuya Cloud API |
+| **IoT** | MQTT board/device integration + IoT service layer |
 | **Payments** | PayOS |
-| **SMS** | Twilio |
+| **SMS** | Twilio integration (module present, not active in `AppModule`) |
 | **Storage** | Supabase |
 | **Docs** | Swagger/OpenAPI |
 
 ---
 
-## 📦 Modules
+## 📦 Active Modules
+
+The list below reflects modules currently imported by `src/app.module.ts`.
 
 | Module | Description |
 |--------|-------------|
-| `auth` | JWT authentication, OTP verification, multi-actor login (User/Staff/Operator/Admin/Partner) |
-| `users` | User management và profiles |
-| `apartments` | Apartment listings, search, filters |
-| `contracts` | Rental contracts lifecycle (draft → pending → active → terminated) |
-| `invoices` | Invoice generation và billing |
-| `payments` | Payment processing (PayOS integration) |
-| `maintenance` | Maintenance request tracking |
-| `tickets` | Support ticket system |
-| `tasks` | Staff task assignment |
-| `iot` | Smart device control, utility meter readings |
-| `notifications` | Multi-channel notifications (in-app, email, SMS, push) |
-| `viewing-requests` | Guest apartment viewing flow |
-| `partners` | Property partner management |
-| `policies` | Legal documents và policies |
+| `auth` | JWT authentication, OTP verification, multi-actor login |
+| `users` | User management and profiles |
+| `apartments` | Apartment listings, partner cooperation flow, search, filters |
+| `amenities` | Amenity catalog management |
+| `apartment-policies` | Apartment-level policy assignment and retrieval |
+| `user-apartments` | Occupancy assignments between users and apartments |
+| `viewing-requests` | Guest/contact to viewing appointment flow |
+| `reservations` | Reservation lifecycle before contract conversion |
+| `contracts` | Rental contract lifecycle and PDF generation |
+| `invoices` | Invoice generation and billing |
+| `payments` | Payment processing and reconciliation |
+| `revenue` | Revenue reporting and partner payout views |
+| `maintenance` | Maintenance request tracking and task handling |
+| `iot` | Smart board/device management and utility meter readings |
+| `notifications` | In-app and push notification orchestration |
 | `activity-logs` | Audit logging |
-| `sms` | SMS messaging via Twilio |
+| `chat` | Conversation and message history |
+
+Notes:
+
+- `src/modules/sms` exists in the repository but is not currently imported into `AppModule`.
+- Class diagram sources are documented in `documents/class-diagram-index.md`.
 
 ---
 

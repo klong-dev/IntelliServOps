@@ -4,6 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import {
+  ApartmentStatus,
   InvoiceStatus,
   InvoiceType,
   PartnerCooperationContractStatus,
@@ -12,9 +13,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   PartnerMyRevenueOverviewDto,
   PartnerRevenueSummaryItemDto,
+  RevenueApartmentRankingItemDto,
+  RevenueDashboardDto,
+  RevenueDashboardQueryDto,
   RevenueFilterQueryDto,
   RevenueOverviewDto,
+  RevenueTimeseriesDto,
+  RevenueTimeseriesQueryDto,
   RevenueTransactionListDto,
+  REVENUE_TIMESERIES_GRANULARITIES,
 } from './dto';
 import {
   PartnerPayoutQueryDto,
@@ -63,6 +70,12 @@ type RevenueRow = {
 @Injectable()
 export class RevenueService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private readonly vacantApartmentStatuses = new Set<ApartmentStatus>([
+    ApartmentStatus.available,
+    ApartmentStatus.verified,
+    ApartmentStatus.pending,
+  ]);
 
   private toNumber(value: unknown): number {
     if (
@@ -140,6 +153,104 @@ export class RevenueService {
       periodMonth: `${year}-${String(monthNum).padStart(2, '0')}`,
       periodStart,
       periodEnd,
+    };
+  }
+
+  private normalizeTopLimit(value?: number) {
+    return Math.min(20, Math.max(1, value ?? 5));
+  }
+
+  private buildRevenueSummary(rows: RevenueRow[]) {
+    return rows.reduce(
+      (acc, row) => {
+        acc.invoiceCount += 1;
+        acc.totalPaidRevenue += row.invoiceAmount;
+        acc.totalSystemRevenue += row.systemRevenueAmount;
+        acc.totalPartnerGrossRevenue += row.partnerGrossRevenueAmount;
+        acc.totalPartnerNetPayout += row.partnerNetPayoutAmount;
+        return acc;
+      },
+      {
+        invoiceCount: 0,
+        totalPaidRevenue: 0,
+        totalSystemRevenue: 0,
+        totalPartnerGrossRevenue: 0,
+        totalPartnerNetPayout: 0,
+      },
+    );
+  }
+
+  private buildApartmentRevenueMap(rows: RevenueRow[]) {
+    const apartmentMap = new Map<
+      string,
+      RevenueApartmentRankingItemDto & { sortKey: string }
+    >();
+
+    for (const row of rows) {
+      const existing = apartmentMap.get(row.apartment.id);
+
+      if (existing) {
+        existing.paidRevenue += row.invoiceAmount;
+        existing.invoiceCount += 1;
+        continue;
+      }
+
+      apartmentMap.set(row.apartment.id, {
+        apartmentId: row.apartment.id,
+        apartmentNumber: row.apartment.apartmentNumber,
+        buildingName: row.apartment.buildingName,
+        paidRevenue: row.invoiceAmount,
+        invoiceCount: 1,
+        sortKey: `${row.apartment.buildingName ?? ''}-${row.apartment.apartmentNumber}`,
+      });
+    }
+
+    return apartmentMap;
+  }
+
+  private buildApartmentRevenueRanking(
+    rows: RevenueRow[],
+    limit: number,
+    direction: 'top' | 'bottom',
+  ): RevenueApartmentRankingItemDto[] {
+    return [...this.buildApartmentRevenueMap(rows).values()]
+      .filter((item) => item.paidRevenue > 0)
+      .sort((a, b) => {
+        if (a.paidRevenue !== b.paidRevenue) {
+          return direction === 'top'
+            ? b.paidRevenue - a.paidRevenue
+            : a.paidRevenue - b.paidRevenue;
+        }
+
+        return a.sortKey.localeCompare(b.sortKey);
+      })
+      .slice(0, limit)
+      .map(({ sortKey: _, ...item }) => item);
+  }
+
+  private normalizeTimeseriesQuery(query: RevenueTimeseriesQueryDto) {
+    const normalized = this.normalizeFilter({
+      from: query.from,
+      to: query.to,
+      page: 1,
+      limit: 1,
+    });
+    const granularity = REVENUE_TIMESERIES_GRANULARITIES.includes(
+      query.granularity ?? 'month',
+    )
+      ? (query.granularity ?? 'month')
+      : 'month';
+
+    return {
+      ...normalized,
+      granularity,
+    } as {
+      from?: Date;
+      to?: Date;
+      page: number;
+      limit: number;
+      partnerId?: string;
+      granularity: 'month' | 'year';
     };
   }
 
@@ -366,37 +477,169 @@ export class RevenueService {
   ): Promise<RevenueOverviewDto> {
     const normalized = this.normalizeFilter(filter);
     const rows = await this.buildRevenueRows(filter);
-
-    const overview = rows.reduce(
-      (acc, row) => {
-        acc.invoiceCount += 1;
-        acc.totalInvoiceAmount += row.invoiceAmount;
-        acc.totalSystemRevenue += row.systemRevenueAmount;
-        acc.totalPartnerGrossRevenue += row.partnerGrossRevenueAmount;
-        acc.totalPartnerNetPayout += row.partnerNetPayoutAmount;
-        return acc;
-      },
-      {
-        invoiceCount: 0,
-        totalInvoiceAmount: 0,
-        totalSystemRevenue: 0,
-        totalPartnerGrossRevenue: 0,
-        totalPartnerNetPayout: 0,
-      },
-    );
+    const summary = this.buildRevenueSummary(rows);
 
     const start = (normalized.page - 1) * normalized.limit;
     const end = start + normalized.limit;
 
     return {
-      ...overview,
+      invoiceCount: summary.invoiceCount,
+      totalInvoiceAmount: summary.totalPaidRevenue,
+      totalSystemRevenue: summary.totalSystemRevenue,
+      totalPartnerGrossRevenue: summary.totalPartnerGrossRevenue,
+      totalPartnerNetPayout: summary.totalPartnerNetPayout,
       invoices: rows.slice(start, end),
       page: normalized.page,
       limit: normalized.limit,
       totalPages: Math.max(
         1,
-        Math.ceil(overview.invoiceCount / normalized.limit),
+        Math.ceil(summary.invoiceCount / normalized.limit),
       ),
+    };
+  }
+
+  async getDashboardStatistics(
+    query: RevenueDashboardQueryDto,
+  ): Promise<RevenueDashboardDto> {
+    const topLimit = this.normalizeTopLimit(query.topLimit);
+
+    const [totalActiveUsers, totalActivePartners, apartments, rows] =
+      await Promise.all([
+        this.prisma.user.count({
+          where: { isActive: true },
+        }),
+        this.prisma.user.count({
+          where: { isActive: true, isPartner: true },
+        }),
+        this.prisma.apartment.findMany({
+          select: {
+            id: true,
+            status: true,
+            rentalContracts: {
+              where: { status: 'active' },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        }),
+        this.buildRevenueRows({
+          from: query.from,
+          to: query.to,
+          page: 1,
+          limit: 1000,
+        }),
+      ]);
+
+    const totalActiveNonPartnerUsers = totalActiveUsers - totalActivePartners;
+    const occupiedApartmentCount = apartments.filter(
+      (apartment) => apartment.rentalContracts.length > 0,
+    ).length;
+    const vacantApartmentCount = apartments.filter(
+      (apartment) =>
+        apartment.rentalContracts.length === 0 &&
+        this.vacantApartmentStatuses.has(apartment.status),
+    ).length;
+    const revenueSummary = this.buildRevenueSummary(rows);
+
+    return {
+      userStats: {
+        totalActiveUsers,
+        totalActivePartners,
+        totalActiveNonPartnerUsers,
+        partnerRatio:
+          totalActiveUsers > 0 ? totalActivePartners / totalActiveUsers : 0,
+        userRatio:
+          totalActiveUsers > 0
+            ? totalActiveNonPartnerUsers / totalActiveUsers
+            : 0,
+      },
+      occupancyStats: {
+        occupiedApartmentCount,
+        vacantApartmentCount,
+      },
+      apartmentRevenueStats: {
+        topApartments: this.buildApartmentRevenueRanking(rows, topLimit, 'top'),
+        bottomApartments: this.buildApartmentRevenueRanking(
+          rows,
+          topLimit,
+          'bottom',
+        ),
+      },
+      systemRevenueSummary: revenueSummary,
+    };
+  }
+
+  async getRevenueTimeseries(
+    query: RevenueTimeseriesQueryDto,
+  ): Promise<RevenueTimeseriesDto> {
+    const normalized = this.normalizeTimeseriesQuery(query);
+    const rows = await this.buildRevenueRows({
+      from: query.from,
+      to: query.to,
+      page: 1,
+      limit: 1000,
+    });
+
+    const grouped = new Map<
+      string,
+      {
+        periodKey: string;
+        periodLabel: string;
+        totalPaidRevenue: number;
+        totalSystemRevenue: number;
+        totalPartnerGrossRevenue: number;
+        totalPartnerNetPayout: number;
+        invoiceCount: number;
+        sortTime: number;
+      }
+    >();
+
+    for (const row of rows) {
+      const paidAt = row.invoicePaidAt;
+      const year = paidAt.getUTCFullYear();
+      const month = paidAt.getUTCMonth() + 1;
+      const periodKey =
+        normalized.granularity === 'year'
+          ? `${year}`
+          : `${year}-${String(month).padStart(2, '0')}`;
+      const periodLabel =
+        normalized.granularity === 'year'
+          ? `${year}`
+          : `${String(month).padStart(2, '0')}/${year}`;
+      const sortTime = Date.UTC(
+        year,
+        normalized.granularity === 'year' ? 0 : month - 1,
+        1,
+      );
+
+      if (!grouped.has(periodKey)) {
+        grouped.set(periodKey, {
+          periodKey,
+          periodLabel,
+          totalPaidRevenue: 0,
+          totalSystemRevenue: 0,
+          totalPartnerGrossRevenue: 0,
+          totalPartnerNetPayout: 0,
+          invoiceCount: 0,
+          sortTime,
+        });
+      }
+
+      const entry = grouped.get(periodKey)!;
+      entry.totalPaidRevenue += row.invoiceAmount;
+      entry.totalSystemRevenue += row.systemRevenueAmount;
+      entry.totalPartnerGrossRevenue += row.partnerGrossRevenueAmount;
+      entry.totalPartnerNetPayout += row.partnerNetPayoutAmount;
+      entry.invoiceCount += 1;
+    }
+
+    return {
+      granularity: normalized.granularity,
+      from: normalized.from?.toISOString() ?? null,
+      to: normalized.to?.toISOString() ?? null,
+      items: [...grouped.values()]
+        .sort((a, b) => a.sortTime - b.sortTime)
+        .map(({ sortTime: _, ...item }) => item),
     };
   }
 
