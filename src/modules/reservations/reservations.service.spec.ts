@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { createPrismaMock } from '../../test-utils';
 import { DEFAULT_CONTRACT_PARTY_A } from '../contracts/contract-party-a-defaults';
+import { BadRequestException } from '@nestjs/common';
 
 describe('ReservationsService', () => {
   let service: ReservationsService;
@@ -31,10 +32,15 @@ describe('ReservationsService', () => {
 
   it('should seed default Party A fields when creating draft contract from reservation flow', async () => {
     const userId = 'user-123';
+    const desiredStartDate = new Date();
+    desiredStartDate.setUTCDate(desiredStartDate.getUTCDate() + 7);
+    const desiredEndDate = new Date(desiredStartDate);
+    desiredEndDate.setUTCDate(desiredEndDate.getUTCDate() + 364);
+
     const createReservationDto = {
       apartmentId: 'apt-123',
-      desiredStartDate: '2099-01-01',
-      desiredEndDate: '2099-12-31',
+      desiredStartDate: desiredStartDate.toISOString(),
+      desiredEndDate: desiredEndDate.toISOString(),
       numberOfOccupants: 1,
       specialRequests: 'Need parking spot',
     };
@@ -73,14 +79,14 @@ describe('ReservationsService', () => {
             id: 'reservation-123',
             userId,
             apartmentId: 'apt-123',
-            desiredStartDate: new Date('2099-01-01T00:00:00.000Z'),
-            desiredEndDate: new Date('2099-12-31T00:00:00.000Z'),
+            desiredStartDate,
+            desiredEndDate,
             numberOfOccupants: 1,
             specialRequests: 'Need parking spot',
             status: 'pending',
-            expiresAt: new Date('2098-12-01T00:00:00.000Z'),
-            createdAt: new Date('2098-11-29T00:00:00.000Z'),
-            updatedAt: new Date('2098-11-29T00:00:00.000Z'),
+            expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+            createdAt: new Date(),
+            updatedAt: new Date(),
             apartment: {
               id: 'apt-123',
               apartmentNumber: 'A-101',
@@ -114,5 +120,35 @@ describe('ReservationsService', () => {
       'contract-123',
     );
     expect(result.contractId).toBe('contract-123');
+  });
+
+  it('should reject reservation when desired move-in date is more than 15 days from today', async () => {
+    const userId = 'user-123';
+    const desiredStartDate = new Date();
+    desiredStartDate.setUTCDate(desiredStartDate.getUTCDate() + 16);
+
+    const desiredEndDate = new Date(desiredStartDate);
+    desiredEndDate.setUTCDate(desiredEndDate.getUTCDate() + 30);
+
+    prisma.user.findUnique.mockResolvedValue({
+      id: userId,
+      isVerified: true,
+      isActive: true,
+    } as any);
+    prisma.apartment.findUnique.mockResolvedValue({
+      id: 'apt-123',
+      status: 'available',
+      apartmentNumber: 'A-101',
+      wardCode: null,
+    } as any);
+
+    await expect(
+      service.create(userId, {
+        apartmentId: 'apt-123',
+        desiredStartDate: desiredStartDate.toISOString(),
+        desiredEndDate: desiredEndDate.toISOString(),
+        numberOfOccupants: 1,
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 });

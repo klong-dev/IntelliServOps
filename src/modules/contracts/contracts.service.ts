@@ -278,10 +278,6 @@ export class ContractsService {
     );
   }
 
-  private generateSixDigitPassword(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  }
-
   private async buildUserApartmentActivationOperations(contract: {
     id: string;
     apartmentId: string;
@@ -294,34 +290,16 @@ export class ContractsService {
     }>;
   }): Promise<{
     operations: Prisma.PrismaPromise<any>[];
-    apartmentDoorPassword: string | null;
+    shouldResetDoorPin: boolean;
   }> {
     const members = contract.members ?? [];
 
     if (!members.length) {
       return {
         operations: [],
-        apartmentDoorPassword: null,
+        shouldResetDoorPin: false,
       };
     }
-
-    const existingApartmentAccess = await this.prisma.userApartment.findFirst({
-      where: {
-        rentalContractId: contract.id,
-        apartmentId: contract.apartmentId,
-        apartmentDoorPassword: { not: null },
-      },
-      select: {
-        apartmentDoorPassword: true,
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-    });
-
-    const apartmentDoorPassword =
-      existingApartmentAccess?.apartmentDoorPassword?.trim() ||
-      this.generateSixDigitPassword();
 
     return {
       operations: members.map((member) =>
@@ -339,7 +317,7 @@ export class ContractsService {
             rentalContract: { connect: { id: contract.id } },
             moveInDate: contract.startDate,
             moveOutDate: contract.endDate,
-            apartmentDoorPassword,
+            apartmentDoorPassword: null,
             isPrimaryTenant:
               member.memberType === MemberType.primary ||
               member.isPrimaryContact,
@@ -348,7 +326,7 @@ export class ContractsService {
           update: {
             moveInDate: contract.startDate,
             moveOutDate: contract.endDate,
-            apartmentDoorPassword,
+            apartmentDoorPassword: null,
             isPrimaryTenant:
               member.memberType === MemberType.primary ||
               member.isPrimaryContact,
@@ -356,24 +334,22 @@ export class ContractsService {
           },
         }),
       ),
-      apartmentDoorPassword,
+      shouldResetDoorPin: true,
     };
   }
 
-  private async syncApartmentDoorPasswordToBoard(
+  private async clearApartmentDoorPinHash(
     apartmentId: string,
     rentalContractId: string,
-    apartmentDoorPassword: string,
   ): Promise<DoorPasswordSyncResult> {
     try {
-      const syncResult = await this.ioTService.syncApartmentDoorPin(
+      const syncResult = await this.ioTService.clearApartmentDoorPinHash(
         apartmentId,
-        apartmentDoorPassword,
       );
 
       if (!syncResult.success) {
         this.logger.warn(
-          `Door PIN sync was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
+          `Door PIN reset was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
         );
       }
 
@@ -385,7 +361,7 @@ export class ContractsService {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown error';
       this.logger.warn(
-        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${message}`,
+        `Door PIN reset failed for contract ${rentalContractId} apartment ${apartmentId}: ${message}`,
       );
 
       return {
@@ -396,27 +372,26 @@ export class ContractsService {
     }
   }
 
-  private async notifyMembersApartmentPassword(params: {
+  private async notifyMembersDoorFirstPassSetup(params: {
     memberUserIds: string[];
-    apartmentDoorPassword: string;
     rentalContractId: string;
     invoiceNumber?: string;
   }): Promise<void> {
     const contextText = params.invoiceNumber
-      ? `Dat coc ${params.invoiceNumber} da thanh toan.`
-      : 'Dat coc hop dong da thanh toan.';
+      ? `Đặt cọc ${params.invoiceNumber} đã thanh toán.`
+      : 'Đặt cọc hợp đồng đã thanh toán.';
 
     await Promise.allSettled(
       params.memberUserIds.map((memberUserId) =>
         this.notificationsService.createAndPush({
           recipientType: ActorType.user,
           recipientId: memberUserId,
-          notificationType: 'info',
+          notificationType: 'success',
           channel: 'in_app',
-          title: 'Mat khau nha da san sang',
-          message: `${contextText} Mat khau nha (da dong bo IoT): ${params.apartmentDoorPassword}`,
+          title: 'PIN cửa cần thiết lập lại',
+          message: `${contextText} PIN cửa đã được đặt lại. Vui lòng thiết lập PIN mới khi sử dụng lần đầu.`,
           actionUrl: `/contracts/${params.rentalContractId}`,
-          actionLabel: 'Xem hop dong',
+          actionLabel: 'Xem hợp đồng',
           priority: 'high',
           relatedEntityType: 'RentalContract',
           relatedEntityId: params.rentalContractId,
@@ -427,6 +402,7 @@ export class ContractsService {
 
   private async syncExpiredContractsByDate(): Promise<void> {
     const todayStart = this.getUtcDayStart();
+    const now = new Date();
 
     await this.prisma.rentalContract.updateMany({
       where: {
@@ -462,6 +438,212 @@ export class ContractsService {
       },
       data: {
         status: ContractStatus.expired,
+      },
+    });
+
+    await this.prisma.reservation.updateMany({
+      where: {
+        status: ReservationStatus.pending,
+        expiresAt: { lt: now },
+      },
+      data: {
+        status: ReservationStatus.expired,
+      },
+    });
+
+    await this.reconcileApartmentOccupancyStates();
+  }
+
+  private async reconcileApartmentOccupancyStates(): Promise<void> {
+    const todayStart = this.getUtcDayStart();
+    const now = new Date();
+
+    const expiredAssignments =
+      (await this.prisma.userApartment.findMany({
+        where: {
+          status: {
+            in: [UserApartmentStatus.active, UserApartmentStatus.inactive],
+          },
+          rentalContract: {
+            OR: [
+              {
+                status: {
+                  in: [ContractStatus.expired, ContractStatus.terminated],
+                },
+              },
+              {
+                endDate: { lt: todayStart },
+              },
+            ],
+          },
+        },
+        select: {
+          id: true,
+          moveOutDate: true,
+          apartmentId: true,
+          rentalContract: {
+            select: {
+              endDate: true,
+            },
+          },
+        },
+      })) ?? [];
+
+    for (const assignment of expiredAssignments) {
+      await this.prisma.userApartment.update({
+        where: { id: assignment.id },
+        data: {
+          status: UserApartmentStatus.moved_out,
+          moveOutDate:
+            assignment.moveOutDate ??
+            (assignment.rentalContract.endDate < todayStart
+              ? assignment.rentalContract.endDate
+              : todayStart),
+        },
+      });
+    }
+
+    const candidateApartmentIds = new Set<string>();
+
+    const apartmentsNeedingSync =
+      (await this.prisma.apartment.findMany({
+        where: {
+          status: {
+            in: [ApartmentStatus.reserved, ApartmentStatus.occupied],
+          },
+        },
+        select: { id: true },
+      })) ?? [];
+
+    for (const apartment of apartmentsNeedingSync) {
+      candidateApartmentIds.add(apartment.id);
+    }
+
+    const liveContracts =
+      (await this.prisma.rentalContract.findMany({
+        where: {
+          OR: [
+            {
+              status: ContractStatus.active,
+              endDate: { gte: todayStart },
+            },
+            {
+              status: {
+                in: [ContractStatus.pending, ContractStatus.signed],
+              },
+              endDate: { gte: todayStart },
+              invoices: {
+                some: {
+                  invoiceType: InvoiceType.contractDeposit,
+                  status: InvoiceStatus.paid,
+                },
+              },
+            },
+          ],
+        },
+        select: { apartmentId: true },
+      })) ?? [];
+
+    for (const contract of liveContracts) {
+      if (typeof contract.apartmentId === 'string' && contract.apartmentId) {
+        candidateApartmentIds.add(contract.apartmentId);
+      }
+    }
+
+    const liveReservations =
+      (await this.prisma.reservation.findMany({
+        where: {
+          OR: [
+            {
+              status: ReservationStatus.pending,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+            },
+            {
+              status: ReservationStatus.confirmed,
+            },
+          ],
+        },
+        select: { apartmentId: true },
+      })) ?? [];
+
+    for (const reservation of liveReservations) {
+      if (
+        typeof reservation.apartmentId === 'string' &&
+        reservation.apartmentId
+      ) {
+        candidateApartmentIds.add(reservation.apartmentId);
+      }
+    }
+
+    for (const apartmentId of candidateApartmentIds) {
+      await this.syncApartmentOccupancyState(apartmentId, todayStart, now);
+    }
+  }
+
+  private async syncApartmentOccupancyState(
+    apartmentId: string,
+    todayStart: Date,
+    now: Date,
+  ): Promise<void> {
+    const activeContract = await this.prisma.rentalContract.findFirst({
+      where: {
+        apartmentId,
+        status: ContractStatus.active,
+        endDate: { gte: todayStart },
+      },
+      select: { id: true },
+    });
+
+    if (activeContract) {
+      await this.prisma.apartment.update({
+        where: { id: apartmentId },
+        data: { status: ApartmentStatus.occupied },
+      });
+      return;
+    }
+
+    const reservedContract = await this.prisma.rentalContract.findFirst({
+      where: {
+        apartmentId,
+        status: { in: [ContractStatus.pending, ContractStatus.signed] },
+        endDate: { gte: todayStart },
+        invoices: {
+          some: {
+            invoiceType: InvoiceType.contractDeposit,
+            status: InvoiceStatus.paid,
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    const reservedReservation = await this.prisma.reservation.findFirst({
+      where: {
+        apartmentId,
+        OR: [
+          {
+            status: ReservationStatus.pending,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          },
+          {
+            status: ReservationStatus.confirmed,
+            createdContract: {
+              status: { in: [ContractStatus.pending, ContractStatus.signed] },
+              endDate: { gte: todayStart },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    await this.prisma.apartment.update({
+      where: { id: apartmentId },
+      data: {
+        status:
+          reservedContract || reservedReservation
+            ? ApartmentStatus.reserved
+            : ApartmentStatus.available,
       },
     });
   }
@@ -993,6 +1175,7 @@ export class ContractsService {
         );
       }
     }
+
   }
 
   async regenerateContractPdf(contractId: string): Promise<void> {
@@ -2453,6 +2636,12 @@ export class ContractsService {
       throw new ConflictException('Contract already expired');
     }
 
+    if (contract.startDate > todayStart) {
+      throw new ConflictException(
+        'Contract cannot be activated before move-in date',
+      );
+    }
+
     const paidDepositInvoice = await this.prisma.invoice.findFirst({
       where: {
         rentalContractId: id,
@@ -2493,11 +2682,10 @@ export class ContractsService {
       ...activationPayload.operations,
     ]);
 
-    if (activationPayload.apartmentDoorPassword) {
-      const syncResult = await this.syncApartmentDoorPasswordToBoard(
+    if (activationPayload.shouldResetDoorPin) {
+      const syncResult = await this.clearApartmentDoorPinHash(
         contract.apartmentId,
         contract.id,
-        activationPayload.apartmentDoorPassword,
       );
 
       if (!syncResult.success) {
@@ -2510,9 +2698,8 @@ export class ContractsService {
         );
 
         if (memberUserIds.length > 0) {
-          await this.notifyMembersApartmentPassword({
+          await this.notifyMembersDoorFirstPassSetup({
             memberUserIds,
-            apartmentDoorPassword: activationPayload.apartmentDoorPassword,
             rentalContractId: contract.id,
             invoiceNumber: paidDepositInvoice.invoiceNumber,
           });

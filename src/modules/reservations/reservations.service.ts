@@ -20,6 +20,12 @@ export class ReservationsService {
     private readonly contractsService: ContractsService,
   ) {}
 
+  private getUtcDayStart(date = new Date()): Date {
+    return new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+  }
+
   /**
    * Create a reservation
    * - User must be verified (isVerified === true)
@@ -71,13 +77,23 @@ export class ReservationsService {
     // 3. Validate dates
     const desiredStart = new Date(createReservationDto.desiredStartDate);
     const desiredEnd = new Date(createReservationDto.desiredEndDate);
+    const todayStart = this.getUtcDayStart();
+    const desiredStartDay = this.getUtcDayStart(desiredStart);
+    const maxDesiredStart = new Date(todayStart);
+    maxDesiredStart.setUTCDate(maxDesiredStart.getUTCDate() + 15);
 
     if (desiredEnd <= desiredStart) {
       throw new BadRequestException('End date must be after start date');
     }
 
-    if (desiredStart < new Date()) {
+    if (desiredStartDay < todayStart) {
       throw new BadRequestException('Start date cannot be in the past');
+    }
+
+    if (desiredStartDay > maxDesiredStart) {
+      throw new BadRequestException(
+        'Move-in date cannot be more than 15 days from today',
+      );
     }
 
     // 4. Check user doesn't already have an active reservation for this apartment

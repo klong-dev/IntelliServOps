@@ -250,7 +250,8 @@ export class IoTController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.USER)
   @ApiOperation({
-    summary: 'Update smart door PIN for tenant flow with old PIN verification and board acknowledgement',
+    summary:
+      'Update smart door PIN for tenant flow with board acknowledgement; old PIN is only required after the first setup',
   })
   @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
     description: 'Returns success only when the board confirms the PIN update',

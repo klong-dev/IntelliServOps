@@ -553,8 +553,12 @@ export class UserApartmentListItemDto {
   @ApiPropertyOptional({ type: Date, nullable: true })
   moveOutDate!: Date | null;
 
-  @ApiPropertyOptional({ type: String, nullable: true })
-  apartmentDoorPassword!: string | null;
+  @ApiProperty({
+    example: true,
+    description:
+      'True when the apartment door PIN has not been initialized yet and the tenant must set it on first use.',
+  })
+  isFirstPass!: boolean;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   buildingGateCode!: string | null;

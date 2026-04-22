@@ -21,7 +21,6 @@ export class UserApartmentsService {
     isPrimaryTenant: true,
     moveInDate: true,
     moveOutDate: true,
-    apartmentDoorPassword: true,
     buildingGateCode: true,
     smartLockPin: true,
     mailboxCode: true,
@@ -64,7 +63,6 @@ export class UserApartmentsService {
     isPrimaryTenant: true,
     moveInDate: true,
     moveOutDate: true,
-    apartmentDoorPassword: true,
     buildingGateCode: true,
     smartLockPin: true,
     mailboxCode: true,
@@ -304,13 +302,15 @@ export class UserApartmentsService {
       throw new ForbiddenException('Only users can view their apartment data');
     }
 
-    return this.prisma.userApartment.findMany({
+    const assignments = await this.prisma.userApartment.findMany({
       where: {
         userId: currentUser.sub,
       },
       select: this.userApartmentListSelect,
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     });
+
+    return this.attachDoorFirstPassState(assignments);
   }
 
   async findOne(id: string, currentUser: JwtPayload): Promise<unknown> {
@@ -344,7 +344,87 @@ export class UserApartmentsService {
       throw new NotFoundException('User apartment assignment not found');
     }
 
-    return userApartment as unknown;
+    return (await this.attachDoorFirstPassState([userApartment]))[0] as unknown;
+  }
+
+  private async attachDoorFirstPassState<
+    T extends {
+      apartmentId: string;
+    },
+  >(assignments: T[]): Promise<Array<T & { isFirstPass: boolean }>> {
+    if (!assignments.length) {
+      return [];
+    }
+
+    const apartmentIds = Array.from(
+      new Set(assignments.map((assignment) => assignment.apartmentId)),
+    );
+
+    const devices =
+      (await this.prisma.ioTDevice.findMany({
+        where: {
+          apartmentId: { in: apartmentIds },
+          deviceType: 'smart_lock',
+        },
+        select: {
+          apartmentId: true,
+          configuration: true,
+          updatedAt: true,
+        },
+      })) ?? [];
+
+    const doorDeviceByApartment = new Map<
+      string,
+      { configuration: unknown; updatedAt: Date }
+    >();
+
+    for (const device of devices) {
+      if (!device.apartmentId || this.readDoorTopic(device.configuration) !== 'door') {
+        continue;
+      }
+
+      const existing = doorDeviceByApartment.get(device.apartmentId);
+      if (!existing || existing.updatedAt < device.updatedAt) {
+        doorDeviceByApartment.set(device.apartmentId, {
+          configuration: device.configuration,
+          updatedAt: device.updatedAt,
+        });
+      }
+    }
+
+    return assignments.map((assignment) => {
+      const doorDevice = doorDeviceByApartment.get(assignment.apartmentId);
+      return {
+        ...assignment,
+        isFirstPass: !this.readDoorPinHash(doorDevice?.configuration),
+      };
+    });
+  }
+
+  private readDoorTopic(configuration: unknown): string | undefined {
+    const root = this.toPlainObject(configuration);
+    const mqtt = this.toPlainObject(root.mqtt);
+    return this.readString(mqtt.topic);
+  }
+
+  private readDoorPinHash(configuration: unknown): string | undefined {
+    const root = this.toPlainObject(configuration);
+    const mqtt = this.toPlainObject(root.mqtt);
+    return this.readString(mqtt.pinHash);
+  }
+
+  private toPlainObject(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+      ? value
+      : undefined;
   }
 
   async updateAccessInfo(
@@ -399,10 +479,12 @@ export class UserApartmentsService {
         },
       });
 
-      return this.prisma.userApartment.findUniqueOrThrow({
+      const updatedAssignment = await this.prisma.userApartment.findUniqueOrThrow({
         where: { id: existing.id },
         select: this.userApartmentListSelect,
       });
+
+      return (await this.attachDoorFirstPassState([updatedAssignment]))[0];
     }
 
     if (
@@ -460,9 +542,11 @@ export class UserApartmentsService {
       });
     });
 
-    return this.prisma.userApartment.findUniqueOrThrow({
+    const updatedAssignment = await this.prisma.userApartment.findUniqueOrThrow({
       where: { id: existing.id },
       select: this.userApartmentListSelect,
     });
+
+    return (await this.attachDoorFirstPassState([updatedAssignment]))[0];
   }
 }

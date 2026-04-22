@@ -26,6 +26,7 @@ describe('PaymentsService', () => {
   let configService: { get: jest.Mock };
   const ioTService = {
     syncApartmentDoorPin: jest.fn(),
+    clearApartmentDoorPinHash: jest.fn(),
   };
   const storageService = {
     uploadFile: jest.fn(),
@@ -90,6 +91,13 @@ describe('PaymentsService', () => {
       boardId: 'ESP_A101',
       deviceId: 1,
       message: 'Door PIN synced to board successfully.',
+    });
+    ioTService.clearApartmentDoorPinHash.mockResolvedValue({
+      success: true,
+      skipped: false,
+      boardId: 'ESP_A101',
+      deviceId: 1,
+      message: 'Door PIN hash cleared successfully.',
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -369,10 +377,10 @@ describe('PaymentsService', () => {
       expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
-            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
+            apartmentDoorPassword: null,
           }),
           update: expect.objectContaining({
-            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
+            apartmentDoorPassword: null,
           }),
         }),
       );
@@ -390,12 +398,13 @@ describe('PaymentsService', () => {
       );
       expect(notificationsService.createAndPush).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringMatching(/\d{6}/),
+          message: expect.stringContaining(
+            'PIN cửa đã được đặt lại. Vui lòng thiết lập PIN mới khi sử dụng lần đầu.',
+          ),
         }),
       );
-      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+      expect(ioTService.clearApartmentDoorPinHash).toHaveBeenCalledWith(
         'apt-123',
-        expect.stringMatching(/^\d{6}$/),
       );
     });
 
@@ -422,7 +431,7 @@ describe('PaymentsService', () => {
       expect(prisma.userApartment.upsert).not.toHaveBeenCalled();
     });
 
-    it('should keep contract pending activation but create active userApartment with password before startDate', async () => {
+    it('should keep contract pending activation, reserve apartment, and mark first-pass setup before startDate', async () => {
       const payment = mockPayment({ status: PaymentStatus.pending });
 
       prisma.payment.findUnique.mockResolvedValue({
@@ -452,16 +461,19 @@ describe('PaymentsService', () => {
           data: { status: ContractStatus.active },
         }),
       );
-      expect(prisma.apartment.update).not.toHaveBeenCalled();
+      expect(prisma.apartment.update).toHaveBeenCalledWith({
+        where: { id: 'apt-123' },
+        data: { status: 'reserved' },
+      });
       expect(prisma.userApartment.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
             status: UserApartmentStatus.active,
-            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
+            apartmentDoorPassword: null,
           }),
           update: expect.objectContaining({
             status: UserApartmentStatus.active,
-            apartmentDoorPassword: expect.stringMatching(/^\d{6}$/),
+            apartmentDoorPassword: null,
           }),
         }),
       );
@@ -479,12 +491,13 @@ describe('PaymentsService', () => {
       );
       expect(notificationsService.createAndPush).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringMatching(/\d{6}/),
+          message: expect.stringContaining(
+            'PIN cửa đã được đặt lại. Vui lòng thiết lập PIN mới khi sử dụng lần đầu.',
+          ),
         }),
       );
-      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+      expect(ioTService.clearApartmentDoorPinHash).toHaveBeenCalledWith(
         'apt-123',
-        expect.stringMatching(/^\d{6}$/),
       );
     });
   });

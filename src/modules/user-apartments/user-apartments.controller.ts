@@ -80,7 +80,6 @@ export class UserApartmentsController {
       operatorUpdate: {
         summary: 'Staff/operator/admin updates all access fields',
         value: {
-          apartmentDoorPassword: '2580',
           buildingGateCode: 'GATE-9911',
           smartLockPin: 'SL-8899',
           mailboxCode: 'MB-1188',
@@ -93,7 +92,7 @@ export class UserApartmentsController {
         },
       },
       userUpdate: {
-        summary: 'User can only update house password',
+        summary: 'Legacy local house password update',
         value: {
           apartmentDoorPassword: '7890',
         },
@@ -117,7 +116,10 @@ export class UserApartmentsController {
 
   @Patch(':id/house-password')
   @Roles(Role.USER)
-  @ApiOperation({ summary: 'User updates own house password' })
+  @ApiOperation({
+    summary:
+      'Legacy endpoint for updating the cached local house password field',
+  })
   @ApiBody({
     type: UpdateHousePasswordDto,
     examples: {
