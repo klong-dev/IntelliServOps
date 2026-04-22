@@ -39,6 +39,7 @@ describe('ContractsService', () => {
   let apartmentsService: Record<string, jest.Mock>;
   const ioTService = {
     syncApartmentDoorPin: jest.fn(),
+    clearApartmentDoorPinHash: jest.fn(),
   };
   const contractPdfService = {
     generateContractPdf: jest.fn().mockResolvedValue(Buffer.from('pdf')),
@@ -81,6 +82,13 @@ describe('ContractsService', () => {
       boardId: 'ESP_A101',
       deviceId: 1,
       message: 'Door PIN synced to board successfully.',
+    });
+    ioTService.clearApartmentDoorPinHash.mockResolvedValue({
+      success: true,
+      skipped: false,
+      boardId: 'ESP_A101',
+      deviceId: 1,
+      message: 'Door PIN hash cleared successfully.',
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -1298,6 +1306,25 @@ describe('ContractsService', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
+    it('should reject activation before move-in date', async () => {
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        startDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+
+      await expect(
+        service.activateWhenDepositPaid('contract-123'),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.invoice.findFirst).not.toHaveBeenCalled();
+    });
+
     it('should upsert userApartment records when activating after deposit paid', async () => {
       const contract = mockContract({
         status: ContractStatus.signed,
@@ -1337,16 +1364,17 @@ describe('ContractsService', () => {
           create: expect.objectContaining({
             status: 'active',
             isPrimaryTenant: false,
+            apartmentDoorPassword: null,
           }),
           update: expect.objectContaining({
             status: 'active',
             moveOutDate: contract.endDate,
+            apartmentDoorPassword: null,
           }),
         }),
       );
-      expect(ioTService.syncApartmentDoorPin).toHaveBeenCalledWith(
+      expect(ioTService.clearApartmentDoorPinHash).toHaveBeenCalledWith(
         'apt-123',
-        expect.stringMatching(/^\d{6}$/),
       );
     });
   });

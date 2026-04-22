@@ -1725,6 +1725,92 @@ describe('IoTService', () => {
       ).resolves.toMatchObject({ success: true });
     });
 
+    it('should allow first-time door PIN setup without oldPin when no pinHash exists', async () => {
+      const user = mockUserJwtPayload();
+
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        name: 'A101 Main Board',
+        status: IoTStatus.active,
+        lastOnlineAt: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice({
+          id: 'door-device-1',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              boardName: 'A101 Main Board',
+              topic: 'door',
+              deviceId: 1,
+              state: 'OFF',
+              pinHash: null,
+            },
+          },
+        }),
+      ] as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue({
+        id: 'door-device-1',
+        configuration: {
+          mqtt: {
+            espId: 'ESP_A101',
+            boardName: 'A101 Main Board',
+            topic: 'door',
+            deviceId: 1,
+            state: 'OFF',
+            pinHash: null,
+          },
+        },
+        deviceType: 'smart_lock',
+      } as any);
+      prisma.userApartment.findFirst.mockResolvedValue({
+        id: 'ua-1',
+        isPrimaryTenant: true,
+      } as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'door-device-1' } as any);
+      prisma.activityLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      mqttService.sendDoorPasswordAndWaitForAck.mockResolvedValue({
+        dispatch: {
+          brokerUrl: 'mqtt://broker.hivemq.com:1883',
+          topic: 'ESP_A101/get/door-password',
+          payload: '290304',
+          espId: 'ESP_A101',
+          publishedAt: new Date('2026-03-30T00:00:00.000Z'),
+          doorId: 1,
+          password: '290304',
+        },
+        statusEvent: {
+          espId: 'ESP_A101',
+          rawTopic: 'HOMEIQ/ESP_A101/status',
+          message: 'PIN_UPDATED_OK_DOOR_1',
+          receivedAt: new Date('2026-03-30T00:00:01.000Z'),
+          type: 'door_pin_update',
+          deviceTopic: 'door',
+          deviceId: 1,
+          state: 'PIN_UPDATED',
+          pinUpdateResult: 'success',
+        },
+        timeoutMs: 7000,
+        timedOut: false,
+      });
+
+      await expect(
+        service.updateDoorPin('ESP_A101', 1, undefined, '290304', user),
+      ).resolves.toMatchObject({ success: true });
+      expect(mqttService.sendDoorPasswordAndWaitForAck).toHaveBeenCalledWith(
+        'ESP_A101',
+        1,
+        '290304',
+      );
+    });
+
     it('should reject door PIN update when old PIN does not match', async () => {
       const user = mockUserJwtPayload();
       const pinHash = await bcrypt.hash('258036', 4);

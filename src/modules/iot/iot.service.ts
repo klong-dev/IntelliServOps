@@ -725,14 +725,17 @@ export class IoTService {
   async updateDoorPin(
     boardId: string,
     deviceId: number,
-    oldPin: string,
+    oldPin: string | undefined,
     newPin: string,
     currentUser: JwtPayload,
   ) {
-    this.assertValidDoorPin(oldPin, 'oldPin');
     this.assertValidDoorPin(newPin, 'newPin');
 
-    if (oldPin === newPin) {
+    if (oldPin !== undefined) {
+      this.assertValidDoorPin(oldPin, 'oldPin');
+    }
+
+    if (oldPin && oldPin === newPin) {
       throw new BadRequestException('newPin must be different from oldPin');
     }
 
@@ -742,6 +745,12 @@ export class IoTService {
 
     const existingPinHash = this.readDoorPinHash(doorDevice.configuration);
     if (existingPinHash) {
+      if (!oldPin) {
+        throw new BadRequestException(
+          'oldPin is required when door PIN is already configured',
+        );
+      }
+
       const matches = await bcrypt.compare(oldPin, existingPinHash);
       if (!matches) {
         throw new BadRequestException('oldPin is incorrect');
@@ -905,6 +914,58 @@ export class IoTService {
       boardId: board.id,
       deviceId: boardDoorDevice.deviceId,
       message: 'Door PIN synced to board successfully.',
+    };
+  }
+
+  async clearApartmentDoorPinHash(apartmentId: string) {
+    const boards = await this.findAllBoards(apartmentId);
+    const board = boards.find(
+      (item) =>
+        item.apartment?.id === apartmentId &&
+        item.devices.some((device) => device.topic === 'door'),
+    );
+
+    if (!board) {
+      return {
+        success: false,
+        skipped: true,
+        boardId: null as string | null,
+        deviceId: null as number | null,
+        message:
+          'No board with a configured door device was found for this apartment.',
+      };
+    }
+
+    const boardDoorDevice = board.devices.find((device) => device.topic === 'door');
+    if (!boardDoorDevice) {
+      return {
+        success: false,
+        skipped: true,
+        boardId: board.id,
+        deviceId: null as number | null,
+        message: 'No door device was found on the apartment board.',
+      };
+    }
+
+    const doorDevice = await this.findDoorDeviceRecord(board.id, boardDoorDevice.id);
+    const updatedConfiguration = this.clearDoorPinHashInConfiguration(
+      doorDevice.configuration,
+    );
+
+    await this.prisma.ioTDevice.update({
+      where: { id: doorDevice.id },
+      data: {
+        configuration: updatedConfiguration as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    });
+
+    return {
+      success: true,
+      skipped: false,
+      boardId: board.id,
+      deviceId: boardDoorDevice.deviceId,
+      message: 'Door PIN hash cleared successfully.',
     };
   }
 
@@ -2285,6 +2346,20 @@ export class IoTService {
         ...mqtt,
         pinHash,
         ...(receivedAt ? { pinUpdatedAt: receivedAt.toISOString() } : {}),
+      },
+    };
+  }
+
+  private clearDoorPinHashInConfiguration(existingConfiguration: unknown) {
+    const root = this.toPlainObject(existingConfiguration);
+    const mqtt = this.toPlainObject(root.mqtt);
+    const { pinHash: _pinHash, pinUpdatedAt: _pinUpdatedAt, ...restMqtt } = mqtt;
+
+    return {
+      ...root,
+      mqtt: {
+        ...restMqtt,
+        pinHash: null,
       },
     };
   }

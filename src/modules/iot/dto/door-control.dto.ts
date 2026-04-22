@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsString, Matches } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 
 const normalizeAction = (value: unknown) =>
   typeof value === 'string' ? value.trim().toUpperCase() : value;
@@ -19,15 +19,17 @@ export class DoorControlDto {
 }
 
 export class UpdateDoorPinDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '258036',
-    description: 'Current 6-digit door PIN',
+    description:
+      'Current 6-digit door PIN. Optional on first-time setup when the apartment door has no active PIN yet.',
   })
+  @IsOptional()
   @IsString()
   @Matches(/^\d{6}$/, {
     message: 'oldPin must be exactly 6 digits',
   })
-  oldPin: string;
+  oldPin?: string;
 
   @ApiProperty({
     example: '290304',

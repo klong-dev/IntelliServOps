@@ -987,11 +987,10 @@ export class PaymentsService {
 
     const txResult = await this.prisma.$transaction(txOperations);
 
-    if (activationContext.apartmentDoorPassword) {
-      const syncResult = await this.syncApartmentDoorPasswordToBoard(
+    if (activationContext.shouldResetDoorPin) {
+      const syncResult = await this.clearApartmentDoorPinHash(
         payment.invoice.rentalContract.apartmentId,
         payment.invoice.rentalContract.id,
-        activationContext.apartmentDoorPassword,
       );
 
       if (!syncResult.success) {
@@ -999,9 +998,8 @@ export class PaymentsService {
           `Skip door password notification for contract ${payment.invoice.rentalContract.id} because IoT sync failed: ${syncResult.message}`,
         );
       } else if (activationContext.memberUserIds.length > 0) {
-        await this.notifyMembersApartmentPassword(
+        await this.notifyMembersDoorFirstPassSetup(
           activationContext.memberUserIds,
-          activationContext.apartmentDoorPassword,
           activationContext.apartmentLabel,
           payment.invoice.rentalContract.id,
           payment.invoice.invoiceNumber,
@@ -1429,11 +1427,10 @@ export class PaymentsService {
 
       await this.prisma.$transaction(txOperations);
 
-      if (activationContext.apartmentDoorPassword) {
-        const syncResult = await this.syncApartmentDoorPasswordToBoard(
+      if (activationContext.shouldResetDoorPin) {
+        const syncResult = await this.clearApartmentDoorPinHash(
           payment.invoice.rentalContract.apartmentId,
           payment.invoice.rentalContract.id,
-          activationContext.apartmentDoorPassword,
         );
 
         if (!syncResult.success) {
@@ -1441,9 +1438,8 @@ export class PaymentsService {
             `Skip door password notification for contract ${payment.invoice.rentalContract.id} because IoT sync failed: ${syncResult.message}`,
           );
         } else if (activationContext.memberUserIds.length > 0) {
-          await this.notifyMembersApartmentPassword(
+          await this.notifyMembersDoorFirstPassSetup(
             activationContext.memberUserIds,
-            activationContext.apartmentDoorPassword,
             activationContext.apartmentLabel,
             payment.invoice.rentalContract.id,
             payment.invoice.invoiceNumber,
@@ -1502,10 +1498,6 @@ export class PaymentsService {
     );
   }
 
-  private generateSixDigitPassword(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  }
-
   private getUtcDayStart(date = new Date()): Date {
     return new Date(
       Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
@@ -1534,7 +1526,7 @@ export class PaymentsService {
     },
   ): {
     activated: boolean;
-    apartmentDoorPassword: string | null;
+    shouldResetDoorPin: boolean;
     memberUserIds: string[];
     apartmentLabel: string | null;
   } {
@@ -1544,7 +1536,7 @@ export class PaymentsService {
     ) {
       return {
         activated: false,
-        apartmentDoorPassword: null,
+        shouldResetDoorPin: false,
         memberUserIds: [],
         apartmentLabel: null,
       };
@@ -1555,7 +1547,6 @@ export class PaymentsService {
 
     const buildUserApartmentUpserts = (
       status: UserApartmentStatus,
-      apartmentDoorPassword: string | null,
     ): Prisma.PrismaPromise<any>[] =>
       members.map((member) =>
         this.prisma.userApartment.upsert({
@@ -1576,7 +1567,7 @@ export class PaymentsService {
             },
             moveInDate: rentalContract.startDate,
             moveOutDate: rentalContract.endDate,
-            apartmentDoorPassword,
+            apartmentDoorPassword: null,
             isPrimaryTenant:
               member.memberType === 'primary' || member.isPrimaryContact,
             status,
@@ -1584,7 +1575,7 @@ export class PaymentsService {
           update: {
             moveInDate: rentalContract.startDate,
             moveOutDate: rentalContract.endDate,
-            apartmentDoorPassword,
+            apartmentDoorPassword: null,
             isPrimaryTenant:
               member.memberType === 'primary' || member.isPrimaryContact,
             status,
@@ -1593,19 +1584,22 @@ export class PaymentsService {
       );
 
     const todayStart = this.getUtcDayStart();
-    const apartmentDoorPassword = this.generateSixDigitPassword();
 
     if (rentalContract.startDate > todayStart) {
       txOperations.push(
-        ...buildUserApartmentUpserts(
-          UserApartmentStatus.active,
-          apartmentDoorPassword,
-        ),
+        this.prisma.apartment.update({
+          where: { id: rentalContract.apartmentId },
+          data: { status: ApartmentStatus.reserved },
+        }),
+      );
+
+      txOperations.push(
+        ...buildUserApartmentUpserts(UserApartmentStatus.active),
       );
 
       return {
         activated: false,
-        apartmentDoorPassword,
+        shouldResetDoorPin: true,
         memberUserIds: members.map((member) => member.userId),
         apartmentLabel,
       };
@@ -1621,7 +1615,7 @@ export class PaymentsService {
 
       return {
         activated: false,
-        apartmentDoorPassword: null,
+        shouldResetDoorPin: false,
         memberUserIds: [],
         apartmentLabel,
       };
@@ -1642,23 +1636,19 @@ export class PaymentsService {
     );
 
     txOperations.push(
-      ...buildUserApartmentUpserts(
-        UserApartmentStatus.active,
-        apartmentDoorPassword,
-      ),
+      ...buildUserApartmentUpserts(UserApartmentStatus.active),
     );
 
     return {
       activated: true,
-      apartmentDoorPassword,
+      shouldResetDoorPin: true,
       memberUserIds: members.map((member) => member.userId),
       apartmentLabel,
     };
   }
 
-  private async notifyMembersApartmentPassword(
+  private async notifyMembersDoorFirstPassSetup(
     memberUserIds: string[],
-    apartmentDoorPassword: string,
     apartmentLabel: string | null,
     rentalContractId: string,
     invoiceNumber: string,
@@ -1675,7 +1665,7 @@ export class PaymentsService {
           notificationType: NotificationType.success,
           channel: NotificationChannel.push,
           title: 'Thanh toán thành công',
-          message: `Hóa đơn ${invoiceNumber} đã được thanh toán thành công. ${apartmentMessage}Mật khẩu cửa hiện tại: ${apartmentDoorPassword}.`,
+          message: `Hóa đơn ${invoiceNumber} đã được thanh toán thành công. ${apartmentMessage}PIN cửa đã được đặt lại. Vui lòng thiết lập PIN mới khi sử dụng lần đầu.`,
           actionUrl: `/contracts/${rentalContractId}`,
           actionLabel: 'Xem hợp đồng',
           priority: Priority.high,
@@ -1700,20 +1690,18 @@ export class PaymentsService {
     return parts.length > 0 ? parts.join(' - ') : null;
   }
 
-  private async syncApartmentDoorPasswordToBoard(
+  private async clearApartmentDoorPinHash(
     apartmentId: string,
     rentalContractId: string,
-    apartmentDoorPassword: string,
   ): Promise<DoorPasswordSyncResult> {
     try {
-      const syncResult = await this.ioTService.syncApartmentDoorPin(
+      const syncResult = await this.ioTService.clearApartmentDoorPinHash(
         apartmentId,
-        apartmentDoorPassword,
       );
 
       if (!syncResult.success) {
         this.logger.warn(
-          `Door PIN sync was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
+          `Door PIN reset was not completed for contract ${rentalContractId} apartment ${apartmentId}: ${syncResult.message}`,
         );
       }
 
@@ -1725,7 +1713,7 @@ export class PaymentsService {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown error';
       this.logger.warn(
-        `Door PIN sync failed for contract ${rentalContractId} apartment ${apartmentId}: ${message}`,
+        `Door PIN reset failed for contract ${rentalContractId} apartment ${apartmentId}: ${message}`,
       );
 
       return {
