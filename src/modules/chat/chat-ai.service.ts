@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Prisma, SenderType } from '@prisma/client';
+import {
+  ApartmentStatus,
+  FurnishingStatus,
+  Prisma,
+  SenderType,
+} from '@prisma/client';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { isAbsolute, resolve } from 'path';
@@ -48,6 +53,42 @@ type FaqCache = {
   mtimeMs: number;
   entries: FaqEntry[];
 };
+
+const PUBLIC_LISTING_STATUSES: ApartmentStatus[] = [
+  ApartmentStatus.available,
+  ApartmentStatus.reserved,
+  ApartmentStatus.pending,
+];
+
+const APARTMENT_DISCOVERY_PHRASES = [
+  'danh sach nha',
+  'danh sach can ho',
+  'danh sach phong',
+  'tim nha',
+  'tim can ho',
+  'tim phong',
+  'thue nha',
+  'thue can ho',
+  'thue phong',
+  'goi y can ho',
+  'goi y nha',
+  'co can ho nao',
+  'co nha nao',
+  'khu vuc',
+  'quan',
+  'district',
+];
+
+const HO_CHI_MINH_ALIASES = [
+  'sai gon',
+  'saigon',
+  'tp hcm',
+  'tphcm',
+  'tp ho chi minh',
+  'thanh pho ho chi minh',
+  'ho chi minh',
+  'hcm',
+];
 
 @Injectable()
 export class ChatAiService {
@@ -208,6 +249,10 @@ export class ChatAiService {
     const apartmentChunk = params.apartmentId
       ? await this.getApartmentChunk(params.apartmentId)
       : null;
+    const apartmentCatalogChunks = await this.getApartmentCatalogChunks(
+      params.message,
+      params.apartmentId,
+    );
     const policyChunks = await this.getPolicyChunks(
       params.message,
       params.apartmentId,
@@ -216,6 +261,7 @@ export class ChatAiService {
 
     const chunks = [
       ...(apartmentChunk ? [apartmentChunk] : []),
+      ...apartmentCatalogChunks,
       ...policyChunks,
       ...faqChunks,
     ];
@@ -307,6 +353,127 @@ export class ChatAiService {
         .join('\n'),
       priority: 1_000,
     };
+  }
+
+  private async getApartmentCatalogChunks(
+    message: string,
+    apartmentId?: string,
+  ): Promise<AiContextChunk[]> {
+    if (apartmentId) {
+      return [];
+    }
+
+    const normalizedMessage = this.normalizeText(message);
+    if (!this.isApartmentDiscoveryMessage(normalizedMessage)) {
+      return [];
+    }
+
+    const isHoChiMinhQuery = HO_CHI_MINH_ALIASES.some((alias) =>
+      normalizedMessage.includes(alias),
+    );
+    const apartmentSelect = {
+      id: true,
+      buildingName: true,
+      apartmentNumber: true,
+      slug: true,
+      streetAddress: true,
+      totalArea: true,
+      numberOfBedrooms: true,
+      numberOfBathrooms: true,
+      furnishingStatus: true,
+      baseRentPrice: true,
+      depositAmount: true,
+      status: true,
+      description: true,
+    } satisfies Prisma.ApartmentSelect;
+
+    let apartments = await this.prisma.apartment.findMany({
+      where: {
+        status: { in: PUBLIC_LISTING_STATUSES },
+        ...(isHoChiMinhQuery ? { provinceCode: 79 } : {}),
+      },
+      select: apartmentSelect,
+      orderBy: [{ updatedAt: 'desc' }],
+      take: 18,
+    });
+
+    if (apartments.length === 0 && isHoChiMinhQuery) {
+      apartments = await this.prisma.apartment.findMany({
+        where: {
+          status: { in: PUBLIC_LISTING_STATUSES },
+        },
+        select: apartmentSelect,
+        orderBy: [{ updatedAt: 'desc' }],
+        take: 18,
+      });
+    }
+
+    if (apartments.length === 0) {
+      return [];
+    }
+
+    const messageTokens = this.tokenize(message);
+    const scoredApartments = apartments
+      .map((apartment) => {
+        const haystack = [
+          apartment.buildingName,
+          apartment.apartmentNumber,
+          apartment.streetAddress,
+          apartment.description,
+          apartment.slug,
+        ]
+          .filter((value): value is string => Boolean(value))
+          .join('\n');
+
+        const score =
+          this.scoreHaystack(messageTokens, haystack) +
+          (isHoChiMinhQuery ? 20 : 0);
+
+        return {
+          apartment,
+          score,
+        };
+      })
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    if (scoredApartments.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        sourceType: 'apartment_catalog',
+        title: isHoChiMinhQuery
+          ? 'Danh sach can ho tai khu vuc Sai Gon'
+          : 'Danh sach can ho phu hop voi yeu cau tim kiem',
+        content: scoredApartments
+          .map(({ apartment }, index) =>
+            [
+              `${index + 1}. ${apartment.buildingName ? `${apartment.buildingName} ${apartment.apartmentNumber}` : apartment.apartmentNumber}`,
+              `Slug: ${apartment.slug}`,
+              apartment.streetAddress
+                ? `Dia chi: ${apartment.streetAddress}`
+                : null,
+              `Trang thai: ${this.getApartmentStatusLabel(apartment.status)}`,
+              `Gia thue: ${apartment.baseRentPrice.toString()} VND/thang`,
+              apartment.depositAmount
+                ? `Tien coc: ${apartment.depositAmount.toString()} VND`
+                : null,
+              `Phong ngu: ${apartment.numberOfBedrooms}`,
+              `Phong tam: ${apartment.numberOfBathrooms}`,
+              `Dien tich: ${apartment.totalArea.toString()} m2`,
+              `Noi that: ${this.getFurnishingLabel(apartment.furnishingStatus)}`,
+              apartment.description ? `Mo ta: ${apartment.description}` : null,
+            ]
+              .filter((value): value is string => Boolean(value))
+              .join('\n'),
+          )
+          .join('\n\n'),
+        priority: 900 + scoredApartments[0].score,
+      },
+    ];
   }
 
   private async getPolicyChunks(
@@ -467,10 +634,7 @@ export class ChatAiService {
   private tokenize(input: string): string[] {
     return Array.from(
       new Set(
-        input
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/\p{Diacritic}/gu, '')
+        this.normalizeText(input)
           .split(/[^\p{L}\p{N}]+/u)
           .map((token) => token.trim())
           .filter((token) => token.length >= 2),
@@ -483,10 +647,7 @@ export class ChatAiService {
       return 0;
     }
 
-    const normalizedHaystack = haystack
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '');
+    const normalizedHaystack = this.normalizeText(haystack);
 
     let score = 0;
     for (const token of tokens) {
@@ -496,6 +657,57 @@ export class ChatAiService {
     }
 
     return score;
+  }
+
+  private normalizeText(input: string): string {
+    return input
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isApartmentDiscoveryMessage(normalizedMessage: string): boolean {
+    return (
+      APARTMENT_DISCOVERY_PHRASES.some((phrase) =>
+        normalizedMessage.includes(phrase),
+      ) ||
+      HO_CHI_MINH_ALIASES.some((alias) => normalizedMessage.includes(alias))
+    );
+  }
+
+  private getApartmentStatusLabel(status: ApartmentStatus): string {
+    switch (status) {
+      case ApartmentStatus.available:
+        return 'San sang cho thue';
+      case ApartmentStatus.reserved:
+        return 'Dang duoc giu cho';
+      case ApartmentStatus.pending:
+        return 'Dang cho duyet';
+      case ApartmentStatus.occupied:
+        return 'Da co khach thue';
+      case ApartmentStatus.maintenance:
+        return 'Dang bao tri';
+      case ApartmentStatus.inactive:
+        return 'Tam an';
+      default:
+        return status;
+    }
+  }
+
+  private getFurnishingLabel(status: FurnishingStatus): string {
+    switch (status) {
+      case FurnishingStatus.fully_furnished:
+        return 'Day du';
+      case FurnishingStatus.semi_furnished:
+        return 'Ban day du';
+      case FurnishingStatus.unfurnished:
+        return 'Khong noi that';
+      default:
+        return status;
+    }
   }
 
   private truncate(value: string, maxLength: number): string {
