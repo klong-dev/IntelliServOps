@@ -227,6 +227,13 @@ export class ChatGateway
           staffName: fullName,
           actorType,
         });
+
+        this.server.to(roomId).emit('chat:handoff_status', {
+          conversationId: data.conversationId,
+          status: 'connected',
+          staffName: fullName,
+          actorType,
+        });
       }
 
       // Return conversation details + recent messages
@@ -473,12 +480,17 @@ export class ChatGateway
     });
 
     if (aiResult.shouldHandoff) {
-      this.server.to('staff:inbox').emit('chat:handoff_requested', {
+      const handoffPayload = {
         conversationId: dto.conversationId,
         handoffReason: aiResult.handoffReason ?? 'manual_review_required',
         confidence: aiResult.confidence,
         model: aiResult.model,
-      });
+        status: 'connecting',
+        source: 'ai',
+      };
+
+      this.server.to(roomId).emit('chat:handoff_status', handoffPayload);
+      this.server.to('staff:inbox').emit('chat:handoff_requested', handoffPayload);
     }
   }
 
