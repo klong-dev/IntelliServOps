@@ -43,6 +43,8 @@ tmp/
 temp/
 *.tmp
 uploads/
+output/
+documents/.$*
 
 # Cache
 .cache/

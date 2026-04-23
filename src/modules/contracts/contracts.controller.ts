@@ -461,19 +461,21 @@ export class ContractsController {
   @ApiOperation({
     summary: 'Activate contract after deposit paid',
     description:
-      'Activate pending/signed contract when deposit invoice is paid and contract is not expired.',
+      'Frontend test helper. Bypasses status, deposit, and move-in validation to force activation for draft/pending/signed contracts, but still refuses expired contracts.',
   })
   @ApiJsonResponse(ContractDetailDto, {
-    description: 'Contract activated after deposit payment validation',
+    description: 'Contract force-activated for frontend testing',
   })
   @ApiResponse({ status: 404, description: 'Contract not found' })
   @ApiResponse({
     status: 409,
     description:
-      'Contract cannot be activated because it is expired, invalid status, or deposit not paid',
+      'Contract cannot be activated because it is expired or in an unsupported final status',
   })
   async activatePaid(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.activateWhenDepositPaid(id);
+    return this.contractsService.activateWhenDepositPaid(id, {
+      bypassValidation: true,
+    });
   }
 
   @Patch(':id/cancel')
