@@ -58,12 +58,32 @@ export class ApartmentsService {
   private readonly pdfTokenExpiry = 5 * 60 * 1000;
   private readonly cooperationVerifiedStatus = 'verified' as ApartmentStatus;
   private readonly cooperationPendingStatus = 'pending' as ApartmentStatus;
+  private readonly defaultPartnerCommissionRate = 10;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly contractPdfService: ContractPdfService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  private async ensureOwnerPartnerDefaultCommission(
+    ownerId?: string | null,
+  ): Promise<void> {
+    if (!ownerId) {
+      return;
+    }
+
+    await this.prisma.user.updateMany({
+      where: {
+        id: ownerId,
+        isPartner: true,
+        commissionRate: null,
+      },
+      data: {
+        commissionRate: new Prisma.Decimal(this.defaultPartnerCommissionRate),
+      },
+    });
+  }
 
   private async notifySafely(params: {
     recipientType: ActorType;
@@ -1157,6 +1177,8 @@ export class ApartmentsService {
       buildingName: createDto.buildingName,
       apartmentNumber: createDto.apartmentNumber,
     });
+    const ownerId =
+      currentUser.actorType === 'user' ? currentUser.sub : createDto.ownerId;
 
     const data: Prisma.ApartmentCreateInput = {
       buildingName: createDto.buildingName,
@@ -1193,10 +1215,8 @@ export class ApartmentsService {
     };
 
     // If user creates, link to their account
-    if (currentUser.actorType === 'user') {
-      data.owner = { connect: { id: currentUser.sub } };
-    } else if (createDto.ownerId) {
-      data.owner = { connect: { id: createDto.ownerId } };
+    if (ownerId) {
+      data.owner = { connect: { id: ownerId } };
     }
 
     const apartment = await this.prisma.apartment.create({
@@ -1216,6 +1236,8 @@ export class ApartmentsService {
         updatedAt: true,
       },
     });
+
+    await this.ensureOwnerPartnerDefaultCommission(ownerId);
 
     return this.normalizeApartmentMediaFields(apartment);
   }
@@ -1316,6 +1338,8 @@ export class ApartmentsService {
         createdAt: true,
       },
     });
+
+    await this.ensureOwnerPartnerDefaultCommission(currentUser.sub);
 
     const partner = await this.prisma.user.findUnique({
       where: { id: currentUser.sub },
@@ -1939,7 +1963,7 @@ export class ApartmentsService {
         ? Number(activeCommissionPhase.commissionRate)
         : apartment.owner.commissionRate != null
           ? Number(apartment.owner.commissionRate)
-          : 10;
+          : this.defaultPartnerCommissionRate;
 
     const pdfData: PartnerCooperationPdfData = {
       contractNumber,
