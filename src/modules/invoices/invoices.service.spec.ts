@@ -10,7 +10,13 @@ import {
   mockOperatorJwtPayload,
 } from '../../test-utils';
 import { CreateInvoiceDto, UpdateInvoiceDto } from './dto';
-import { InvoiceStatus, InvoiceType, Prisma } from '@prisma/client';
+import {
+  ApartmentStatus,
+  DepositDisposition,
+  InvoiceStatus,
+  InvoiceType,
+  Prisma,
+} from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 
 describe('InvoicesService', () => {
@@ -31,6 +37,38 @@ describe('InvoicesService', () => {
     billingPeriodStart: new Date('2026-01-01'),
     billingPeriodEnd: new Date('2026-01-31'),
     createdAt: new Date(),
+    ...overrides,
+  });
+
+  const buildPaidRevenueInvoice = (
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    id: 'invoice-1',
+    invoiceNumber: 'INV-202604-00001',
+    invoiceType: InvoiceType.rent,
+    totalAmount: 10_000_000,
+    paidAt: new Date('2026-04-05T00:00:00.000Z'),
+    depositDisposition: null,
+    rentalContract: {
+      id: 'contract-1',
+      contractNumber: 'CTR-2026-00001',
+      startDate: new Date('2026-04-01T00:00:00.000Z'),
+      endDate: new Date('2027-03-31T00:00:00.000Z'),
+      status: 'active',
+      apartment: {
+        id: 'apt-1',
+        apartmentNumber: 'A101',
+        buildingName: 'Alpha Tower',
+        owner: {
+          id: 'owner-1',
+          fullName: 'Owner One',
+          companyName: null,
+          isPartner: false,
+          commissionRate: null,
+        },
+        cooperationContracts: [],
+      },
+    },
     ...overrides,
   });
 
@@ -535,6 +573,183 @@ describe('InvoicesService', () => {
       expect(result.items[0].tenants[0]).toMatchObject({
         userId: 'user-123',
       });
+    });
+  });
+
+  describe('revenue analytics', () => {
+    it('should build dashboard statistics from paid invoices', async () => {
+      prisma.user.count
+        .mockResolvedValueOnce(10 as any)
+        .mockResolvedValueOnce(3 as any);
+      prisma.apartment.findMany.mockResolvedValue([
+        {
+          id: 'apt-1',
+          status: ApartmentStatus.occupied,
+          rentalContracts: [{ id: 'contract-1' }],
+        },
+        {
+          id: 'apt-2',
+          status: ApartmentStatus.available,
+          rentalContracts: [],
+        },
+        {
+          id: 'apt-3',
+          status: ApartmentStatus.pending,
+          rentalContracts: [],
+        },
+        {
+          id: 'apt-4',
+          status: ApartmentStatus.maintenance,
+          rentalContracts: [],
+        },
+      ] as any);
+      prisma.invoice.findMany.mockResolvedValue([
+        buildPaidRevenueInvoice(),
+        buildPaidRevenueInvoice({
+          id: 'invoice-2',
+          invoiceNumber: 'INV-202604-00002',
+          totalAmount: 5_000_000,
+          rentalContract: {
+            id: 'contract-2',
+            contractNumber: 'CTR-2026-00002',
+            startDate: new Date('2026-04-01T00:00:00.000Z'),
+            endDate: new Date('2027-03-31T00:00:00.000Z'),
+            status: 'active',
+            apartment: {
+              id: 'apt-2',
+              apartmentNumber: 'B202',
+              buildingName: 'Beta Tower',
+              owner: {
+                id: 'partner-1',
+                fullName: 'Partner One',
+                companyName: 'Partner Co',
+                isPartner: true,
+                commissionRate: 10,
+              },
+              cooperationContracts: [
+                {
+                  id: 'coop-1',
+                  contractNumber: 'PCC-1',
+                  startDate: new Date('2026-01-01T00:00:00.000Z'),
+                  endDate: new Date('2026-12-31T23:59:59.999Z'),
+                  commissionRate: 10,
+                  status: 'active',
+                  createdAt: new Date('2025-12-01T00:00:00.000Z'),
+                },
+              ],
+            },
+          },
+        }),
+      ] as any);
+
+      const result = await service.getDashboardStatistics({ topLimit: 1 });
+
+      expect(result).toMatchObject({
+        userStats: {
+          totalActiveUsers: 10,
+          totalActivePartners: 3,
+          totalActiveNonPartnerUsers: 7,
+          partnerRatio: 0.3,
+          userRatio: 0.7,
+        },
+        occupancyStats: {
+          occupiedApartmentCount: 1,
+          vacantApartmentCount: 2,
+        },
+        apartmentRevenueStats: {
+          topApartments: [
+            expect.objectContaining({
+              apartmentId: 'apt-1',
+              paidRevenue: 10_000_000,
+            }),
+          ],
+          bottomApartments: [
+            expect.objectContaining({
+              apartmentId: 'apt-2',
+              paidRevenue: 5_000_000,
+            }),
+          ],
+        },
+        systemRevenueSummary: {
+          invoiceCount: 2,
+          totalPaidRevenue: 15_000_000,
+          totalSystemRevenue: 10_500_000,
+          totalPartnerGrossRevenue: 5_000_000,
+          totalPartnerNetPayout: 4_500_000,
+        },
+      });
+    });
+
+    it('should count forfeited paid deposits as system revenue only', async () => {
+      prisma.invoice.findMany.mockResolvedValue([
+        buildPaidRevenueInvoice({
+          id: 'invoice-rent',
+          invoiceNumber: 'INV-202604-00010',
+          totalAmount: 6_000_000,
+        }),
+        buildPaidRevenueInvoice({
+          id: 'invoice-deposit',
+          invoiceNumber: 'INV-DEP-202604-00001',
+          invoiceType: InvoiceType.contractDeposit,
+          totalAmount: 20_000_000,
+          depositDisposition: DepositDisposition.forfeited,
+          rentalContract: {
+            id: 'contract-2',
+            contractNumber: 'CTR-2026-00002',
+            startDate: new Date('2026-04-01T00:00:00.000Z'),
+            endDate: new Date('2027-03-31T00:00:00.000Z'),
+            status: 'terminated',
+            apartment: {
+              id: 'apt-2',
+              apartmentNumber: 'B202',
+              buildingName: 'Beta Tower',
+              owner: {
+                id: 'partner-1',
+                fullName: 'Partner One',
+                companyName: 'Partner Co',
+                isPartner: true,
+                commissionRate: 10,
+              },
+              cooperationContracts: [
+                {
+                  id: 'coop-1',
+                  contractNumber: 'PCC-1',
+                  startDate: new Date('2026-01-01T00:00:00.000Z'),
+                  endDate: new Date('2026-12-31T23:59:59.999Z'),
+                  commissionRate: 10,
+                  status: 'active',
+                  createdAt: new Date('2025-12-01T00:00:00.000Z'),
+                },
+              ],
+            },
+          },
+        }),
+      ] as any);
+
+      const result = await service.getSystemRevenueOverview({
+        page: 1,
+        limit: 20,
+      });
+
+      expect(result).toMatchObject({
+        invoiceCount: 2,
+        totalInvoiceAmount: 26_000_000,
+        totalSystemRevenue: 26_000_000,
+        totalPartnerGrossRevenue: 0,
+        totalPartnerNetPayout: 0,
+      });
+      expect(result.invoices).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            invoiceId: 'invoice-deposit',
+            isPartnerApartment: true,
+            commissionRateApplied: 100,
+            systemRevenueAmount: 20_000_000,
+            partnerGrossRevenueAmount: 0,
+            partnerNetPayoutAmount: 0,
+          }),
+        ]),
+      );
     });
   });
 

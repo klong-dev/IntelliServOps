@@ -21,4 +21,3 @@ export class MonthlyUtilityQueryDto {
   @Min(1)
   limit?: number;
 }
-

@@ -297,6 +297,12 @@ enum InvoiceStatus {
   cancelled
 }
 
+enum DepositDisposition {
+  held
+  forfeited
+  refunded
+}
+
 enum PaymentStatus {
   pending
   processing
@@ -1155,6 +1161,9 @@ model Invoice {
   notes              String?
   sentAt             DateTime?
   paidAt             DateTime?
+  depositDisposition DepositDisposition?
+  depositDispositionAt DateTime?
+  depositDispositionReason String?
   cancelledAt        DateTime?
   cancellationReason String?
   createdAt          DateTime      @default(now())
@@ -1174,6 +1183,7 @@ model Invoice {
   @@index([billingMonth])
   @@index([billingPeriodStart])
   @@index([billingPeriodEnd])
+  @@index([depositDisposition])
   @@map("invoices")
 }
 

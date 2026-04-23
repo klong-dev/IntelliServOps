@@ -1,10 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  Max,
+  Min,
+} from 'class-validator';
 
-export const REVENUE_TIMESERIES_GRANULARITIES = ['month', 'year'] as const;
+export const INVOICE_REVENUE_TIMESERIES_GRANULARITIES = [
+  'month',
+  'year',
+] as const;
 
-export class RevenueDashboardQueryDto {
+export class InvoiceRevenueDashboardQueryDto {
   @ApiPropertyOptional({
     example: '2026-04-01T00:00:00.000Z',
     description: 'Start date filter based on invoice paidAt',
@@ -34,7 +44,7 @@ export class RevenueDashboardQueryDto {
   topLimit?: number;
 }
 
-export class RevenueTimeseriesQueryDto {
+export class InvoiceRevenueTimeseriesQueryDto {
   @ApiPropertyOptional({
     example: '2026-01-01T00:00:00.000Z',
     description: 'Start date filter based on invoice paidAt',
@@ -52,16 +62,16 @@ export class RevenueTimeseriesQueryDto {
   to?: string;
 
   @ApiPropertyOptional({
-    enum: REVENUE_TIMESERIES_GRANULARITIES,
+    enum: INVOICE_REVENUE_TIMESERIES_GRANULARITIES,
     default: 'month',
     description: 'Grouping granularity for system revenue timeseries',
   })
   @IsOptional()
-  @IsIn(REVENUE_TIMESERIES_GRANULARITIES)
-  granularity?: (typeof REVENUE_TIMESERIES_GRANULARITIES)[number];
+  @IsIn(INVOICE_REVENUE_TIMESERIES_GRANULARITIES)
+  granularity?: (typeof INVOICE_REVENUE_TIMESERIES_GRANULARITIES)[number];
 }
 
-export class RevenueUserStatsDto {
+export class InvoiceRevenueUserStatsDto {
   @ApiProperty({ example: 120 })
   totalActiveUsers: number;
 
@@ -78,7 +88,7 @@ export class RevenueUserStatsDto {
   userRatio: number;
 }
 
-export class RevenueOccupancyStatsDto {
+export class InvoiceRevenueOccupancyStatsDto {
   @ApiProperty({ example: 35 })
   occupiedApartmentCount: number;
 
@@ -86,7 +96,7 @@ export class RevenueOccupancyStatsDto {
   vacantApartmentCount: number;
 }
 
-export class RevenueApartmentRankingItemDto {
+export class InvoiceRevenueApartmentRankingItemDto {
   @ApiProperty()
   apartmentId: string;
 
@@ -103,15 +113,15 @@ export class RevenueApartmentRankingItemDto {
   invoiceCount: number;
 }
 
-export class RevenueApartmentRankingSummaryDto {
-  @ApiProperty({ type: [RevenueApartmentRankingItemDto] })
-  topApartments: RevenueApartmentRankingItemDto[];
+export class InvoiceRevenueApartmentRankingSummaryDto {
+  @ApiProperty({ type: [InvoiceRevenueApartmentRankingItemDto] })
+  topApartments: InvoiceRevenueApartmentRankingItemDto[];
 
-  @ApiProperty({ type: [RevenueApartmentRankingItemDto] })
-  bottomApartments: RevenueApartmentRankingItemDto[];
+  @ApiProperty({ type: [InvoiceRevenueApartmentRankingItemDto] })
+  bottomApartments: InvoiceRevenueApartmentRankingItemDto[];
 }
 
-export class RevenueSystemSummaryDto {
+export class InvoiceRevenueSystemSummaryDto {
   @ApiProperty({ example: 350000000 })
   totalPaidRevenue: number;
 
@@ -128,21 +138,21 @@ export class RevenueSystemSummaryDto {
   invoiceCount: number;
 }
 
-export class RevenueDashboardDto {
-  @ApiProperty({ type: RevenueUserStatsDto })
-  userStats: RevenueUserStatsDto;
+export class InvoiceRevenueDashboardDto {
+  @ApiProperty({ type: InvoiceRevenueUserStatsDto })
+  userStats: InvoiceRevenueUserStatsDto;
 
-  @ApiProperty({ type: RevenueOccupancyStatsDto })
-  occupancyStats: RevenueOccupancyStatsDto;
+  @ApiProperty({ type: InvoiceRevenueOccupancyStatsDto })
+  occupancyStats: InvoiceRevenueOccupancyStatsDto;
 
-  @ApiProperty({ type: RevenueApartmentRankingSummaryDto })
-  apartmentRevenueStats: RevenueApartmentRankingSummaryDto;
+  @ApiProperty({ type: InvoiceRevenueApartmentRankingSummaryDto })
+  apartmentRevenueStats: InvoiceRevenueApartmentRankingSummaryDto;
 
-  @ApiProperty({ type: RevenueSystemSummaryDto })
-  systemRevenueSummary: RevenueSystemSummaryDto;
+  @ApiProperty({ type: InvoiceRevenueSystemSummaryDto })
+  systemRevenueSummary: InvoiceRevenueSystemSummaryDto;
 }
 
-export class RevenueTimeseriesItemDto {
+export class InvoiceRevenueTimeseriesItemDto {
   @ApiProperty({ example: '2026-04' })
   periodKey: string;
 
@@ -165,9 +175,12 @@ export class RevenueTimeseriesItemDto {
   invoiceCount: number;
 }
 
-export class RevenueTimeseriesDto {
-  @ApiProperty({ enum: REVENUE_TIMESERIES_GRANULARITIES, example: 'month' })
-  granularity: (typeof REVENUE_TIMESERIES_GRANULARITIES)[number];
+export class InvoiceRevenueTimeseriesDto {
+  @ApiProperty({
+    enum: INVOICE_REVENUE_TIMESERIES_GRANULARITIES,
+    example: 'month',
+  })
+  granularity: (typeof INVOICE_REVENUE_TIMESERIES_GRANULARITIES)[number];
 
   @ApiPropertyOptional({
     type: String,
@@ -183,6 +196,6 @@ export class RevenueTimeseriesDto {
   })
   to: string | null;
 
-  @ApiProperty({ type: [RevenueTimeseriesItemDto] })
-  items: RevenueTimeseriesItemDto[];
+  @ApiProperty({ type: [InvoiceRevenueTimeseriesItemDto] })
+  items: InvoiceRevenueTimeseriesItemDto[];
 }

@@ -10,7 +10,7 @@ import {
   Min,
 } from 'class-validator';
 
-export class PartnerPayoutQueryDto {
+export class InvoicePartnerPayoutQueryDto {
   @ApiPropertyOptional({
     example: '2026-04',
     description: 'Month in YYYY-MM format. Default is current month',
@@ -44,7 +44,7 @@ export class PartnerPayoutQueryDto {
   limit?: number;
 }
 
-export class ConfirmPartnerPayoutDto {
+export class ConfirmInvoicePartnerPayoutDto {
   @ApiProperty({
     example: '9fbc9e7e-5a4d-4f38-9ba8-cc96af4f0eaf',
     description: 'Partner user id to confirm monthly transfer',
@@ -72,10 +72,10 @@ export class ConfirmPartnerPayoutDto {
     format: 'binary',
     description: 'Transfer proof image (JPEG/PNG/WebP)',
   })
-  transferProof: any;
+  transferProof: unknown;
 }
 
-export class PartnerPayoutPartnerInfoDto {
+export class InvoicePartnerPayoutPartnerInfoDto {
   @ApiProperty()
   id: string;
 
@@ -86,9 +86,9 @@ export class PartnerPayoutPartnerInfoDto {
   companyName: string | null;
 }
 
-export class PartnerPayoutSummaryItemDto {
-  @ApiProperty({ type: PartnerPayoutPartnerInfoDto })
-  partner: PartnerPayoutPartnerInfoDto;
+export class InvoicePartnerPayoutSummaryItemDto {
+  @ApiProperty({ type: InvoicePartnerPayoutPartnerInfoDto })
+  partner: InvoicePartnerPayoutPartnerInfoDto;
 
   @ApiProperty({ example: '2026-04' })
   periodMonth: string;
@@ -133,9 +133,9 @@ export class PartnerPayoutSummaryItemDto {
   confirmedByStaffName: string | null;
 }
 
-export class PartnerPayoutSummaryListDto {
-  @ApiProperty({ type: [PartnerPayoutSummaryItemDto] })
-  items: PartnerPayoutSummaryItemDto[];
+export class InvoicePartnerPayoutSummaryListDto {
+  @ApiProperty({ type: [InvoicePartnerPayoutSummaryItemDto] })
+  items: InvoicePartnerPayoutSummaryItemDto[];
 
   @ApiProperty({ example: 10 })
   total: number;
@@ -150,7 +150,7 @@ export class PartnerPayoutSummaryListDto {
   totalPages: number;
 }
 
-export class ConfirmPartnerPayoutResultDto {
-  @ApiProperty({ type: PartnerPayoutSummaryItemDto })
-  payout: PartnerPayoutSummaryItemDto;
+export class ConfirmInvoicePartnerPayoutResultDto {
+  @ApiProperty({ type: InvoicePartnerPayoutSummaryItemDto })
+  payout: InvoicePartnerPayoutSummaryItemDto;
 }
