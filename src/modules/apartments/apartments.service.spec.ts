@@ -160,6 +160,7 @@ describe('ApartmentsService', () => {
 
     expect(result.id).toBe('apt-123');
     expect(result.rating).toBe(4.67);
+    expect(result).not.toHaveProperty('rooms');
     expect(result.canRateApartment).toBe(false);
     expect(result.hasRatedApartment).toBe(false);
     expect(result.ratingEligibilityReason).toBe('not_authenticated');
@@ -551,6 +552,7 @@ describe('ApartmentsService', () => {
     const result = await service.findByOwner('user-123');
 
     expect(result[0].rating).toBe(4.2);
+    expect(result[0]).not.toHaveProperty('rooms');
     expect(result[0].cooperationContract).toMatchObject({
       id: 'coop-123',
       contractNumber: 'COOP-2026-00001',

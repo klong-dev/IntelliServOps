@@ -235,15 +235,18 @@ export class IoTController {
 
   @Get('doors/history')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
     summary: 'List door open and close history',
   })
   @ApiJsonResponse(DoorHistoryListDto, {
     description: 'Door open and close history derived from MQTT board state updates',
   })
-  async findDoorHistory(@Query() query: DoorHistoryQueryDto) {
-    return this.iotService.findDoorHistory(query);
+  async findDoorHistory(
+    @Query() query: DoorHistoryQueryDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.iotService.findDoorHistory(query, currentUser);
   }
 
   @Patch('doors/:boardId/:deviceId/pin')

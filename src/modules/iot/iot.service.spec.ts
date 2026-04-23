@@ -1101,6 +1101,7 @@ describe('IoTService', () => {
       expect(result.mqttEspId).toBe('ESP_A101');
       expect(result.mqttTopic).toBe('door');
       expect(result.mqttDeviceId).toBe(1);
+      expect(result).not.toHaveProperty('room');
     });
 
     it('should reject partial MQTT metadata', async () => {
@@ -1114,6 +1115,27 @@ describe('IoTService', () => {
           mqttEspId: 'ESP_A101',
         } as any),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should ignore roomId in incoming payloads', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.ioTDevice.create.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.ioTDevice.findUnique.mockResolvedValue(mockDeviceDetail() as any);
+
+      await service.createDevice({
+        apartmentId: 'apt-123',
+        deviceName: 'Smart Lock',
+        deviceType: 'smart_lock' as any,
+        roomId: 'room-123',
+      } as any);
+
+      expect(prisma.ioTDevice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            roomId: 'room-123',
+          }),
+        }),
+      );
     });
   });
 
@@ -1911,6 +1933,112 @@ describe('IoTService', () => {
           }),
         ],
       });
+    });
+
+    it('should allow users to view door history for their own apartment', async () => {
+      const user = mockUserJwtPayload();
+      prisma.userApartment.findMany.mockResolvedValue([
+        { apartmentId: 'apt-123' },
+      ] as any);
+      prisma.activityLog.findMany.mockResolvedValue([
+        {
+          id: 'log-1',
+          actorType: 'system',
+          actorId: 'ESP_A101',
+          action: 'IOT_DOOR_OPENED',
+          entityId: 'ESP_A101',
+          description: 'Door opened',
+          status: 'success',
+          metadata: {
+            apartmentId: 'apt-123',
+            deviceId: 1,
+          },
+          createdAt: new Date('2026-04-20T10:00:00.000Z'),
+        },
+      ] as any);
+      prisma.activityLog.count.mockResolvedValue(1 as any);
+
+      const result = await service.findDoorHistory(
+        {
+          apartmentId: 'apt-123',
+          limit: 20,
+        },
+        user,
+      );
+
+      expect(prisma.userApartment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: user.sub,
+            apartmentId: 'apt-123',
+            status: 'active',
+          }),
+        }),
+      );
+      expect(prisma.activityLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              {
+                metadata: {
+                  path: ['apartmentId'],
+                  equals: 'apt-123',
+                },
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result.total).toBe(1);
+    });
+
+    it('should reject users viewing door history outside their apartment membership', async () => {
+      const user = mockUserJwtPayload();
+      prisma.userApartment.findMany.mockResolvedValue([] as any);
+
+      await expect(
+        service.findDoorHistory(
+          {
+            apartmentId: 'apt-999',
+            limit: 20,
+          },
+          user,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.activityLog.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should fail apartment PIN sync when apartment has no door device', async () => {
+      jest.spyOn(service, 'findAllBoards').mockResolvedValue([
+        {
+          id: 'ESP_A101',
+          apartment: {
+            id: 'apt-123',
+            apartmentNumber: 'A101',
+            address: '123 Nguyen Hue',
+          },
+          devices: [
+            {
+              id: 'device-light-1',
+              deviceId: 2,
+              topic: 'light',
+            },
+          ],
+        },
+      ] as any);
+
+      await expect(
+        service.syncApartmentDoorPin('apt-123', '250304'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should fail apartment PIN reset when apartment has no door device', async () => {
+      jest.spyOn(service, 'findAllBoards').mockResolvedValue([] as any);
+
+      await expect(
+        service.clearApartmentDoorPinHash('apt-123'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should return success only when board ack state matches requested action', async () => {

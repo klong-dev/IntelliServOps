@@ -92,6 +92,8 @@ type DoorPasswordSyncResult = {
 @Injectable()
 export class ContractsService {
   private readonly logger = new Logger(ContractsService.name);
+  private readonly contractRenewalWindowDays = 30;
+  private readonly contractExpiryReminderDays = [30, 14, 7, 3, 1] as const;
   private readonly PDF_TOKEN_SECRET =
     process.env.JWT_SECRET || 'pdf-token-secret';
   private readonly PDF_TOKEN_EXPIRY = 5 * 60 * 1000; // 5 minutes
@@ -276,6 +278,99 @@ export class ContractsService {
     return new Date(
       Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
     );
+  }
+
+  private getWholeDayDiff(targetDate: Date, baseDate = new Date()): number {
+    const targetDay = this.getUtcDayStart(targetDate);
+    const baseDay = this.getUtcDayStart(baseDate);
+    const diffMs = targetDay.getTime() - baseDay.getTime();
+
+    return Math.round(diffMs / (24 * 60 * 60 * 1000));
+  }
+
+  private async hasContractExpiryReminderBeenSent(params: {
+    contractId: string;
+    recipientId: string;
+    daysBeforeEnd: number;
+  }): Promise<boolean> {
+    const existingReminder = await this.prisma.notification.findFirst({
+      where: {
+        recipientType: ActorType.user,
+        recipientId: params.recipientId,
+        relatedEntityType: 'RentalContract',
+        relatedEntityId: params.contractId,
+        AND: [
+          {
+            metadata: {
+              path: ['reminderType'],
+              equals: 'contract_expiry',
+            },
+          },
+          {
+            metadata: {
+              path: ['daysBeforeEnd'],
+              equals: params.daysBeforeEnd,
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return Boolean(existingReminder);
+  }
+
+  private async sendContractExpiryReminder(params: {
+    contractId: string;
+    contractNumber: string;
+    endDate: Date;
+    recipientId: string;
+    daysBeforeEnd: number;
+  }): Promise<void> {
+    const alreadySent = await this.hasContractExpiryReminderBeenSent({
+      contractId: params.contractId,
+      recipientId: params.recipientId,
+      daysBeforeEnd: params.daysBeforeEnd,
+    });
+
+    if (alreadySent) {
+      return;
+    }
+
+    const dayLabel =
+      params.daysBeforeEnd === 1
+        ? '1 ngày'
+        : `${params.daysBeforeEnd} ngày`;
+    const notification = await this.notificationsService.createAndPush({
+      recipientType: ActorType.user,
+      recipientId: params.recipientId,
+      notificationType: 'warning',
+      channel: 'in_app',
+      title: 'Hợp đồng sắp hết hạn',
+      message: `Hợp đồng ${params.contractNumber} sẽ hết hạn sau ${dayLabel} (${this.formatDate(params.endDate)}). Bạn chỉ có thể gia hạn trong 30 ngày cuối hợp đồng.`,
+      actionUrl: `/contracts/${params.contractId}`,
+      actionLabel: 'Xem hợp đồng',
+      priority: 'high',
+      relatedEntityType: 'RentalContract',
+      relatedEntityId: params.contractId,
+    });
+
+    if (!notification?.id) {
+      return;
+    }
+
+    await this.prisma.notification.update({
+      where: { id: notification.id },
+      data: {
+        metadata: {
+          reminderType: 'contract_expiry',
+          daysBeforeEnd: params.daysBeforeEnd,
+          contractNumber: params.contractNumber,
+          endDate: params.endDate.toISOString(),
+        } satisfies Prisma.InputJsonObject,
+      },
+      select: { id: true },
+    });
   }
 
   private async buildUserApartmentActivationOperations(contract: {
@@ -1176,6 +1271,64 @@ export class ContractsService {
       }
     }
 
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async sendExpiringContractRenewalReminders(): Promise<void> {
+    const today = this.getUtcDayStart();
+    const maxReminderDate = new Date(today);
+    maxReminderDate.setUTCDate(
+      maxReminderDate.getUTCDate() + this.contractRenewalWindowDays,
+    );
+
+    const contracts = await this.prisma.rentalContract.findMany({
+      where: {
+        status: {
+          in: [ContractStatus.active, ContractStatus.signed],
+        },
+        endDate: {
+          gte: today,
+          lte: maxReminderDate,
+        },
+      },
+      select: {
+        id: true,
+        contractNumber: true,
+        endDate: true,
+        members: {
+          where: { status: MemberStatus.active },
+          select: {
+            userId: true,
+          },
+        },
+      },
+    });
+
+    for (const contract of contracts) {
+      const daysBeforeEnd = this.getWholeDayDiff(contract.endDate, today);
+      if (
+        !this.contractExpiryReminderDays.some((value) => value === daysBeforeEnd)
+      ) {
+        continue;
+      }
+
+      for (const member of contract.members) {
+        try {
+          await this.sendContractExpiryReminder({
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            endDate: contract.endDate,
+            recipientId: member.userId,
+            daysBeforeEnd,
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to send contract expiry reminder for contract ${contract.id} to user ${member.userId}`,
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
+      }
+    }
   }
 
   async regenerateContractPdf(contractId: string): Promise<void> {
@@ -2918,6 +3071,13 @@ export class ContractsService {
 
     if (!sourceContract.apartment?.id) {
       throw new NotFoundException('Apartment not found for source contract');
+    }
+
+    const remainingDays = this.getWholeDayDiff(sourceContract.endDate);
+    if (remainingDays > this.contractRenewalWindowDays) {
+      throw new BadRequestException(
+        `Contract renewal is only allowed in the last ${this.contractRenewalWindowDays} days before the contract ends`,
+      );
     }
 
     const occupancyLimit = sourceContract.apartment.maxOccupants ?? 0;
