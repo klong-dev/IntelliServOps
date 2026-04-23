@@ -40,7 +40,6 @@ import { ApartmentPoliciesModule } from './modules/apartment-policies';
 import { ReservationsModule } from './modules/reservations';
 import { ChatModule } from './modules/chat';
 import { AmenitiesModule } from './modules/amenities';
-import { RevenueModule } from './modules/revenue';
 
 // App Core
 import { AppController } from './app.controller';
@@ -89,7 +88,6 @@ import { AppService } from './app.service';
     ReservationsModule,
     ChatModule,
     AmenitiesModule,
-    RevenueModule,
   ],
   controllers: [AppController],
   providers: [

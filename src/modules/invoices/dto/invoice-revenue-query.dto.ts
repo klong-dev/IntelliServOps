@@ -9,7 +9,7 @@ import {
   Min,
 } from 'class-validator';
 
-export class RevenueFilterQueryDto {
+export class InvoiceRevenueFilterQueryDto {
   @ApiPropertyOptional({
     example: '2026-04-01T00:00:00.000Z',
     description: 'Start date filter based on invoice paidAt',
@@ -34,20 +34,14 @@ export class RevenueFilterQueryDto {
   @IsUUID()
   partnerId?: string;
 
-  @ApiPropertyOptional({
-    example: 1,
-    default: 1,
-  })
+  @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   page?: number;
 
-  @ApiPropertyOptional({
-    example: 20,
-    default: 20,
-  })
+  @ApiPropertyOptional({ example: 20, default: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

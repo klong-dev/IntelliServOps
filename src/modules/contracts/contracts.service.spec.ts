@@ -14,8 +14,11 @@ import {
 } from '../../test-utils';
 import { CreateContractDto, UpdateContractDto } from './dto';
 import {
+  DepositDisposition,
   ContractStatus,
   ApartmentStatus,
+  InvoiceStatus,
+  InvoiceType,
   MemberStatus,
   PaymentMethodType,
   ReservationStatus,
@@ -360,6 +363,33 @@ describe('ContractsService', () => {
       await expect(service.create(createDto, operator)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('should reject contract creation beyond partner cooperation term', async () => {
+      const operator = mockOperatorJwtPayload();
+
+      prisma.apartment.findUnique.mockResolvedValue({
+        id: 'apt-123',
+        status: ApartmentStatus.available,
+      } as any);
+      prisma.partnerCooperationContract.findMany.mockResolvedValue([
+        {
+          id: 'coop-123',
+          contractNumber: 'PCC-2026-00001',
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          endDate: new Date('2026-12-31T00:00:00.000Z'),
+        },
+      ] as any);
+
+      await expect(
+        service.create(
+          {
+            ...createDto,
+            endDate: '2027-12-31',
+          },
+          operator,
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw ConflictException if apartment already rented', async () => {
@@ -794,6 +824,7 @@ describe('ContractsService', () => {
           landlordSignature: null,
           tenantSignature: null,
         } as any);
+      prisma.invoice.findMany.mockResolvedValue([] as any);
       prisma.$transaction.mockImplementation(async (callback) =>
         callback(prisma as any),
       );
@@ -905,6 +936,7 @@ describe('ContractsService', () => {
       prisma.$transaction.mockImplementation(async (callback) =>
         callback(prisma as any),
       );
+      prisma.invoice.findMany.mockResolvedValue([] as any);
 
       await service.cancelByUser(
         'contract-123',
@@ -918,6 +950,76 @@ describe('ContractsService', () => {
           data: expect.objectContaining({
             status: ContractStatus.terminated,
             renewedFromContractId: null,
+          }),
+        }),
+      );
+    });
+
+    it('should mark paid deposit invoice as forfeited when user cancels', async () => {
+      const user = mockUserJwtPayload();
+      const contract = mockContract({
+        status: ContractStatus.signed,
+        apartmentId: 'apt-123',
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'primary',
+            isPrimaryContact: true,
+          },
+        ],
+      });
+
+      prisma.rentalContract.findUnique
+        .mockResolvedValueOnce(contract as any)
+        .mockResolvedValueOnce({
+          ...mockContract({ status: ContractStatus.terminated }),
+          members: [{ user: { id: user.sub } }],
+          apartment: null,
+          createdByStaff: null,
+          invoices: [],
+          contractPdfData: null,
+          landlordSignature: null,
+          tenantSignature: null,
+        } as any);
+      prisma.invoice.findMany.mockResolvedValue([
+        {
+          id: 'deposit-invoice-1',
+          notes: 'Auto-created deposit invoice.',
+        },
+      ] as any);
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback(prisma as any),
+      );
+
+      await service.cancelByUser(
+        'contract-123',
+        { reason: 'Không thuê nữa' },
+        user,
+      );
+
+      expect(prisma.invoice.findMany).toHaveBeenCalledWith({
+        where: {
+          rentalContractId: 'contract-123',
+          invoiceType: {
+            in: [InvoiceType.deposit, InvoiceType.contractDeposit],
+          },
+          status: InvoiceStatus.paid,
+          OR: [
+            { depositDisposition: null },
+            { depositDisposition: DepositDisposition.held },
+          ],
+        },
+        select: {
+          id: true,
+          notes: true,
+        },
+      });
+      expect(prisma.invoice.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'deposit-invoice-1' },
+          data: expect.objectContaining({
+            depositDisposition: DepositDisposition.forfeited,
+            depositDispositionReason: 'User cancelled: Không thuê nữa',
           }),
         }),
       );
@@ -1324,6 +1426,63 @@ describe('ContractsService', () => {
       expect(prisma.rentalContract.findFirst).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
+
+    it('should reject renewal beyond cooperation contract term', async () => {
+      const user = mockUserJwtPayload();
+      const endDate = new Date();
+      endDate.setUTCHours(0, 0, 0, 0);
+      endDate.setUTCDate(endDate.getUTCDate() + 30);
+      const startDate = new Date(endDate);
+      startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
+      const cooperationEndDate = new Date(endDate);
+      cooperationEndDate.setUTCMonth(cooperationEndDate.getUTCMonth() + 2);
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        contractNumber: 'CTR-2026-00001',
+        apartmentId: 'apt-123',
+        startDate,
+        endDate,
+        monthlyRent: 10000000,
+        depositAmount: 20000000,
+        paymentDueDay: 5,
+        paymentMethod: 'bank_transfer',
+        utilitiesIncluded: null,
+        utilitiesCharges: null,
+        contractTerms: null,
+        specialConditions: null,
+        status: ContractStatus.active,
+        apartment: {
+          id: 'apt-123',
+          maxOccupants: 3,
+        },
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'primary',
+            isPrimaryContact: true,
+            sharePercentage: 100,
+          },
+        ],
+      } as any);
+      prisma.partnerCooperationContract.findMany.mockResolvedValue([
+        {
+          id: 'coop-123',
+          contractNumber: 'PCC-2026-00001',
+          startDate: new Date(endDate),
+          endDate: cooperationEndDate,
+        },
+      ] as any);
+
+      await expect(
+        service.renewContract(
+          'contract-123',
+          { renewalOption: 'keep_current' as any },
+          user,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('activateWhenDepositPaid', () => {
@@ -1579,7 +1738,9 @@ describe('ContractsService', () => {
           members: [{ userId: 'user-1' }],
         },
       ] as any);
-      prisma.notification.findFirst.mockResolvedValue({ id: 'notif-existing' } as any);
+      prisma.notification.findFirst.mockResolvedValue({
+        id: 'notif-existing',
+      } as any);
 
       await service.sendExpiringContractRenewalReminders();
 

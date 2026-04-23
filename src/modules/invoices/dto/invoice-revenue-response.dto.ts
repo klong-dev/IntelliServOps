@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class RevenueApartmentDto {
+export class InvoiceRevenueApartmentDto {
   @ApiProperty()
   id: string;
 
@@ -11,7 +11,7 @@ export class RevenueApartmentDto {
   buildingName: string | null;
 }
 
-export class RevenueContractDto {
+export class InvoiceRevenueContractDto {
   @ApiProperty()
   id: string;
 
@@ -28,7 +28,7 @@ export class RevenueContractDto {
   status: string;
 }
 
-export class RevenuePartnerDto {
+export class InvoiceRevenuePartnerDto {
   @ApiProperty()
   id: string;
 
@@ -39,7 +39,7 @@ export class RevenuePartnerDto {
   companyName: string | null;
 }
 
-export class RevenueCooperationContractDto {
+export class InvoiceRevenueCooperationContractDto {
   @ApiProperty()
   id: string;
 
@@ -56,7 +56,7 @@ export class RevenueCooperationContractDto {
   endDate: Date;
 }
 
-export class RevenueTransactionDto {
+export class InvoiceRevenueTransactionDto {
   @ApiProperty()
   invoiceId: string;
 
@@ -87,20 +87,23 @@ export class RevenueTransactionDto {
   @ApiProperty({ example: 10800000 })
   partnerNetPayoutAmount: number;
 
-  @ApiProperty({ type: RevenueApartmentDto })
-  apartment: RevenueApartmentDto;
+  @ApiProperty({ type: InvoiceRevenueApartmentDto })
+  apartment: InvoiceRevenueApartmentDto;
 
-  @ApiProperty({ type: RevenueContractDto })
-  contract: RevenueContractDto;
+  @ApiProperty({ type: InvoiceRevenueContractDto })
+  contract: InvoiceRevenueContractDto;
 
-  @ApiPropertyOptional({ type: RevenuePartnerDto, nullable: true })
-  partner: RevenuePartnerDto | null;
+  @ApiPropertyOptional({ type: InvoiceRevenuePartnerDto, nullable: true })
+  partner: InvoiceRevenuePartnerDto | null;
 
-  @ApiPropertyOptional({ type: RevenueCooperationContractDto, nullable: true })
-  cooperationContract: RevenueCooperationContractDto | null;
+  @ApiPropertyOptional({
+    type: InvoiceRevenueCooperationContractDto,
+    nullable: true,
+  })
+  cooperationContract: InvoiceRevenueCooperationContractDto | null;
 }
 
-export class RevenueOverviewDto {
+export class InvoiceRevenueOverviewDto {
   @ApiProperty({ example: 25 })
   invoiceCount: number;
 
@@ -116,8 +119,8 @@ export class RevenueOverviewDto {
   @ApiProperty({ example: 85000000 })
   totalPartnerNetPayout: number;
 
-  @ApiProperty({ type: [RevenueTransactionDto] })
-  invoices: RevenueTransactionDto[];
+  @ApiProperty({ type: [InvoiceRevenueTransactionDto] })
+  invoices: InvoiceRevenueTransactionDto[];
 
   @ApiProperty({ example: 1 })
   page: number;
@@ -129,9 +132,9 @@ export class RevenueOverviewDto {
   totalPages: number;
 }
 
-export class PartnerRevenueSummaryItemDto {
-  @ApiProperty({ type: RevenuePartnerDto })
-  partner: RevenuePartnerDto;
+export class InvoicePartnerRevenueSummaryItemDto {
+  @ApiProperty({ type: InvoiceRevenuePartnerDto })
+  partner: InvoiceRevenuePartnerDto;
 
   @ApiProperty({ example: 10 })
   invoiceCount: number;
@@ -152,9 +155,9 @@ export class PartnerRevenueSummaryItemDto {
   totalNetPayoutRevenue: number;
 }
 
-export class RevenueTransactionListDto {
-  @ApiProperty({ type: [RevenueTransactionDto] })
-  items: RevenueTransactionDto[];
+export class InvoiceRevenueTransactionListDto {
+  @ApiProperty({ type: [InvoiceRevenueTransactionDto] })
+  items: InvoiceRevenueTransactionDto[];
 
   @ApiProperty({ example: 100 })
   total: number;
@@ -169,7 +172,7 @@ export class RevenueTransactionListDto {
   totalPages: number;
 }
 
-export class PartnerMyRevenueOverviewDto {
+export class InvoiceMyRevenueOverviewDto {
   @ApiProperty({ example: 12 })
   invoiceCount: number;
 

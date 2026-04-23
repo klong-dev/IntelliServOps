@@ -24,6 +24,7 @@ import {
   ContractStatus,
   ActorType,
   ApartmentStatus,
+  DepositDisposition,
   MeterType,
   MemberStatus,
   PartnerCooperationContractStatus,
@@ -226,6 +227,14 @@ export class ContractsService {
     });
   }
 
+  private appendSystemNote(
+    existingNotes: string | null | undefined,
+    nextNote: string,
+  ): string {
+    const trimmedExisting = existingNotes?.trim();
+    return trimmedExisting ? `${trimmedExisting}\n${nextNote}` : nextNote;
+  }
+
   private formatDate(d: Date): string {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1)
       .toString()
@@ -288,6 +297,55 @@ export class ContractsService {
     return Math.round(diffMs / (24 * 60 * 60 * 1000));
   }
 
+  async assertLeaseTermWithinCooperationContract(
+    apartmentId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<void> {
+    const cooperationContracts =
+      await this.prisma.partnerCooperationContract.findMany({
+        where: {
+          apartmentId,
+          status: {
+            in: [
+              PartnerCooperationContractStatus.pending,
+              PartnerCooperationContractStatus.signed,
+              PartnerCooperationContractStatus.active,
+            ],
+          },
+        },
+        orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          contractNumber: true,
+          startDate: true,
+          endDate: true,
+        },
+      });
+
+    if (cooperationContracts.length === 0) {
+      return;
+    }
+
+    const matchingContract =
+      cooperationContracts.find(
+        (contract) =>
+          contract.startDate.getTime() <= startDate.getTime() &&
+          contract.endDate.getTime() >= startDate.getTime(),
+      ) ?? cooperationContracts[0];
+
+    if (
+      startDate.getTime() < matchingContract.startDate.getTime() ||
+      endDate.getTime() > matchingContract.endDate.getTime()
+    ) {
+      throw new BadRequestException(
+        `Apartment can only be rented within cooperation term ${this.formatDate(
+          matchingContract.startDate,
+        )} - ${this.formatDate(matchingContract.endDate)} for contract ${matchingContract.contractNumber}`,
+      );
+    }
+  }
+
   private async hasContractExpiryReminderBeenSent(params: {
     contractId: string;
     recipientId: string;
@@ -338,9 +396,7 @@ export class ContractsService {
     }
 
     const dayLabel =
-      params.daysBeforeEnd === 1
-        ? '1 ngày'
-        : `${params.daysBeforeEnd} ngày`;
+      params.daysBeforeEnd === 1 ? '1 ngày' : `${params.daysBeforeEnd} ngày`;
     const notification = await this.notificationsService.createAndPush({
       recipientType: ActorType.user,
       recipientId: params.recipientId,
@@ -438,9 +494,8 @@ export class ContractsService {
     rentalContractId: string,
   ): Promise<DoorPasswordSyncResult> {
     try {
-      const syncResult = await this.ioTService.clearApartmentDoorPinHash(
-        apartmentId,
-      );
+      const syncResult =
+        await this.ioTService.clearApartmentDoorPinHash(apartmentId);
 
       if (!syncResult.success) {
         this.logger.warn(
@@ -1270,7 +1325,6 @@ export class ContractsService {
         );
       }
     }
-
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
@@ -1307,7 +1361,9 @@ export class ContractsService {
     for (const contract of contracts) {
       const daysBeforeEnd = this.getWholeDayDiff(contract.endDate, today);
       if (
-        !this.contractExpiryReminderDays.some((value) => value === daysBeforeEnd)
+        !this.contractExpiryReminderDays.some(
+          (value) => value === daysBeforeEnd,
+        )
       ) {
         continue;
       }
@@ -2383,6 +2439,9 @@ export class ContractsService {
    * Create new rental contract
    */
   async create(createDto: CreateContractDto, currentUser: JwtPayload) {
+    const requestedStartDate = new Date(createDto.startDate);
+    const requestedEndDate = new Date(createDto.endDate);
+
     if (!createDto.members?.length) {
       throw new BadRequestException('At least one contract member is required');
     }
@@ -2441,6 +2500,12 @@ export class ContractsService {
       throw new ConflictException('Apartment is not available for rent');
     }
 
+    await this.assertLeaseTermWithinCooperationContract(
+      createDto.apartmentId,
+      requestedStartDate,
+      requestedEndDate,
+    );
+
     // Check for overlapping contracts
     const overlapping = await this.prisma.rentalContract.findFirst({
       where: {
@@ -2448,8 +2513,8 @@ export class ContractsService {
         status: { in: ['active', 'pending', 'signed'] },
         OR: [
           {
-            startDate: { lte: new Date(createDto.endDate) },
-            endDate: { gte: new Date(createDto.startDate) },
+            startDate: { lte: requestedEndDate },
+            endDate: { gte: requestedStartDate },
           },
         ],
       },
@@ -2469,8 +2534,8 @@ export class ContractsService {
         data: {
           contractNumber,
           apartment: { connect: { id: createDto.apartmentId } },
-          startDate: new Date(createDto.startDate),
-          endDate: new Date(createDto.endDate),
+          startDate: requestedStartDate,
+          endDate: requestedEndDate,
           monthlyRent: createDto.monthlyRent,
           depositAmount: createDto.depositAmount,
           paymentDueDay: createDto.paymentDueDay,
@@ -2546,6 +2611,25 @@ export class ContractsService {
       updateData.terminationDate = new Date(updateDto.terminationDate);
     }
 
+    if (updateDto.startDate || updateDto.endDate) {
+      const nextStartDate = updateDto.startDate
+        ? new Date(updateDto.startDate)
+        : contract.startDate;
+      const nextEndDate = updateDto.endDate
+        ? new Date(updateDto.endDate)
+        : contract.endDate;
+
+      if (nextStartDate >= nextEndDate) {
+        throw new BadRequestException('startDate must be earlier than endDate');
+      }
+
+      await this.assertLeaseTermWithinCooperationContract(
+        contract.apartmentId,
+        nextStartDate,
+        nextEndDate,
+      );
+    }
+
     return this.prisma.rentalContract.update({
       where: { id },
       data: updateData,
@@ -2567,6 +2651,7 @@ export class ContractsService {
       where: { id },
       select: {
         id: true,
+        apartmentId: true,
         status: true,
         startDate: true,
         endDate: true,
@@ -2596,6 +2681,12 @@ export class ContractsService {
     if (nextStartDate >= nextEndDate) {
       throw new BadRequestException('startDate must be earlier than endDate');
     }
+
+    await this.assertLeaseTermWithinCooperationContract(
+      contract.apartmentId,
+      nextStartDate,
+      nextEndDate,
+    );
 
     const updateData: Prisma.RentalContractUpdateInput = {
       ...(updateDto.landlordName !== undefined && {
@@ -2694,6 +2785,25 @@ export class ContractsService {
     const terminatedAt = new Date();
 
     await this.prisma.$transaction(async (tx) => {
+      const paidDepositInvoices =
+        (await tx.invoice.findMany({
+          where: {
+            rentalContractId: id,
+            invoiceType: {
+              in: [InvoiceType.deposit, InvoiceType.contractDeposit],
+            },
+            status: InvoiceStatus.paid,
+            OR: [
+              { depositDisposition: null },
+              { depositDisposition: DepositDisposition.held },
+            ],
+          },
+          select: {
+            id: true,
+            notes: true,
+          },
+        })) ?? [];
+
       await tx.reservation.updateMany({
         where: { createdContractId: id },
         data: { status: ReservationStatus.cancelled },
@@ -2728,6 +2838,21 @@ export class ContractsService {
           cancellationReason: cancelReason,
         },
       });
+
+      for (const depositInvoice of paidDepositInvoices) {
+        await tx.invoice.update({
+          where: { id: depositInvoice.id },
+          data: {
+            depositDisposition: DepositDisposition.forfeited,
+            depositDispositionAt: terminatedAt,
+            depositDispositionReason: cancelReason,
+            notes: this.appendSystemNote(
+              depositInvoice.notes,
+              `Deposit forfeited on ${terminatedAt.toISOString()} because ${cancelReason}`,
+            ),
+          },
+        });
+      }
 
       await tx.userContractMember.updateMany({
         where: { rentalContractId: id },
@@ -3226,6 +3351,12 @@ export class ContractsService {
       throw new BadRequestException('endDate must be after startDate');
     }
 
+    await this.assertLeaseTermWithinCooperationContract(
+      sourceContract.apartmentId,
+      nextStartDate,
+      nextEndDate,
+    );
+
     if (occupancyLimit > 0 && normalizedMembers.length > occupancyLimit) {
       throw new BadRequestException(
         `Renewed contract can have at most ${occupancyLimit} members based on apartment max occupants`,
@@ -3373,7 +3504,10 @@ export class ContractsService {
       if (existingDepositInvoice.invoiceType === InvoiceType.deposit) {
         const updated = await this.prisma.invoice.update({
           where: { id: existingDepositInvoice.id },
-          data: { invoiceType: InvoiceType.contractDeposit },
+          data: {
+            invoiceType: InvoiceType.contractDeposit,
+            depositDisposition: DepositDisposition.held,
+          },
           select: this.depositInvoiceSelect,
         });
         return updated;
@@ -3424,6 +3558,7 @@ export class ContractsService {
         totalAmount: depositAmount,
         paymentMethod: contract.paymentMethod,
         status: InvoiceStatus.issued,
+        depositDisposition: DepositDisposition.held,
         notes: `Auto-created deposit invoice. ${marker}`,
       },
       select: this.depositInvoiceSelect,

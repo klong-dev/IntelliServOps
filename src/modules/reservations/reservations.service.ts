@@ -188,6 +188,12 @@ export class ReservationsService {
       );
     }
 
+    await this.contractsService.assertLeaseTermWithinCooperationContract(
+      createReservationDto.apartmentId,
+      desiredStart,
+      desiredEnd,
+    );
+
     // 7. Generate contract number
     const contractNumber = await this.generateContractNumber();
     const defaultPartyAFields = resolveContractPartyAFields();

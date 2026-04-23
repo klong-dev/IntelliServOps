@@ -10,11 +10,15 @@ describe('ReservationsService', () => {
   let service: ReservationsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   const contractsService = {
+    assertLeaseTermWithinCooperationContract: jest.fn(),
     regenerateContractPdf: jest.fn(),
   };
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    contractsService.assertLeaseTermWithinCooperationContract
+      .mockReset()
+      .mockResolvedValue(undefined);
     contractsService.regenerateContractPdf
       .mockReset()
       .mockResolvedValue(undefined);
@@ -120,6 +124,52 @@ describe('ReservationsService', () => {
       'contract-123',
     );
     expect(result.contractId).toBe('contract-123');
+  });
+
+  it('should reject reservation when desired lease exceeds cooperation contract term', async () => {
+    const userId = 'user-123';
+    const desiredStartDate = new Date();
+    desiredStartDate.setUTCDate(desiredStartDate.getUTCDate() + 7);
+    const desiredEndDate = new Date(desiredStartDate);
+    desiredEndDate.setUTCFullYear(desiredEndDate.getUTCFullYear() + 2);
+
+    prisma.user.findUnique.mockResolvedValue({
+      id: userId,
+      isVerified: true,
+      isActive: true,
+    } as any);
+    prisma.apartment.findUnique
+      .mockResolvedValueOnce({
+        id: 'apt-123',
+        status: 'available',
+        apartmentNumber: 'A-101',
+        wardCode: null,
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'apt-123',
+        baseRentPrice: 10000000,
+        depositAmount: 20000000,
+        maxOccupants: 2,
+      } as any);
+    prisma.reservation.findFirst.mockResolvedValue(null as any);
+    contractsService.assertLeaseTermWithinCooperationContract.mockRejectedValueOnce(
+      new BadRequestException(
+        'Apartment can only be rented within cooperation term',
+      ),
+    );
+
+    await expect(
+      service.create(userId, {
+        apartmentId: 'apt-123',
+        desiredStartDate: desiredStartDate.toISOString(),
+        desiredEndDate: desiredEndDate.toISOString(),
+        numberOfOccupants: 1,
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(
+      contractsService.assertLeaseTermWithinCooperationContract,
+    ).toHaveBeenCalledWith('apt-123', desiredStartDate, desiredEndDate);
   });
 
   it('should reject reservation when desired move-in date is more than 15 days from today', async () => {
