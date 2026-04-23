@@ -307,7 +307,7 @@ async function main() {
       taxCode: '0319980001',
       bankName: 'Vietcombank',
       bankAccountNumber: '0071000001111',
-      commissionRate: 8.5,
+      commissionRate: 10,
       address: '12 Nguyễn Cơ Thạch, Phường An Khánh, Thành phố Thủ Đức',
     },
     {
@@ -317,7 +317,7 @@ async function main() {
       taxCode: '0319980002',
       bankName: 'Techcombank',
       bankAccountNumber: '1903888800022',
-      commissionRate: 9,
+      commissionRate: 10,
       address: '88 Xa lộ Hà Nội, Phường An Phú, Thành phố Thủ Đức',
     },
     {
@@ -327,7 +327,7 @@ async function main() {
       taxCode: '0319980003',
       bankName: 'ACB',
       bankAccountNumber: '2638999900033',
-      commissionRate: 8,
+      commissionRate: 10,
       address: '26 Mai Chí Thọ, Phường Thủ Thiêm, Thành phố Thủ Đức',
     },
     {
@@ -337,7 +337,7 @@ async function main() {
       taxCode: '0319980004',
       bankName: 'BIDV',
       bankAccountNumber: '581100000444',
-      commissionRate: 9.5,
+      commissionRate: 10,
       address: '55 Nguyễn Hữu Cảnh, Phường 22, Quận Bình Thạnh',
     },
     {
@@ -357,7 +357,7 @@ async function main() {
       taxCode: '0319980006',
       bankName: 'VPBank',
       bankAccountNumber: '9704000000666',
-      commissionRate: 8.75,
+      commissionRate: 10,
       address: '11 Song Hành, Phường An Phú, Thành phố Thủ Đức',
     },
   ];
@@ -744,21 +744,21 @@ async function main() {
       phaseName: 'Giai đoạn khởi động 2025',
       effectiveFrom: localDate('2025-01-01'),
       effectiveTo: localDate('2025-12-31'),
-      commissionRate: decimal(8),
+      commissionRate: decimal(10),
       isActive: false,
     },
     {
       phaseName: 'Giai đoạn tăng trưởng 2026',
       effectiveFrom: localDate('2026-01-01'),
       effectiveTo: localDate('2026-09-30'),
-      commissionRate: decimal(9),
+      commissionRate: decimal(10),
       isActive: false,
     },
     {
       phaseName: 'Giai đoạn tối ưu 2026-Q4',
       effectiveFrom: localDate('2026-10-01'),
       effectiveTo: null,
-      commissionRate: decimal(9.5),
+      commissionRate: decimal(10),
       isActive: true,
     },
   ];
@@ -1520,7 +1520,7 @@ async function main() {
       'active',
       '2025-12-01',
       '2026-12-31',
-      8.5,
+      10,
     ],
     [
       'PCC',
@@ -1530,7 +1530,7 @@ async function main() {
       'active',
       '2026-01-01',
       '2027-01-31',
-      9,
+      10,
     ],
     [
       'PCC',
@@ -1540,7 +1540,7 @@ async function main() {
       'active',
       '2026-02-01',
       '2027-02-28',
-      9,
+      10,
     ],
     [
       'PCC',
@@ -1550,7 +1550,7 @@ async function main() {
       'pending',
       '2026-04-01',
       '2027-03-31',
-      8,
+      10,
     ],
     [
       'PCC',
@@ -1560,7 +1560,7 @@ async function main() {
       'active',
       '2025-11-01',
       '2026-10-31',
-      9.5,
+      10,
     ],
     [
       'PCC',
@@ -1590,7 +1590,7 @@ async function main() {
       'active',
       '2026-01-10',
       '2027-01-09',
-      8.75,
+      10,
     ],
     [
       'PCC',
@@ -1600,7 +1600,7 @@ async function main() {
       'expired',
       '2025-01-01',
       '2025-12-31',
-      8,
+      10,
     ],
     [
       'PCC',
@@ -1610,7 +1610,7 @@ async function main() {
       'active',
       '2026-02-01',
       '2027-01-31',
-      9.5,
+      10,
     ],
     [
       'PCC',
@@ -1620,7 +1620,7 @@ async function main() {
       'active',
       '2026-03-01',
       '2027-02-28',
-      8.75,
+      10,
     ],
     [
       'PCC',
@@ -1630,7 +1630,7 @@ async function main() {
       'terminated',
       '2025-06-01',
       '2026-05-31',
-      8.5,
+      10,
     ],
   ] as const;
 

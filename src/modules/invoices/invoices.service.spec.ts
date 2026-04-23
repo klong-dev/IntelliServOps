@@ -754,6 +754,49 @@ describe('InvoicesService', () => {
   });
 
   describe('autoMarkOverdueInvoices', () => {
+    it('should fallback partner commission to 10 percent when owner and cooperation contract are missing rates', async () => {
+      prisma.invoice.findMany.mockResolvedValue([
+        buildPaidRevenueInvoice({
+          rentalContract: {
+            id: 'contract-2',
+            contractNumber: 'CTR-2026-00002',
+            startDate: new Date('2026-04-01T00:00:00.000Z'),
+            endDate: new Date('2027-03-31T00:00:00.000Z'),
+            status: 'active',
+            apartment: {
+              id: 'apt-2',
+              apartmentNumber: 'B202',
+              buildingName: 'Beta Tower',
+              owner: {
+                id: 'partner-1',
+                fullName: 'Partner One',
+                companyName: 'Partner Co',
+                isPartner: true,
+                commissionRate: null,
+              },
+              cooperationContracts: [],
+            },
+          },
+        }),
+      ] as any);
+
+      const result = await service.getSystemRevenueOverview({
+        page: 1,
+        limit: 20,
+      });
+
+      expect(result.totalSystemRevenue).toBe(1_000_000);
+      expect(result.totalPartnerGrossRevenue).toBe(10_000_000);
+      expect(result.totalPartnerNetPayout).toBe(9_000_000);
+      expect(result.invoices[0]).toMatchObject({
+        isPartnerApartment: true,
+        commissionRateApplied: 10,
+        systemRevenueAmount: 1_000_000,
+        partnerGrossRevenueAmount: 10_000_000,
+        partnerNetPayoutAmount: 9_000_000,
+      });
+    });
+
     it('should run overdue sync', async () => {
       prisma.invoice.updateMany.mockResolvedValue({ count: 3 } as any);
 

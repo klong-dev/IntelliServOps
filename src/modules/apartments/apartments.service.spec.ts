@@ -243,6 +243,7 @@ describe('ApartmentsService', () => {
   });
 
   it('should create apartment for owner and merge uploaded media', async () => {
+    prisma.user.updateMany.mockResolvedValue({ count: 1 } as any);
     prisma.apartment.create.mockResolvedValue({
       id: 'apt-123',
       slug: 'chung-cu-phong-xich-lan',
@@ -290,6 +291,16 @@ describe('ApartmentsService', () => {
         }),
       }),
     );
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'user-123',
+        isPartner: true,
+        commissionRate: null,
+      },
+      data: {
+        commissionRate: expect.anything(),
+      },
+    });
   });
 
   it('should prevent users from updating apartments they do not own', async () => {

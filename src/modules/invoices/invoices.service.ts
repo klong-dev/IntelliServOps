@@ -128,6 +128,7 @@ export class InvoicesService {
     ApartmentStatus.verified,
     ApartmentStatus.pending,
   ]);
+  private readonly defaultPartnerCommissionRate = 10;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -391,6 +392,26 @@ export class InvoicesService {
     }
 
     return Number(value);
+  }
+
+  private resolvePartnerCommissionRate(params: {
+    isPartnerApartment: boolean;
+    cooperationCommissionRate: unknown;
+    ownerCommissionRate: unknown;
+  }): number | null {
+    if (!params.isPartnerApartment) {
+      return null;
+    }
+
+    if (params.cooperationCommissionRate != null) {
+      return this.toNumber(params.cooperationCommissionRate);
+    }
+
+    if (params.ownerCommissionRate != null) {
+      return this.toNumber(params.ownerCommissionRate);
+    }
+
+    return this.defaultPartnerCommissionRate;
   }
 
   private formatBillingMonth(date: Date): string {
@@ -769,13 +790,12 @@ export class InvoicesService {
           invoicePaidAt,
           apartment.cooperationContracts,
         );
-        const baseCommissionRate = isPartnerApartment
-          ? selectedCooperationContract?.commissionRate != null
-            ? this.toNumber(selectedCooperationContract.commissionRate)
-            : owner?.commissionRate != null
-              ? this.toNumber(owner.commissionRate)
-              : 0
-          : null;
+        const baseCommissionRate = this.resolvePartnerCommissionRate({
+          isPartnerApartment,
+          cooperationCommissionRate:
+            selectedCooperationContract?.commissionRate,
+          ownerCommissionRate: owner?.commissionRate,
+        });
         const isForfeitedDeposit =
           (invoice.invoiceType === InvoiceType.deposit ||
             invoice.invoiceType === InvoiceType.contractDeposit) &&
@@ -1515,13 +1535,12 @@ export class InvoicesService {
         invoice.rentalContract.apartment.cooperationContracts,
       );
 
-      const commissionRate = owner?.isPartner
-        ? selectedContract?.commissionRate != null
-          ? this.toNumber(selectedContract.commissionRate)
-          : owner.commissionRate != null
-            ? this.toNumber(owner.commissionRate)
-            : 0
-        : 0;
+      const commissionRate =
+        this.resolvePartnerCommissionRate({
+          isPartnerApartment: !!owner?.isPartner,
+          cooperationCommissionRate: selectedContract?.commissionRate,
+          ownerCommissionRate: owner?.commissionRate,
+        }) ?? 0;
       const gross = this.toNumber(invoice.totalAmount);
       const commissionAmount = owner?.isPartner
         ? gross * (commissionRate / 100)
