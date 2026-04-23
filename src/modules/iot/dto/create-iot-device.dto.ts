@@ -70,11 +70,6 @@ export class CreateIoTDeviceDto {
   @IsUUID()
   apartmentId: string;
 
-  @ApiPropertyOptional({ description: 'Room ID' })
-  @IsUUID()
-  @IsOptional()
-  roomId?: string;
-
   @ApiPropertyOptional({ example: 'Installed at main entrance' })
   @IsString()
   @IsOptional()

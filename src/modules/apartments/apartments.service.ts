@@ -864,15 +864,6 @@ export class ApartmentsService {
   async findOne(id: string, currentUser?: JwtPayload) {
     const apartmentDetailQuery = {
       include: {
-        rooms: {
-          select: {
-            id: true,
-            roomNumber: true,
-            roomType: true,
-            area: true,
-            status: true,
-          },
-        },
         owner: {
           select: {
             id: true,
@@ -1036,9 +1027,16 @@ export class ApartmentsService {
     const [enrichedApartment] = await this.enrichApartmentsWithWardAddress([
       apartment,
     ]);
+    const {
+      rooms: _rooms,
+      apartmentAmenities: _apartmentAmenities,
+      ...apartmentWithoutRooms
+    } = apartment as typeof apartment & { rooms?: unknown };
+    void _rooms;
+    void _apartmentAmenities;
 
     return {
-      ...apartment,
+      ...apartmentWithoutRooms,
       amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       streetAddress: apartment.streetAddress,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
@@ -1711,15 +1709,6 @@ export class ApartmentsService {
     const apartments = await this.prisma.apartment.findMany({
       where: { ownerId },
       include: {
-        rooms: {
-          select: {
-            id: true,
-            roomNumber: true,
-            roomType: true,
-            area: true,
-            status: true,
-          },
-        },
         owner: {
           select: {
             id: true,
@@ -1825,9 +1814,18 @@ export class ApartmentsService {
         },
       );
       const latestCooperationContract = cooperationContracts[0] ?? null;
+      const {
+        rooms: _rooms,
+        apartmentAmenities: _apartmentAmenities,
+        cooperationContracts: _cooperationContracts,
+        ...apartmentWithoutRooms
+      } = apartment as typeof apartment & { rooms?: unknown };
+      void _rooms;
+      void _apartmentAmenities;
+      void _cooperationContracts;
 
       return {
-        ...apartment,
+        ...apartmentWithoutRooms,
         amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
         cooperationContracts,
         cooperationContract: latestCooperationContract,

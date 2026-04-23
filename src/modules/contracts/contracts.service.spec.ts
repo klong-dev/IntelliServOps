@@ -1078,14 +1078,20 @@ describe('ContractsService', () => {
   describe('renewContract', () => {
     it('should keep old months and members when renewalOption is keep_current', async () => {
       const user = mockUserJwtPayload();
+      const endDate = new Date();
+      endDate.setUTCHours(0, 0, 0, 0);
+      endDate.setUTCDate(endDate.getUTCDate() + 30);
+      const startDate = new Date(endDate);
+      startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
 
       prisma.rentalContract.findUnique
         .mockResolvedValueOnce({
           id: 'contract-123',
           contractNumber: 'CTR-2026-00001',
           apartmentId: 'apt-123',
-          startDate: new Date('2026-01-01T00:00:00.000Z'),
-          endDate: new Date('2026-12-31T00:00:00.000Z'),
+          startDate,
+          endDate,
           monthlyRent: 10000000,
           depositAmount: 20000000,
           paymentDueDay: 5,
@@ -1167,14 +1173,20 @@ describe('ContractsService', () => {
 
     it('should replace members with requester and memberNationalIds when renewalOption is customize', async () => {
       const user = mockUserJwtPayload();
+      const endDate = new Date();
+      endDate.setUTCHours(0, 0, 0, 0);
+      endDate.setUTCDate(endDate.getUTCDate() + 30);
+      const startDate = new Date(endDate);
+      startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
 
       prisma.rentalContract.findUnique
         .mockResolvedValueOnce({
           id: 'contract-123',
           contractNumber: 'CTR-2026-00001',
           apartmentId: 'apt-123',
-          startDate: new Date('2026-01-01T00:00:00.000Z'),
-          endDate: new Date('2026-12-31T00:00:00.000Z'),
+          startDate,
+          endDate,
           monthlyRent: 10000000,
           depositAmount: 20000000,
           paymentDueDay: 5,
@@ -1261,6 +1273,56 @@ describe('ContractsService', () => {
           ]),
         }),
       );
+    });
+
+    it('should reject renewal when contract has more than 30 days remaining', async () => {
+      const user = mockUserJwtPayload();
+      const endDate = new Date();
+      endDate.setUTCHours(0, 0, 0, 0);
+      endDate.setUTCDate(endDate.getUTCDate() + 31);
+      const startDate = new Date(endDate);
+      startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        contractNumber: 'CTR-2026-00001',
+        apartmentId: 'apt-123',
+        startDate,
+        endDate,
+        monthlyRent: 10000000,
+        depositAmount: 20000000,
+        paymentDueDay: 5,
+        paymentMethod: 'bank_transfer',
+        utilitiesIncluded: null,
+        utilitiesCharges: null,
+        contractTerms: null,
+        specialConditions: null,
+        status: ContractStatus.active,
+        apartment: {
+          id: 'apt-123',
+          maxOccupants: 3,
+        },
+        members: [
+          {
+            userId: user.sub,
+            memberType: 'primary',
+            isPrimaryContact: true,
+            sharePercentage: 100,
+          },
+        ],
+      } as any);
+
+      await expect(
+        service.renewContract(
+          'contract-123',
+          { renewalOption: 'keep_current' as any },
+          user,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.rentalContract.findFirst).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 
@@ -1434,6 +1496,70 @@ describe('ContractsService', () => {
         expect.stringContaining('contract-1'),
         expect.any(String),
       );
+    });
+  });
+
+  describe('sendExpiringContractRenewalReminders', () => {
+    it('should send reminders for contracts at configured milestones', async () => {
+      const endDate = new Date();
+      endDate.setUTCHours(0, 0, 0, 0);
+      endDate.setUTCDate(endDate.getUTCDate() + 30);
+
+      prisma.rentalContract.findMany.mockResolvedValue([
+        {
+          id: 'contract-1',
+          contractNumber: 'CTR-2026-00001',
+          endDate,
+          members: [{ userId: 'user-1' }],
+        },
+      ] as any);
+      prisma.notification.findFirst.mockResolvedValue(null as any);
+      notificationsService.createAndPush.mockResolvedValue({
+        id: 'notif-1',
+      } as any);
+      prisma.notification.update.mockResolvedValue({ id: 'notif-1' } as any);
+
+      await service.sendExpiringContractRenewalReminders();
+
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientId: 'user-1',
+          title: 'Hợp đồng sắp hết hạn',
+          relatedEntityId: 'contract-1',
+        }),
+      );
+      expect(prisma.notification.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'notif-1' },
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({
+              reminderType: 'contract_expiry',
+              daysBeforeEnd: 30,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should skip duplicate reminders that were already sent', async () => {
+      const endDate = new Date();
+      endDate.setUTCHours(0, 0, 0, 0);
+      endDate.setUTCDate(endDate.getUTCDate() + 14);
+
+      prisma.rentalContract.findMany.mockResolvedValue([
+        {
+          id: 'contract-1',
+          contractNumber: 'CTR-2026-00001',
+          endDate,
+          members: [{ userId: 'user-1' }],
+        },
+      ] as any);
+      prisma.notification.findFirst.mockResolvedValue({ id: 'notif-existing' } as any);
+
+      await service.sendExpiringContractRenewalReminders();
+
+      expect(notificationsService.createAndPush).not.toHaveBeenCalled();
+      expect(prisma.notification.update).not.toHaveBeenCalled();
     });
   });
 

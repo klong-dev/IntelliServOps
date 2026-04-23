@@ -13,17 +13,6 @@ class DeviceApartmentSummaryDto {
   address: string;
 }
 
-class DeviceRoomSummaryDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty({ example: 'R01' })
-  roomNumber: string;
-
-  @ApiProperty({ example: 'bedroom' })
-  roomType: string;
-}
-
 export class IoTMqttPublishDetailsDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   brokerUrl: string | null;
@@ -168,9 +157,6 @@ export class IoTDeviceListItemDto {
 
   @ApiProperty({ type: DeviceApartmentSummaryDto })
   apartment: DeviceApartmentSummaryDto;
-
-  @ApiPropertyOptional({ type: DeviceRoomSummaryDto, nullable: true })
-  room: DeviceRoomSummaryDto | null;
 }
 
 // ─── IoT Device Detail DTO ──────────────────────────────────────────
@@ -327,9 +313,6 @@ export class IoTDeviceDetailDto {
 
   @ApiProperty({ type: DeviceApartmentSummaryDto })
   apartment: DeviceApartmentSummaryDto;
-
-  @ApiPropertyOptional({ type: DeviceRoomSummaryDto, nullable: true })
-  room: DeviceRoomSummaryDto | null;
 }
 
 // ─── Control Device Response DTO ────────────────────────────────────

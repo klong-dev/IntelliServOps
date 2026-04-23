@@ -34,46 +34,6 @@ class OwnerSummaryDto {
   profileImageUrl: string | null;
 }
 
-// ─── Room DTO (nested in ApartmentDetailDto) ────────────────────────
-
-class RoomDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty({ example: 'R01' })
-  roomNumber: string;
-
-  @ApiProperty({ example: 'bedroom' })
-  roomType: string;
-
-  @ApiPropertyOptional({ type: String, example: '20.00', nullable: true })
-  area: string | null;
-
-  @ApiProperty({ example: true })
-  hasWindow: boolean;
-
-  @ApiProperty({ example: true })
-  hasAirConditioning: boolean;
-
-  @ApiProperty({ example: false })
-  hasPrivateBathroom: boolean;
-
-  @ApiProperty({ example: 1 })
-  maxOccupancy: number;
-
-  @ApiPropertyOptional({ type: String, example: '5000000.00', nullable: true })
-  rentPrice: string | null;
-
-  @ApiProperty({ example: 'available' })
-  status: string;
-
-  @ApiPropertyOptional({ type: String, nullable: true })
-  description: string | null;
-
-  @ApiPropertyOptional({ type: [String], nullable: true })
-  images: string[] | null;
-}
-
 class WardAddressDto {
   @ApiProperty({ example: 26728 })
   wardCode: number;
@@ -602,9 +562,6 @@ export class ApartmentDetailDto {
 
   @ApiProperty()
   updatedAt: Date;
-
-  @ApiProperty({ type: [RoomDto] })
-  rooms: RoomDto[];
 
   @ApiPropertyOptional({ type: OwnerSummaryDto })
   owner?: OwnerSummaryDto;
