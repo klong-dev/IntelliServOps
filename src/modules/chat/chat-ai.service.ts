@@ -98,18 +98,25 @@ export class ChatAiService {
       await this.updateConversationAiMetadata(params.conversationId, response);
       return response;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown AI service error';
+      const errorMessage = this.describeError(error);
       this.logger.warn(`AI response skipped: ${errorMessage}`);
 
-      await this.updateConversationAiMetadata(params.conversationId, {
-        model: '',
+      const fallbackResponse: AiServiceResponse = {
+        answer:
+          'Mình đang tạm thời không kết nối được trợ lý AI. Mình sẽ chuyển cuộc trò chuyện này cho bộ phận hỗ trợ để phản hồi chi tiết hơn.',
+        model: 'service_unavailable',
         confidence: 0,
         shouldHandoff: true,
         handoffReason: 'service_unavailable',
-      });
+        citations: [],
+      };
 
-      return null;
+      await this.updateConversationAiMetadata(
+        params.conversationId,
+        fallbackResponse,
+      );
+
+      return fallbackResponse;
     }
   }
 
@@ -497,6 +504,23 @@ export class ChatAiService {
     }
 
     return `${value.slice(0, maxLength - 3)}...`;
+  }
+
+  private describeError(error: unknown): string {
+    if (!(error instanceof Error)) {
+      return 'Unknown AI service error';
+    }
+
+    const messages = [error.message];
+    const cause = (error as Error & { cause?: unknown }).cause;
+
+    if (cause instanceof Error && cause.message) {
+      messages.push(cause.message);
+    } else if (typeof cause === 'string' && cause.trim()) {
+      messages.push(cause.trim());
+    }
+
+    return Array.from(new Set(messages.filter(Boolean))).join(' | caused by: ');
   }
 
   private async getFallbackFaqOverviewChunk(): Promise<AiContextChunk | null> {
