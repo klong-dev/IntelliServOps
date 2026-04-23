@@ -1349,6 +1349,31 @@ describe('ContractsService', () => {
       expect(result[0].status).toBe(ContractStatus.active);
     });
 
+    it('should allow frontend test activation to bypass status, deposit, and move-in validation', async () => {
+      const contract = mockContract({
+        status: ContractStatus.draft,
+        apartmentId: 'apt-123',
+        startDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      });
+
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        ...contract,
+        apartment: { id: 'apt-123' },
+      } as any);
+      prisma.$transaction.mockResolvedValue([
+        { ...contract, status: ContractStatus.active },
+        {},
+      ] as any);
+
+      const result = await service.activateWhenDepositPaid('contract-123', {
+        bypassValidation: true,
+      });
+
+      expect(prisma.invoice.findFirst).not.toHaveBeenCalled();
+      expect(result[0].status).toBe(ContractStatus.active);
+    });
+
     it('should reject activation when deposit invoice is not paid', async () => {
       const contract = mockContract({
         status: ContractStatus.signed,

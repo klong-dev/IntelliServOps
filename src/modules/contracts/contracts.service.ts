@@ -2748,9 +2748,18 @@ export class ContractsService {
 
   /**
    * Activate contract when deposit has been paid and contract is still valid.
+   * FE test flows can bypass status/deposit/move-in validation by passing
+   * `bypassValidation`, while still refusing already expired contracts.
    */
-  async activateWhenDepositPaid(id: string) {
-    await this.syncExpiredContractsByDate();
+  async activateWhenDepositPaid(
+    id: string,
+    options?: { bypassValidation?: boolean },
+  ) {
+    const bypassValidation = options?.bypassValidation === true;
+
+    if (!bypassValidation) {
+      await this.syncExpiredContractsByDate();
+    }
 
     const contract = await this.prisma.rentalContract.findUnique({
       where: { id },
@@ -2771,7 +2780,17 @@ export class ContractsService {
       throw new NotFoundException('Contract not found');
     }
 
-    if (
+    if (bypassValidation) {
+      if (
+        contract.status !== ContractStatus.draft &&
+        contract.status !== ContractStatus.pending &&
+        contract.status !== ContractStatus.signed
+      ) {
+        throw new ConflictException(
+          'Test activation only supports draft, pending, or signed contracts',
+        );
+      }
+    } else if (
       contract.status !== ContractStatus.pending &&
       contract.status !== ContractStatus.signed
     ) {
@@ -2789,22 +2808,24 @@ export class ContractsService {
       throw new ConflictException('Contract already expired');
     }
 
-    if (contract.startDate > todayStart) {
+    if (!bypassValidation && contract.startDate > todayStart) {
       throw new ConflictException(
         'Contract cannot be activated before move-in date',
       );
     }
 
-    const paidDepositInvoice = await this.prisma.invoice.findFirst({
-      where: {
-        rentalContractId: id,
-        invoiceType: InvoiceType.contractDeposit,
-        status: InvoiceStatus.paid,
-      },
-      select: { id: true, invoiceNumber: true },
-    });
+    const paidDepositInvoice = bypassValidation
+      ? null
+      : await this.prisma.invoice.findFirst({
+          where: {
+            rentalContractId: id,
+            invoiceType: InvoiceType.contractDeposit,
+            status: InvoiceStatus.paid,
+          },
+          select: { id: true, invoiceNumber: true },
+        });
 
-    if (!paidDepositInvoice) {
+    if (!bypassValidation && !paidDepositInvoice) {
       throw new ConflictException(
         'Contract deposit invoice must be paid before activation',
       );
@@ -2854,7 +2875,7 @@ export class ContractsService {
           await this.notifyMembersDoorFirstPassSetup({
             memberUserIds,
             rentalContractId: contract.id,
-            invoiceNumber: paidDepositInvoice.invoiceNumber,
+            invoiceNumber: paidDepositInvoice?.invoiceNumber,
           });
         }
       }

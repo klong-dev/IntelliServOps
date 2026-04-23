@@ -6,6 +6,7 @@ import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { isAbsolute, resolve } from 'path';
 import { randomUUID } from 'crypto';
+import { DEFAULT_AI_FAQ_ENTRIES } from './default-ai-faq';
 
 type FaqEntry = {
   id: string;
@@ -53,6 +54,7 @@ export class ChatAiService {
   private readonly logger = new Logger(ChatAiService.name);
   private faqCache: FaqCache | null = null;
   private hasLoggedDisabledWarning = false;
+  private hasLoggedFaqFallbackWarning = false;
 
   constructor(
     private readonly configService: ConfigService,
@@ -210,6 +212,13 @@ export class ChatAiService {
       ...policyChunks,
       ...faqChunks,
     ];
+
+    if (chunks.length === 0) {
+      const fallbackChunk = await this.getFallbackFaqOverviewChunk();
+      if (fallbackChunk) {
+        chunks.push(fallbackChunk);
+      }
+    }
 
     return chunks
       .sort((a, b) => b.priority - a.priority)
@@ -391,12 +400,13 @@ export class ChatAiService {
     const configuredPath =
       this.configService.get<string>('aiService.faqFile') ||
       'documents/ai/faq.vi.jsonl';
-    const faqPath = isAbsolute(configuredPath)
-      ? configuredPath
-      : resolve(process.cwd(), configuredPath);
+    const faqPath = this.resolveFaqPath(configuredPath);
 
-    if (!existsSync(faqPath)) {
-      return [];
+    if (!faqPath) {
+      this.logFaqFallback(
+        `AI FAQ file not found for configured path "${configuredPath}". Falling back to embedded FAQ seed.`,
+      );
+      return this.getEmbeddedFaqEntries();
     }
 
     const stats = statSync(faqPath);
@@ -408,27 +418,43 @@ export class ChatAiService {
       return this.faqCache.entries;
     }
 
-    const content = await readFile(faqPath, 'utf8');
-    const entries = content
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as FaqEntry)
-      .filter(
-        (entry) =>
-          Boolean(entry.id) &&
-          Boolean(entry.title) &&
-          Boolean(entry.question) &&
-          Boolean(entry.answer),
+    try {
+      const content = await readFile(faqPath, 'utf8');
+      const entries = content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as FaqEntry)
+        .filter(
+          (entry) =>
+            Boolean(entry.id) &&
+            Boolean(entry.title) &&
+            Boolean(entry.question) &&
+            Boolean(entry.answer),
+        );
+
+      if (entries.length === 0) {
+        this.logFaqFallback(
+          `AI FAQ file "${faqPath}" did not contain valid entries. Falling back to embedded FAQ seed.`,
+        );
+        return this.getEmbeddedFaqEntries();
+      }
+
+      this.faqCache = {
+        path: faqPath,
+        mtimeMs: stats.mtimeMs,
+        entries,
+      };
+
+      return entries;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown FAQ read error';
+      this.logFaqFallback(
+        `AI FAQ file "${faqPath}" could not be loaded (${errorMessage}). Falling back to embedded FAQ seed.`,
       );
-
-    this.faqCache = {
-      path: faqPath,
-      mtimeMs: stats.mtimeMs,
-      entries,
-    };
-
-    return entries;
+      return this.getEmbeddedFaqEntries();
+    }
   }
 
   private tokenize(input: string): string[] {
@@ -471,6 +497,62 @@ export class ChatAiService {
     }
 
     return `${value.slice(0, maxLength - 3)}...`;
+  }
+
+  private async getFallbackFaqOverviewChunk(): Promise<AiContextChunk | null> {
+    const entries = await this.loadFaqEntries();
+    if (entries.length === 0) {
+      return null;
+    }
+
+    return {
+      sourceType: 'faq_catalog',
+      title: 'Tong quan cac chu de ho tro co san',
+      content: entries
+        .slice(0, 6)
+        .map(
+          (entry, index) =>
+            `${index + 1}. ${entry.title}: ${entry.question} -> ${entry.answer}`,
+        )
+        .join('\n'),
+      priority: 120,
+    };
+  }
+
+  private resolveFaqPath(configuredPath: string): string | null {
+    const candidatePaths = isAbsolute(configuredPath)
+      ? [configuredPath]
+      : [
+          resolve(process.cwd(), configuredPath),
+          resolve(__dirname, '../../..', configuredPath),
+        ];
+
+    for (const candidatePath of Array.from(new Set(candidatePaths))) {
+      if (existsSync(candidatePath)) {
+        return candidatePath;
+      }
+    }
+
+    return null;
+  }
+
+  private getEmbeddedFaqEntries(): FaqEntry[] {
+    return DEFAULT_AI_FAQ_ENTRIES.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      question: entry.question,
+      answer: entry.answer,
+      tags: [...entry.tags],
+    }));
+  }
+
+  private logFaqFallback(message: string) {
+    if (this.hasLoggedFaqFallbackWarning) {
+      return;
+    }
+
+    this.hasLoggedFaqFallbackWarning = true;
+    this.logger.warn(message);
   }
 
   private async updateConversationAiMetadata(
