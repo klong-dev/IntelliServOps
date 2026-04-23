@@ -21,7 +21,11 @@
     "db:seed": "node -r ts-node/register/transpile-only prisma/seed.ts",
     "db:reset": "npx prisma migrate reset --force",
     "db:backfill:user-apartments": "ts-node prisma/backfill-user-apartments.ts",
-    "db:backfill:user-apartments:dry-run": "ts-node prisma/backfill-user-apartments.ts --dry-run"
+    "db:backfill:user-apartments:dry-run": "ts-node prisma/backfill-user-apartments.ts --dry-run",
+    "ai:smoke": "node scripts/ai-smoke-test.js",
+    "ai-service:install": "npm --prefix services/intellirent-ai-service install",
+    "ai-service:build": "npm --prefix services/intellirent-ai-service run build",
+    "ai-service:start": "npm --prefix services/intellirent-ai-service run start"
   },
   "prisma": {
     "seed": "node -r ts-node/register/transpile-only prisma/seed.ts"

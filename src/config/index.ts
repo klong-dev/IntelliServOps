@@ -6,3 +6,4 @@ export { default as payosConfig } from './payos.config';
 export { default as tuyaConfig } from './tuya.config';
 export { default as supabaseConfig } from './supabase.config';
 export { default as fptAiConfig } from './fpt-ai.config';
+export { default as aiServiceConfig } from './ai-service.config';

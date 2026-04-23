@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
+import { ChatAiService } from './chat-ai.service';
 import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
 
 @Module({
@@ -20,7 +21,7 @@ import { SupabaseStorageService } from '../../shared/services/supabase-storage.s
     }),
   ],
   controllers: [ChatController],
-  providers: [ChatGateway, ChatService, SupabaseStorageService],
+  providers: [ChatGateway, ChatService, ChatAiService, SupabaseStorageService],
   exports: [ChatService],
 })
 export class ChatModule {}

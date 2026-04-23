@@ -14,8 +14,9 @@ import { ConfigService } from '@nestjs/config';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { Server, Socket } from 'socket.io';
-import { SenderType } from '@prisma/client';
+import { MessageType, SenderType } from '@prisma/client';
 import { ChatService } from './chat.service';
+import { ChatAiService } from './chat-ai.service';
 import { SendMessageDto, CreateConversationDto } from './dto';
 
 interface AuthenticatedSocket extends Socket {
@@ -49,6 +50,7 @@ export class ChatGateway
 
   constructor(
     private readonly chatService: ChatService,
+    private readonly chatAiService: ChatAiService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
@@ -282,7 +284,7 @@ export class ChatGateway
       this.server.to(roomId).emit('chat:new_message', message);
 
       // Also notify staff inbox (for conversations list update)
-      this.server.to('staff:inbox').emit('chat:conversation_updated', {
+      this.emitConversationUpdated({
         conversationId: data.conversationId,
         lastMessageAt: message.timestamp,
         lastMessageText:
@@ -292,6 +294,10 @@ export class ChatGateway
         senderName: fullName,
         senderType: actorType,
       });
+
+      if (this.shouldGenerateAiReply(actorType, data)) {
+        void this.generateAiReply(actorType, data, roomId);
+      }
 
       return message;
     } catch (error) {
@@ -399,6 +405,85 @@ export class ChatGateway
 
   private generateGuestSessionId(): string {
     return `guest_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  }
+
+  private shouldGenerateAiReply(
+    actorType: SenderType,
+    dto: SendMessageDto,
+  ): boolean {
+    const eligibleActors: SenderType[] = [SenderType.user, SenderType.guest];
+
+    return (
+      eligibleActors.includes(actorType) &&
+      (dto.messageType === undefined || dto.messageType === MessageType.text) &&
+      dto.content.trim().length > 0
+    );
+  }
+
+  private async generateAiReply(
+    actorType: SenderType,
+    dto: SendMessageDto,
+    roomId: string,
+  ) {
+    const aiResult = await this.chatAiService.generateReply({
+      conversationId: dto.conversationId,
+      actorType,
+      message: dto.content,
+      apartmentId: dto.apartmentId,
+    });
+
+    if (!aiResult) {
+      return;
+    }
+
+    const answer =
+      aiResult.answer?.trim() ||
+      (aiResult.shouldHandoff
+        ? 'Mình đã ghi nhận yêu cầu và sẽ chuyển cho bộ phận hỗ trợ để phản hồi chi tiết hơn.'
+        : '');
+
+    if (!answer) {
+      return;
+    }
+
+    const aiMessage = await this.chatService.sendMessage(
+      {
+        conversationId: dto.conversationId,
+        content: answer,
+        messageType: MessageType.system,
+      },
+      SenderType.system,
+      undefined,
+      'HomeIQ Assistant',
+    );
+
+    this.server.to(roomId).emit('chat:new_message', aiMessage);
+
+    this.emitConversationUpdated({
+      conversationId: dto.conversationId,
+      lastMessageAt: aiMessage.timestamp,
+      lastMessageText:
+        answer.length > 100 ? `${answer.substring(0, 100)}...` : answer,
+      senderName: 'HomeIQ Assistant',
+      senderType: SenderType.system,
+      needsHuman: aiResult.shouldHandoff,
+      handoffReason: aiResult.handoffReason ?? undefined,
+      aiConfidence: aiResult.confidence,
+      aiModel: aiResult.model,
+    });
+
+    if (aiResult.shouldHandoff) {
+      this.server.to('staff:inbox').emit('chat:handoff_requested', {
+        conversationId: dto.conversationId,
+        handoffReason: aiResult.handoffReason ?? 'manual_review_required',
+        confidence: aiResult.confidence,
+        model: aiResult.model,
+      });
+    }
+  }
+
+  private emitConversationUpdated(payload: Record<string, unknown>) {
+    this.server.to('staff:inbox').emit('chat:conversation_updated', payload);
   }
 
   private async setOnlineStatus(
