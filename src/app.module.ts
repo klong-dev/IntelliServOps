@@ -7,6 +7,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 // Config
 import {
   appConfig,
+  aiServiceConfig,
   databaseConfig,
   jwtConfig,
   redisConfig,
@@ -52,6 +53,7 @@ import { AppService } from './app.service';
       isGlobal: true,
       load: [
         appConfig,
+        aiServiceConfig,
         databaseConfig,
         jwtConfig,
         redisConfig,
