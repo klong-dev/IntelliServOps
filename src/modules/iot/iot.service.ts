@@ -41,20 +41,24 @@ import {
   Prisma,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type UtilityMqttTopic = Extract<MqttDeviceTopic, 'electric' | 'water'>;
 const BOARD_ONLINE_WINDOW_MS = 30_000;
 const BOARD_CONTROL_ACK_TIMEOUT_MS = 7000;
 const DOOR_PIN_HASH_BCRYPT_ROUNDS = 12;
 const IOT_BLOCK_OVERDUE_DAYS = 15;
+const FIRE_ALERT_NOTIFICATION_COOLDOWN_MS = 60_000;
 
 @Injectable()
 export class IoTService {
   private readonly logger = new Logger(IoTService.name);
+  private readonly fireAlertNotificationTimestamps = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly ioTMqttService: IoTMqttService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   getGatewayStatus() {
@@ -1610,6 +1614,18 @@ export class IoTService {
       where: { id: event.espId },
       data: { lastOnlineAt: event.receivedAt },
     });
+
+    if (event.type === 'fire' || event.type === 'fire_ack') {
+      try {
+        await this.notifyResidentsForFireAlert(event, devices);
+      } catch (error) {
+        const reason =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.error(
+          `Failed to send fire alert notifications for ${event.espId}: ${reason}`,
+        );
+      }
+    }
   }
 
   @OnEvent('iot.mqtt.telemetry')
@@ -1747,6 +1763,169 @@ export class IoTService {
       );
       return metadata.espId === espId;
     });
+  }
+
+  private async notifyResidentsForFireAlert(
+    event: IoTMqttStatusEvent,
+    devices: Array<{ apartmentId: string | null }>,
+  ) {
+    const notificationKey = `fire-alert:${event.espId}`;
+    if (
+      this.isFireAlertNotificationSuppressed(
+        notificationKey,
+        event.receivedAt,
+      )
+    ) {
+      return;
+    }
+
+    const apartmentIds = new Set(
+      devices
+        .map((device) => device.apartmentId)
+        .filter(
+          (apartmentId): apartmentId is string =>
+            typeof apartmentId === 'string' && apartmentId.length > 0,
+        ),
+    );
+
+    if (apartmentIds.size === 0) {
+      const storedBoard = await this.findStoredBoard(event.espId);
+      if (storedBoard?.apartment?.id) {
+        apartmentIds.add(storedBoard.apartment.id);
+      }
+    }
+
+    if (apartmentIds.size === 0) {
+      this.logger.warn(
+        `Skipping fire alert notification for ${event.espId} because the board is not assigned to an apartment`,
+      );
+      return;
+    }
+
+    const memberships = await this.prisma.userApartment.findMany({
+      where: {
+        apartmentId: { in: Array.from(apartmentIds) },
+        status: 'active',
+      },
+      select: {
+        apartmentId: true,
+        userId: true,
+        apartment: {
+          select: {
+            apartmentNumber: true,
+            streetAddress: true,
+          },
+        },
+      },
+    });
+
+    const recipients = Array.from(
+      new Map(
+        memberships.map((membership) => [
+          `${membership.userId}:${membership.apartmentId}`,
+          membership,
+        ]),
+      ).values(),
+    );
+
+    if (recipients.length === 0) {
+      this.logger.warn(
+        `Skipping fire alert notification for ${event.espId} because no active residents were found`,
+      );
+      return;
+    }
+
+    this.fireAlertNotificationTimestamps.set(
+      notificationKey,
+      event.receivedAt.getTime(),
+    );
+
+    const tasks = recipients.map((recipient) => {
+      const apartmentLabel = this.formatApartmentFireAlertLabel(
+        recipient.apartment?.apartmentNumber ?? null,
+        recipient.apartment?.streetAddress ?? null,
+      );
+      const title =
+        event.type === 'fire'
+          ? 'Fire alert detected'
+          : 'Fire alert acknowledged';
+      const message =
+        event.type === 'fire'
+          ? `A fire alert was detected for ${apartmentLabel} from board ${event.espId}. Please evacuate and contact emergency support immediately if needed.`
+          : `A fire alert acknowledgement was received for ${apartmentLabel} from board ${event.espId}. Please confirm the situation is safe.`;
+
+      return this.notificationsService.createAndPush({
+        recipientType: ActorType.user,
+        recipientId: recipient.userId,
+        notificationType: event.type === 'fire' ? 'error' : 'warning',
+        channel: 'in_app',
+        priority: 'high',
+        title,
+        message,
+        actionUrl: `/apartments/${recipient.apartmentId}`,
+        actionLabel: 'View apartment',
+        relatedEntityType: 'Apartment',
+        relatedEntityId: recipient.apartmentId,
+      });
+    });
+
+    const results = await Promise.allSettled(tasks);
+    const failedCount = results.filter(
+      (result) => result.status === 'rejected',
+    ).length;
+
+    if (failedCount === tasks.length) {
+      this.fireAlertNotificationTimestamps.delete(notificationKey);
+    }
+
+    if (failedCount > 0) {
+      this.logger.error(
+        `Failed to deliver ${failedCount} fire alert notification(s) for ${event.espId}`,
+      );
+    }
+  }
+
+  private isFireAlertNotificationSuppressed(
+    notificationKey: string,
+    receivedAt: Date,
+  ) {
+    const lastNotifiedAt =
+      this.fireAlertNotificationTimestamps.get(notificationKey);
+
+    if (!lastNotifiedAt) {
+      return false;
+    }
+
+    const elapsedMs = receivedAt.getTime() - lastNotifiedAt;
+
+    if (elapsedMs >= FIRE_ALERT_NOTIFICATION_COOLDOWN_MS) {
+      this.fireAlertNotificationTimestamps.delete(notificationKey);
+      return false;
+    }
+
+    this.logger.debug(
+      `Suppressing duplicate fire alert notification for ${notificationKey}`,
+    );
+    return true;
+  }
+
+  private formatApartmentFireAlertLabel(
+    apartmentNumber: string | null,
+    streetAddress: string | null,
+  ) {
+    if (apartmentNumber && streetAddress) {
+      return `apartment ${apartmentNumber} (${streetAddress})`;
+    }
+
+    if (apartmentNumber) {
+      return `apartment ${apartmentNumber}`;
+    }
+
+    if (streetAddress) {
+      return `apartment at ${streetAddress}`;
+    }
+
+    return 'your apartment';
   }
 
   private mergeDeviceRuntimeConfiguration(

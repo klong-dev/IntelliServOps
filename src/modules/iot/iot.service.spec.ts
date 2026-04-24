@@ -9,6 +9,7 @@ import {
 import { IoTService } from './iot.service';
 import { IoTMqttService } from './iot-mqtt.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   createPrismaMock,
   mockStaffJwtPayload,
@@ -20,6 +21,10 @@ import * as bcrypt from 'bcrypt';
 describe('IoTService', () => {
   let service: IoTService;
   let prisma: ReturnType<typeof createPrismaMock>;
+
+  const notificationsService = {
+    createAndPush: jest.fn(),
+  };
 
   const mqttService = {
     getGatewayStatus: jest.fn(),
@@ -125,11 +130,15 @@ describe('IoTService', () => {
         IoTService,
         { provide: PrismaService, useValue: prisma },
         { provide: IoTMqttService, useValue: mqttService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
     service = module.get<IoTService>(IoTService);
     jest.clearAllMocks();
+    notificationsService.createAndPush.mockResolvedValue({
+      id: 'notification-123',
+    });
     prisma.utilityMeter.findMany.mockResolvedValue([] as any);
   });
 
@@ -2315,6 +2324,129 @@ describe('IoTService', () => {
           ],
         }),
       );
+    });
+
+    it('should notify active residents when a fire alert is detected', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        {
+          id: 'device-123',
+          apartmentId: 'apt-123',
+          deviceType: 'alarm',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              topic: 'alarm',
+              deviceId: 3,
+              state: 'OFF',
+            },
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.userApartment.findMany.mockResolvedValue([
+        {
+          apartmentId: 'apt-123',
+          userId: 'user-123',
+          apartment: {
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+        {
+          apartmentId: 'apt-123',
+          userId: 'user-456',
+          apartment: {
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+      ] as any);
+
+      await service.onMqttStatusEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'FIRE',
+        receivedAt: new Date('2026-04-24T06:38:29.000Z'),
+        type: 'fire',
+        deviceTopic: 'alarm',
+        state: 'FIRE',
+      });
+
+      expect(prisma.userApartment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            apartmentId: { in: ['apt-123'] },
+            status: 'active',
+          }),
+        }),
+      );
+      expect(notificationsService.createAndPush).toHaveBeenCalledTimes(2);
+      expect(notificationsService.createAndPush).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          recipientType: 'user',
+          recipientId: 'user-123',
+          notificationType: 'error',
+          channel: 'in_app',
+          priority: 'high',
+          title: 'Fire alert detected',
+          message: expect.stringContaining('apartment A101'),
+          actionUrl: '/apartments/apt-123',
+          relatedEntityType: 'Apartment',
+          relatedEntityId: 'apt-123',
+        }),
+      );
+    });
+
+    it('should suppress duplicate fire notifications during the cooldown window', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        {
+          id: 'device-123',
+          apartmentId: 'apt-123',
+          deviceType: 'alarm',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              topic: 'alarm',
+              deviceId: 3,
+              state: 'OFF',
+            },
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.userApartment.findMany.mockResolvedValue([
+        {
+          apartmentId: 'apt-123',
+          userId: 'user-123',
+          apartment: {
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+      ] as any);
+
+      await service.onMqttStatusEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'FIRE',
+        receivedAt: new Date('2026-04-24T06:38:29.000Z'),
+        type: 'fire',
+        deviceTopic: 'alarm',
+        state: 'FIRE',
+      });
+      await service.onMqttStatusEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'FIRE_ACK',
+        receivedAt: new Date('2026-04-24T06:38:45.000Z'),
+        type: 'fire_ack',
+        deviceTopic: 'alarm',
+        state: 'FIRE_ACK',
+      });
+
+      expect(notificationsService.createAndPush).toHaveBeenCalledTimes(1);
+      expect(prisma.userApartment.findMany).toHaveBeenCalledTimes(1);
     });
 
     it('should sync telemetry into automatic utility readings', async () => {
