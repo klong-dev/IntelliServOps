@@ -305,10 +305,13 @@ describe('MaintenanceService', () => {
       );
     });
 
-    it('should include roomId if provided', async () => {
+    it('should ignore roomId if provided', async () => {
       const user = mockUserJwtPayload();
       const dtoWithRoom = { ...createDto, roomId: 'room-123' };
       const activeContract = { id: 'contract-123' };
+      const createMaintenanceRequest = jest
+        .fn()
+        .mockResolvedValue(mockMaintenanceRequest());
 
       prisma.rentalContract.findFirst.mockResolvedValue(activeContract as any);
       prisma.staff.findMany.mockResolvedValue([{ id: 'staff-maint-1' }] as any);
@@ -319,14 +322,20 @@ describe('MaintenanceService', () => {
             create: jest.fn().mockResolvedValue({ id: 'task-123' }),
           },
           maintenanceRequest: {
-            create: jest.fn().mockResolvedValue(mockMaintenanceRequest()),
+            create: createMaintenanceRequest,
           },
         }),
       );
 
       await service.create(dtoWithRoom, user);
 
-      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(createMaintenanceRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            room: expect.anything(),
+          }),
+        }),
+      );
     });
   });
 

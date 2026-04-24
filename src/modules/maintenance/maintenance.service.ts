@@ -358,12 +358,6 @@ export class MaintenanceService {
               streetAddress: true,
             },
           },
-          room: {
-            select: {
-              roomNumber: true,
-              roomType: true,
-            },
-          },
           assignedTask: {
             select: {
               id: true,
@@ -422,9 +416,6 @@ export class MaintenanceService {
             streetAddress: true,
           },
         },
-        room: {
-          select: { roomNumber: true, roomType: true },
-        },
         user: {
           select: { id: true, fullName: true, phone: true },
         },
@@ -472,7 +463,18 @@ export class MaintenanceService {
         ? await this.resolveWardAddressFromWardCode(request.apartment.wardCode)
         : null;
 
-    const { images, completionImages, ...rest } = request;
+    const {
+      images,
+      completionImages,
+      roomId: _roomId,
+      room: _room,
+      ...rest
+    } = request as typeof request & {
+      roomId?: string | null;
+      room?: unknown;
+    };
+    void _roomId;
+    void _room;
 
     return {
       ...rest,
@@ -510,36 +512,35 @@ export class MaintenanceService {
 
     const assignedStaffId = await this.findBestMaintenanceStaffId();
     const urgency = (createDto.priority as Urgency) || Urgency.medium;
+    const { roomId: _roomId, ...requestPayload } = createDto;
+    void _roomId;
 
     const created = await this.prisma.$transaction(async (tx) => {
       const task = await tx.task.create({
         data: {
-          title: `Maintenance: ${createDto.title}`,
-          description: createDto.description,
+          title: `Maintenance: ${requestPayload.title}`,
+          description: requestPayload.description,
           taskType: TaskType.maintenance,
           priority: this.mapUrgencyToTaskPriority(urgency),
           status: TaskStatus.assigned,
           assignedToStaff: { connect: { id: assignedStaffId } },
-          apartment: { connect: { id: createDto.apartmentId } },
-          attachments: createDto.images as any,
+          apartment: { connect: { id: requestPayload.apartmentId } },
+          attachments: requestPayload.images as any,
         },
         select: { id: true },
       });
 
       return tx.maintenanceRequest.create({
         data: {
-          apartment: { connect: { id: createDto.apartmentId } },
+          apartment: { connect: { id: requestPayload.apartmentId } },
           user: { connect: { id: currentUser.sub } },
           rentalContract: { connect: { id: activeContract!.id } },
-          ...(createDto.roomId && {
-            room: { connect: { id: createDto.roomId } },
-          }),
           assignedTask: { connect: { id: task.id } },
-          title: createDto.title,
-          description: createDto.description,
-          category: createDto.category,
+          title: requestPayload.title,
+          description: requestPayload.description,
+          category: requestPayload.category,
           urgency,
-          images: createDto.images as any,
+          images: requestPayload.images as any,
           status: MaintenanceStatus.submitted,
         },
         select: {
@@ -556,7 +557,7 @@ export class MaintenanceService {
       recipientType: ActorType.staff,
       recipientId: assignedStaffId,
       title: 'Yeu cau bao tri moi',
-      message: `Yeu cau "${createDto.title}" da duoc giao cho ban.`,
+      message: `Yeu cau "${requestPayload.title}" da duoc giao cho ban.`,
       channel: 'in_app',
       priority: 'high',
       notificationType: 'info',
