@@ -7,7 +7,12 @@ import {
   MaxLength,
   IsArray,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
+import {
+  ApiHideProperty,
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+} from '@nestjs/swagger';
 import { MaintenanceCategory, Urgency } from '@prisma/client';
 
 export class CreateMaintenanceDto {
@@ -15,7 +20,8 @@ export class CreateMaintenanceDto {
   @IsUUID()
   apartmentId: string;
 
-  @ApiPropertyOptional({ description: 'Room ID if specific to a room' })
+  // Deprecated: room scope has been removed from maintenance APIs.
+  @ApiHideProperty()
   @IsUUID()
   @IsOptional()
   roomId?: string;

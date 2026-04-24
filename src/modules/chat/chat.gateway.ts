@@ -16,7 +16,6 @@ import type { Cache } from 'cache-manager';
 import { Server, Socket } from 'socket.io';
 import { MessageType, SenderType } from '@prisma/client';
 import { ChatService } from './chat.service';
-import { ChatAiService } from './chat-ai.service';
 import { SendMessageDto, CreateConversationDto } from './dto';
 
 interface AuthenticatedSocket extends Socket {
@@ -32,6 +31,7 @@ interface AuthenticatedSocket extends Socket {
 // Redis key TTL for online status (seconds)
 const ONLINE_TTL = 60;
 const HEARTBEAT_INTERVAL = 30_000; // 30s
+const DIRECT_STAFF_HANDOFF_COOLDOWN_MS = 15_000;
 
 @WebSocketGateway({
   namespace: '/chat',
@@ -47,10 +47,10 @@ export class ChatGateway
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
+  private readonly directStaffRoutingTimestamps = new Map<string, number>();
 
   constructor(
     private readonly chatService: ChatService,
-    private readonly chatAiService: ChatAiService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
@@ -302,9 +302,7 @@ export class ChatGateway
         senderType: actorType,
       });
 
-      if (this.shouldGenerateAiReply(actorType, data)) {
-        void this.generateAiReply(actorType, data, roomId);
-      }
+      this.routeConversationToStaff(actorType, data, roomId, fullName);
 
       return message;
     } catch (error) {
@@ -414,7 +412,7 @@ export class ChatGateway
     return `guest_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
   }
 
-  private shouldGenerateAiReply(
+  private shouldRouteDirectlyToStaff(
     actorType: SenderType,
     dto: SendMessageDto,
   ): boolean {
@@ -427,71 +425,54 @@ export class ChatGateway
     );
   }
 
-  private async generateAiReply(
+  private routeConversationToStaff(
     actorType: SenderType,
     dto: SendMessageDto,
     roomId: string,
+    senderName?: string,
   ) {
-    const aiResult = await this.chatAiService.generateReply({
+    if (!this.shouldRouteDirectlyToStaff(actorType, dto)) {
+      return;
+    }
+
+    if (this.isDirectStaffRoutingSuppressed(dto.conversationId)) {
+      return;
+    }
+
+    this.directStaffRoutingTimestamps.set(dto.conversationId, Date.now());
+
+    const handoffPayload = {
       conversationId: dto.conversationId,
+      handoffReason: 'ai_temporarily_disabled',
+      status: 'connecting',
+      source: 'direct',
       actorType,
-      message: dto.content,
-      apartmentId: dto.apartmentId,
-    });
+      senderName: senderName ?? null,
+      preview:
+        dto.content.length > 100
+          ? `${dto.content.substring(0, 100)}...`
+          : dto.content,
+      apartmentId: dto.apartmentId ?? null,
+    };
 
-    if (!aiResult) {
-      return;
+    this.server.to(roomId).emit('chat:handoff_status', handoffPayload);
+    this.server.to('staff:inbox').emit('chat:handoff_requested', handoffPayload);
+  }
+
+  private isDirectStaffRoutingSuppressed(conversationId: string): boolean {
+    const lastRoutedAt =
+      this.directStaffRoutingTimestamps.get(conversationId) ?? null;
+
+    if (!lastRoutedAt) {
+      return false;
     }
 
-    const answer =
-      aiResult.answer?.trim() ||
-      (aiResult.shouldHandoff
-        ? 'Mình đã ghi nhận yêu cầu và sẽ chuyển cho bộ phận hỗ trợ để phản hồi chi tiết hơn.'
-        : '');
-
-    if (!answer) {
-      return;
+    if (Date.now() - lastRoutedAt >= DIRECT_STAFF_HANDOFF_COOLDOWN_MS) {
+      this.directStaffRoutingTimestamps.delete(conversationId);
+      return false;
     }
 
-    const aiMessage = await this.chatService.sendMessage(
-      {
-        conversationId: dto.conversationId,
-        content: answer,
-        messageType: MessageType.system,
-      },
-      SenderType.system,
-      undefined,
-      'HomeIQ Assistant',
-    );
-
-    this.server.to(roomId).emit('chat:new_message', aiMessage);
-
-    this.emitConversationUpdated({
-      conversationId: dto.conversationId,
-      lastMessageAt: aiMessage.timestamp,
-      lastMessageText:
-        answer.length > 100 ? `${answer.substring(0, 100)}...` : answer,
-      senderName: 'HomeIQ Assistant',
-      senderType: SenderType.system,
-      needsHuman: aiResult.shouldHandoff,
-      handoffReason: aiResult.handoffReason ?? undefined,
-      aiConfidence: aiResult.confidence,
-      aiModel: aiResult.model,
-    });
-
-    if (aiResult.shouldHandoff) {
-      const handoffPayload = {
-        conversationId: dto.conversationId,
-        handoffReason: aiResult.handoffReason ?? 'manual_review_required',
-        confidence: aiResult.confidence,
-        model: aiResult.model,
-        status: 'connecting',
-        source: 'ai',
-      };
-
-      this.server.to(roomId).emit('chat:handoff_status', handoffPayload);
-      this.server.to('staff:inbox').emit('chat:handoff_requested', handoffPayload);
-    }
+    return true;
   }
 
   private emitConversationUpdated(payload: Record<string, unknown>) {

@@ -41,14 +41,6 @@ class MaintenanceApartmentDto {
   address: string | null;
 }
 
-class MaintenanceRoomDto {
-  @ApiProperty({ example: 'R01' })
-  roomNumber: string;
-
-  @ApiProperty({ example: 'bedroom' })
-  roomType: string;
-}
-
 class MaintenanceUserDto {
   @ApiProperty()
   id: string;
@@ -145,9 +137,6 @@ export class MaintenanceHistoryItemDto {
 
   @ApiProperty({ type: MaintenanceApartmentDto })
   apartment: MaintenanceApartmentDto;
-
-  @ApiPropertyOptional({ type: MaintenanceRoomDto, nullable: true })
-  room: MaintenanceRoomDto | null;
 }
 
 // ─── Maintenance Detail DTO (findOne) ───────────────────────────────
@@ -164,9 +153,6 @@ export class MaintenanceDetailDto {
 
   @ApiProperty()
   apartmentId: string;
-
-  @ApiPropertyOptional({ type: String, nullable: true })
-  roomId: string | null;
 
   @ApiProperty({ example: 'hvac' })
   category: string;
@@ -241,9 +227,6 @@ export class MaintenanceDetailDto {
 
   @ApiProperty({ type: MaintenanceApartmentDto })
   apartment: MaintenanceApartmentDto;
-
-  @ApiPropertyOptional({ type: MaintenanceRoomDto, nullable: true })
-  room: MaintenanceRoomDto | null;
 
   @ApiProperty({ type: MaintenanceUserDto })
   user: MaintenanceUserDto;
