@@ -305,6 +305,9 @@ export class UserApartmentsService {
     const assignments = await this.prisma.userApartment.findMany({
       where: {
         userId: currentUser.sub,
+        status: {
+          in: [UserApartmentStatus.active, UserApartmentStatus.inactive],
+        },
       },
       select: this.userApartmentListSelect,
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
