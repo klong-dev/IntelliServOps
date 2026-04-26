@@ -112,6 +112,7 @@ export class NotificationsService {
           actionUrl: actionUrl ?? '',
           relatedEntityType: dto.relatedEntityType ?? '',
           relatedEntityId: dto.relatedEntityId ?? '',
+          ...(dto.data ?? {}),
         },
       ).catch((error) => {
         this.logger.error(

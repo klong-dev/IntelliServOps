@@ -2391,9 +2391,20 @@ describe('IoTService', () => {
           priority: 'high',
           title: 'Fire alert detected',
           message: expect.stringContaining('apartment A101'),
-          actionUrl: '/apartments/apt-123',
+          actionUrl:
+            '/iot/fire-alarm?apartmentId=apt-123&espId=ESP_A101&deviceTopic=alarm&deviceId=3&action=OFF',
+          actionLabel: 'Turn off fire alarm',
           relatedEntityType: 'Apartment',
           relatedEntityId: 'apt-123',
+          data: expect.objectContaining({
+            screen: 'fire_alarm_control',
+            apartmentId: 'apt-123',
+            espId: 'ESP_A101',
+            deviceTopic: 'alarm',
+            deviceId: '3',
+            action: 'OFF',
+            controlEndpoint: '/api/v1/iot/devices/ESP_A101/3',
+          }),
         }),
       );
     });
