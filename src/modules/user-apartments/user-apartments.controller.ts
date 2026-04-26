@@ -92,7 +92,7 @@ export class UserApartmentsController {
         },
       },
       userUpdate: {
-        summary: 'Legacy local house password update',
+        summary: 'Legacy local house password update only',
         value: {
           apartmentDoorPassword: '7890',
         },
@@ -118,13 +118,13 @@ export class UserApartmentsController {
   @Roles(Role.USER)
   @ApiOperation({
     summary:
-      'Legacy endpoint for updating the cached local house password field',
+      'Legacy endpoint for updating the cached local house password field only',
   })
   @ApiBody({
     type: UpdateHousePasswordDto,
     examples: {
       updateHousePassword: {
-        summary: 'Update own apartment door password',
+        summary: 'Update own cached local house password only',
         value: {
           housePassword: '2580',
         },
