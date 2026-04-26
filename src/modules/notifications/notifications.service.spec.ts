@@ -15,6 +15,13 @@ describe('NotificationsService', () => {
   let prisma: MockPrisma;
   const firebase = {
     sendToMultipleDevices: jest.fn().mockResolvedValue([]),
+    getDiagnostics: jest.fn().mockReturnValue({
+      initialized: true,
+      keyPath: 'config/firebase-service-account.json',
+      projectId: 'homeiq-mobile',
+      clientEmail: 'firebase-adminsdk-fbsvc@homeiq-mobile.iam.gserviceaccount.com',
+      appProjectId: 'homeiq-mobile',
+    }),
   };
 
   const mockNotification = (overrides = {}) => ({
@@ -299,6 +306,7 @@ describe('NotificationsService', () => {
       );
       expect(prisma.fcmToken.deleteMany).not.toHaveBeenCalled();
       expect(result).toMatchObject({
+        firebase: expect.objectContaining({ projectId: 'homeiq-mobile' }),
         totalTokens: 2,
         successCount: 1,
         failedCount: 1,

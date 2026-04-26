@@ -6,9 +6,15 @@ import * as fs from 'fs';
 @Injectable()
 export class FirebaseService implements OnModuleInit {
   private readonly logger = new Logger(FirebaseService.name);
+  private firebaseKeyPath: string | null = null;
+  private firebaseProjectId: string | null = null;
+  private firebaseClientEmail: string | null = null;
 
   onModuleInit() {
-    if (admin.apps.length > 0) return;
+    if (admin.apps.length > 0) {
+      this.captureExistingAppDiagnostics();
+      return;
+    }
 
     const keyPath = path.resolve(
       process.cwd(),
@@ -18,21 +24,51 @@ export class FirebaseService implements OnModuleInit {
 
     if (!fs.existsSync(keyPath)) {
       this.logger.warn(
-        `Firebase key not found at ${keyPath} — push notifications disabled`,
+        `Firebase key not found at ${keyPath} - push notifications disabled`,
       );
       return;
     }
 
+    const serviceAccount = JSON.parse(
+      fs.readFileSync(keyPath, 'utf8'),
+    ) as admin.ServiceAccount & {
+      project_id?: string;
+      client_email?: string;
+    };
+
+    this.firebaseKeyPath = keyPath;
+    this.firebaseProjectId = serviceAccount.project_id ?? null;
+    this.firebaseClientEmail = serviceAccount.client_email ?? null;
+
     admin.initializeApp({
-      credential: admin.credential.cert(keyPath),
+      credential: admin.credential.cert(serviceAccount),
+      projectId: this.firebaseProjectId ?? undefined,
     });
 
-    this.logger.log('🔥 Firebase Admin initialized');
+    this.logger.log(
+      `Firebase Admin initialized with projectId=${this.firebaseProjectId ?? 'unknown'} clientEmail=${this.firebaseClientEmail ?? 'unknown'}`,
+    );
+  }
+
+  getDiagnostics() {
+    return {
+      initialized: admin.apps.length > 0,
+      keyPath: this.firebaseKeyPath,
+      projectId: this.firebaseProjectId,
+      clientEmail: this.firebaseClientEmail,
+      appProjectId:
+        admin.apps.length > 0 ? (admin.app().options.projectId ?? null) : null,
+    };
   }
 
   private get messaging(): admin.messaging.Messaging | null {
     if (admin.apps.length === 0) return null;
     return admin.messaging();
+  }
+
+  private captureExistingAppDiagnostics() {
+    const app = admin.app();
+    this.firebaseProjectId = app.options.projectId ?? this.firebaseProjectId;
   }
 
   /**

@@ -178,6 +178,7 @@ export class NotificationsService {
     const tokenList = Array.from(new Set(tokens.map((item) => item.token)));
     if (tokenList.length === 0) {
       return {
+        firebase: this.firebase.getDiagnostics(),
         totalTokens: 0,
         successCount: 0,
         failedCount: 0,
@@ -211,6 +212,7 @@ export class NotificationsService {
     const failedResults = results.filter((item) => !item.success);
 
     return {
+      firebase: this.firebase.getDiagnostics(),
       totalTokens: tokenList.length,
       successCount,
       failedCount: failedResults.length,
