@@ -22,6 +22,7 @@ import {
   NotificationResponseDto,
   RegisterFcmTokenDto,
   RemoveFcmTokenDto,
+  TestPushNotificationDto,
 } from './dto';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { ApiJsonResponse } from '../../common/dto';
@@ -60,6 +61,17 @@ export class NotificationsController {
     return this.notificationsService.removeFcmToken(currentUser, dto.token);
   }
 
+  @Post('test-push-all')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({
+    summary: 'Test FCM push to all registered device tokens',
+    description:
+      'Admin/operator only. Sends a direct Firebase push to every token in fcm_tokens without creating notification records.',
+  })
+  @ApiResponse({ status: 201, description: 'FCM test push result summary' })
+  async sendTestPushToAllDevices(@Body() dto: TestPushNotificationDto) {
+    return this.notificationsService.sendTestPushToAllDevices(dto);
+  }
   // ============================================================================
   // Notifications CRUD
   // ============================================================================
@@ -88,10 +100,10 @@ export class NotificationsController {
 
   @Post()
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Gửi thông báo (chỉ admin/operator)' })
+  @ApiOperation({ summary: 'Gá»­i thĂ´ng bĂ¡o (chá»‰ admin/operator)' })
   @ApiJsonResponse(NotificationResponseDto, {
     status: 201,
-    description: 'Đã gửi thông báo và đẩy FCM',
+    description: 'ÄĂ£ gá»­i thĂ´ng bĂ¡o vĂ  Ä‘áº©y FCM',
   })
   async create(@Body() createDto: CreateNotificationDto) {
     return this.notificationsService.create(createDto);

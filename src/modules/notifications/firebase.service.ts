@@ -78,9 +78,25 @@ export class FirebaseService implements OnModuleInit {
     title: string,
     body: string,
     data?: Record<string, string>,
-  ): Promise<{ token: string; success: boolean }[]> {
-    if (!this.messaging || tokens.length === 0) {
-      return tokens.map((t) => ({ token: t, success: false }));
+  ): Promise<
+    {
+      token: string;
+      success: boolean;
+      errorCode?: string;
+      errorMessage?: string;
+    }[]
+  > {
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    if (!this.messaging) {
+      return tokens.map((t) => ({
+        token: t,
+        success: false,
+        errorCode: 'firebase/not-initialized',
+        errorMessage: 'Firebase Admin SDK is not initialized',
+      }));
     }
 
     const message: admin.messaging.MulticastMessage = {
@@ -102,10 +118,17 @@ export class FirebaseService implements OnModuleInit {
       return response.responses.map((res, idx) => ({
         token: tokens[idx],
         success: res.success,
+        ...(res.error?.code ? { errorCode: res.error.code } : {}),
+        ...(res.error?.message ? { errorMessage: res.error.message } : {}),
       }));
     } catch (error: any) {
       this.logger.error(`FCM multicast failed: ${error.message}`);
-      return tokens.map((t) => ({ token: t, success: false }));
+      return tokens.map((t) => ({
+        token: t,
+        success: false,
+        errorCode: error.code ?? 'firebase/multicast-failed',
+        errorMessage: error.message,
+      }));
     }
   }
 

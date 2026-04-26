@@ -1,7 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FirebaseService } from './firebase.service';
-import { CreateNotificationDto, RegisterFcmTokenDto } from './dto';
+import {
+  CreateNotificationDto,
+  RegisterFcmTokenDto,
+  TestPushNotificationDto,
+} from './dto';
 import { Prisma, DeliveryStatus, ActorType } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 
@@ -160,6 +164,66 @@ export class NotificationsService {
     return { sentCount: succeeded, failedCount: failed };
   }
 
+  async sendTestPushToAllDevices(dto: TestPushNotificationDto) {
+    const tokens = await this.prisma.fcmToken.findMany({
+      select: {
+        token: true,
+        actorType: true,
+        actorId: true,
+        device: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const tokenList = Array.from(new Set(tokens.map((item) => item.token)));
+    if (tokenList.length === 0) {
+      return {
+        totalTokens: 0,
+        successCount: 0,
+        failedCount: 0,
+        invalidTokenCount: 0,
+        results: [],
+      };
+    }
+
+    const results = await this.firebase.sendToMultipleDevices(
+      tokenList,
+      dto.title,
+      dto.message,
+      {
+        type: 'test_push',
+        source: 'notifications.test-push-all',
+        ...(dto.data ?? {}),
+      },
+    );
+
+    const invalidTokens = results
+      .filter((item) => !item.success && this.isInvalidFcmTokenError(item.errorCode))
+      .map((item) => item.token);
+
+    if (invalidTokens.length > 0) {
+      await this.prisma.fcmToken.deleteMany({
+        where: { token: { in: invalidTokens } },
+      });
+    }
+
+    const successCount = results.filter((item) => item.success).length;
+    const failedResults = results.filter((item) => !item.success);
+
+    return {
+      totalTokens: tokenList.length,
+      successCount,
+      failedCount: failedResults.length,
+      invalidTokenCount: invalidTokens.length,
+      failureReason: this.buildFcmFailureReason(failedResults),
+      results: results.map((item) => ({
+        tokenPreview: `${item.token.slice(0, 12)}...`,
+        success: item.success,
+        errorCode: item.errorCode ?? null,
+        errorMessage: item.errorMessage ?? null,
+      })),
+    };
+  }
   // ============================================================================
   // Internal FCM Delivery
   // ============================================================================
@@ -199,15 +263,22 @@ export class NotificationsService {
     );
 
     const successCount = results.filter((r) => r.success).length;
-    const failedTokens = results.filter((r) => !r.success).map((r) => r.token);
+    const failedResults = results.filter((r) => !r.success);
+    const invalidTokens = failedResults
+      .filter((r) => this.isInvalidFcmTokenError(r.errorCode))
+      .map((r) => r.token);
 
-    // Clean up invalid tokens
-    if (failedTokens.length > 0) {
+    // Only remove tokens that Firebase explicitly reports as invalid. Do not
+    // delete registered devices when Firebase is not configured or a transient
+    // network/service error occurs.
+    if (invalidTokens.length > 0) {
       await this.prisma.fcmToken.deleteMany({
-        where: { token: { in: failedTokens } },
+        where: { token: { in: invalidTokens } },
       });
-      this.logger.warn(`Removed ${failedTokens.length} invalid FCM tokens`);
+      this.logger.warn(`Removed ${invalidTokens.length} invalid FCM tokens`);
     }
+
+    const failureReason = this.buildFcmFailureReason(failedResults);
 
     // Update delivery status
     await this.prisma.notification.update({
@@ -216,15 +287,37 @@ export class NotificationsService {
         deliveryStatus:
           successCount > 0 ? DeliveryStatus.delivered : DeliveryStatus.failed,
         failureReason:
-          successCount === 0
-            ? `All ${tokenList.length} FCM sends failed`
-            : undefined,
+          successCount === 0 ? failureReason ?? 'All FCM sends failed' : undefined,
       },
     });
 
     this.logger.debug(
       `Push ${notificationId}: ${successCount}/${tokenList.length} delivered`,
     );
+  }
+
+  private isInvalidFcmTokenError(errorCode?: string) {
+    return [
+      'messaging/invalid-registration-token',
+      'messaging/registration-token-not-registered',
+      'messaging/invalid-argument',
+    ].includes(errorCode ?? '');
+  }
+
+  private buildFcmFailureReason(
+    failedResults: Array<{
+      errorCode?: string;
+      errorMessage?: string;
+    }>,
+  ) {
+    if (failedResults.length === 0) {
+      return undefined;
+    }
+
+    const first = failedResults[0];
+    const code = first.errorCode ?? 'unknown';
+    const message = first.errorMessage ?? 'FCM send failed';
+    return `All ${failedResults.length} FCM sends failed: ${code} - ${message}`;
   }
 
   // ============================================================================
