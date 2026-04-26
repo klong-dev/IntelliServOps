@@ -1604,6 +1604,7 @@ export class ApartmentsService {
         images: true,
         buildingName: true,
         apartmentNumber: true,
+        status: true,
       },
     });
 
@@ -1617,6 +1618,27 @@ export class ApartmentsService {
       apartment.ownerId !== currentUser.sub
     ) {
       throw new ForbiddenException('You can only update your own apartments');
+    }
+
+    // Do not allow bypassing cooperation signing flow via generic apartment update.
+    if (
+      updateDto.status === ApartmentStatus.available &&
+      apartment.status === this.cooperationPendingStatus
+    ) {
+      const pendingCooperationContract =
+        await this.prisma.partnerCooperationContract.findFirst({
+          where: {
+            apartmentId: id,
+            status: PartnerCooperationContractStatus.pending,
+          },
+          select: { id: true },
+        });
+
+      if (pendingCooperationContract) {
+        throw new BadRequestException(
+          'Cannot set apartment to available while cooperation contract is pending partner signature',
+        );
+      }
     }
 
     // Auto-resolve province code if wardCode is being updated

@@ -556,7 +556,7 @@ export class UserApartmentListItemDto {
   @ApiProperty({
     example: true,
     description:
-      'True when the apartment door PIN has not been initialized yet and the tenant must set it on first use.',
+      'True only when a matching door smart-lock exists and its PIN has not been initialized yet. Apartments without a door smart-lock return false.',
   })
   isFirstPass!: boolean;
 

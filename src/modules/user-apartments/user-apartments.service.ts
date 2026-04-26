@@ -396,7 +396,9 @@ export class UserApartmentsService {
       const doorDevice = doorDeviceByApartment.get(assignment.apartmentId);
       return {
         ...assignment,
-        isFirstPass: !this.readDoorPinHash(doorDevice?.configuration),
+        isFirstPass: doorDevice
+          ? !this.readDoorPinHash(doorDevice.configuration)
+          : false,
       };
     });
   }

@@ -4,7 +4,8 @@ import { IsOptional, IsString, MaxLength } from 'class-validator';
 export class UpdateUserApartmentAccessDto {
   @ApiPropertyOptional({
     example: '2580',
-    description: 'Apartment door password/PIN',
+    description:
+      'Legacy cached local house password field. This does not control smart-lock first-pass PIN state.',
   })
   @IsOptional()
   @IsString()
