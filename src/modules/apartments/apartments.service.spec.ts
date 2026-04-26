@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ApartmentsService } from './apartments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractPdfService } from '../contracts/contract-pdf.service';
@@ -319,6 +323,30 @@ describe('ApartmentsService', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('should block operator from setting apartment available while cooperation contract is pending signature', async () => {
+    prisma.apartment.findUnique.mockResolvedValue({
+      id: 'apt-123',
+      ownerId: 'partner-123',
+      images: [],
+      buildingName: 'Vinhomes Central Park',
+      apartmentNumber: 'A-1501',
+      status: 'pending',
+    } as any);
+    prisma.partnerCooperationContract.findFirst.mockResolvedValue({
+      id: 'coop-123',
+    } as any);
+
+    await expect(
+      service.update(
+        'apt-123',
+        { status: ApartmentStatus.available },
+        mockAdminJwtPayload(),
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prisma.apartment.update).not.toHaveBeenCalled();
+  });
+
   it('should append uploaded images when updating an apartment', async () => {
     prisma.apartment.findUnique.mockResolvedValue({
       id: 'apt-123',
@@ -582,7 +610,7 @@ describe('ApartmentsService', () => {
     );
   });
 
-  it('should approve apartment as admin/operator flow', async () => {
+  it('should update apartment status', async () => {
     prisma.apartment.update.mockResolvedValue({
       id: 'apt-123',
       apartmentNumber: 'A-1501',
@@ -590,9 +618,20 @@ describe('ApartmentsService', () => {
       approvedAt: new Date(),
     } as any);
 
-    const result = await service.approve('apt-123', mockAdminJwtPayload().sub);
+    const result = await service.updateStatus(
+      'apt-123',
+      ApartmentStatus.available,
+    );
 
     expect(result.status).toBe(ApartmentStatus.available);
-    expect(result.approvedAt).toBeDefined();
+    expect(prisma.apartment.update).toHaveBeenCalledWith({
+      where: { id: 'apt-123' },
+      data: { status: ApartmentStatus.available },
+      select: {
+        id: true,
+        apartmentNumber: true,
+        status: true,
+      },
+    });
   });
 });
