@@ -1767,7 +1767,11 @@ export class IoTService {
 
   private async notifyResidentsForFireAlert(
     event: IoTMqttStatusEvent,
-    devices: Array<{ apartmentId: string | null }>,
+    devices: Array<{
+      apartmentId: string | null;
+      configuration: Prisma.JsonValue;
+      deviceType: IoTDeviceType;
+    }>,
   ) {
     const notificationKey = `fire-alert:${event.espId}`;
     if (
@@ -1840,6 +1844,8 @@ export class IoTService {
       event.receivedAt.getTime(),
     );
 
+    const fireAlarmTarget = this.findFireAlarmControlTarget(event, devices);
+
     const tasks = recipients.map((recipient) => {
       const apartmentLabel = this.formatApartmentFireAlertLabel(
         recipient.apartment?.apartmentNumber ?? null,
@@ -1853,6 +1859,11 @@ export class IoTService {
         event.type === 'fire'
           ? `A fire alert was detected for ${apartmentLabel} from board ${event.espId}. Please evacuate and contact emergency support immediately if needed.`
           : `A fire alert acknowledgement was received for ${apartmentLabel} from board ${event.espId}. Please confirm the situation is safe.`;
+      const actionUrl = this.buildFireAlarmActionUrl(
+        recipient.apartmentId,
+        event,
+        fireAlarmTarget.deviceId,
+      );
 
       return this.notificationsService.createAndPush({
         recipientType: ActorType.user,
@@ -1862,10 +1873,22 @@ export class IoTService {
         priority: 'high',
         title,
         message,
-        actionUrl: `/apartments/${recipient.apartmentId}`,
-        actionLabel: 'View apartment',
+        actionUrl,
+        actionLabel:
+          event.type === 'fire' ? 'Turn off fire alarm' : 'Review fire alarm',
         relatedEntityType: 'Apartment',
         relatedEntityId: recipient.apartmentId,
+        data: {
+          eventType: event.type,
+          screen: 'fire_alarm_control',
+          actionUrl,
+          apartmentId: recipient.apartmentId,
+          espId: event.espId,
+          deviceTopic: 'alarm',
+          deviceId: String(fireAlarmTarget.deviceId),
+          action: 'OFF',
+          controlEndpoint: `/api/v1/iot/devices/${event.espId}/${fireAlarmTarget.deviceId}`,
+        },
       });
     });
 
@@ -1885,6 +1908,52 @@ export class IoTService {
     }
   }
 
+  private findFireAlarmControlTarget(
+    event: IoTMqttStatusEvent,
+    devices: Array<{
+      configuration: Prisma.JsonValue;
+      deviceType: IoTDeviceType;
+    }>,
+  ) {
+    const matchingAlarmDevice = devices.find((device) => {
+      const metadata = this.extractMqttMetadata(
+        device.configuration,
+        device.deviceType,
+      );
+
+      return (
+        metadata.topic === 'alarm' &&
+        (event.deviceId === undefined || metadata.deviceId === event.deviceId)
+      );
+    });
+
+    if (matchingAlarmDevice) {
+      const metadata = this.extractMqttMetadata(
+        matchingAlarmDevice.configuration,
+        matchingAlarmDevice.deviceType,
+      );
+
+      return { deviceId: metadata.deviceId ?? event.deviceId ?? 1 };
+    }
+
+    return { deviceId: event.deviceId ?? 1 };
+  }
+
+  private buildFireAlarmActionUrl(
+    apartmentId: string,
+    event: IoTMqttStatusEvent,
+    deviceId: number,
+  ) {
+    const query = new URLSearchParams({
+      apartmentId,
+      espId: event.espId,
+      deviceTopic: 'alarm',
+      deviceId: String(deviceId),
+      action: 'OFF',
+    });
+
+    return `/iot/fire-alarm?${query.toString()}`;
+  }
   private isFireAlertNotificationSuppressed(
     notificationKey: string,
     receivedAt: Date,

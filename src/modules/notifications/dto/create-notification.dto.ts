@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsUUID,
   MaxLength,
+  IsObject,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -65,4 +66,12 @@ export class CreateNotificationDto {
   @IsUUID()
   @IsOptional()
   relatedEntityId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Additional FCM data payload for mobile deep links',
+    example: { screen: 'fire_alarm_control', apartmentId: 'apt-123' },
+  })
+  @IsObject()
+  @IsOptional()
+  data?: Record<string, string>;
 }
