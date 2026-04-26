@@ -201,8 +201,111 @@ describe('NotificationsService', () => {
         }),
       );
     });
+
+    it('should not delete registered tokens when Firebase is not initialized', async () => {
+      const createDto = {
+        recipientType: ActorType.user,
+        recipientId: 'user-123',
+        notificationType: 'general' as any,
+        channel: 'push' as any,
+        title: 'Test',
+        message: 'Test message',
+      };
+      prisma.notification.create.mockResolvedValue(mockNotification() as any);
+      prisma.fcmToken.findMany.mockResolvedValue([{ token: 'fcm-token-1' }] as any);
+      firebase.sendToMultipleDevices.mockResolvedValueOnce([
+        {
+          token: 'fcm-token-1',
+          success: false,
+          errorCode: 'firebase/not-initialized',
+          errorMessage: 'Firebase Admin SDK is not initialized',
+        },
+      ]);
+
+      await service.create(createDto);
+      await new Promise(process.nextTick);
+
+      expect(prisma.fcmToken.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.notification.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            deliveryStatus: DeliveryStatus.failed,
+            failureReason: expect.stringContaining('firebase/not-initialized'),
+          }),
+        }),
+      );
+    });
+
+    it('should delete tokens only when Firebase reports them invalid', async () => {
+      const createDto = {
+        recipientType: ActorType.user,
+        recipientId: 'user-123',
+        notificationType: 'general' as any,
+        channel: 'push' as any,
+        title: 'Test',
+        message: 'Test message',
+      };
+      prisma.notification.create.mockResolvedValue(mockNotification() as any);
+      prisma.fcmToken.findMany.mockResolvedValue([{ token: 'bad-token' }] as any);
+      firebase.sendToMultipleDevices.mockResolvedValueOnce([
+        {
+          token: 'bad-token',
+          success: false,
+          errorCode: 'messaging/registration-token-not-registered',
+          errorMessage: 'Requested entity was not found.',
+        },
+      ]);
+
+      await service.create(createDto);
+      await new Promise(process.nextTick);
+
+      expect(prisma.fcmToken.deleteMany).toHaveBeenCalledWith({
+        where: { token: { in: ['bad-token'] } },
+      });
+    });
   });
 
+  describe('sendTestPushToAllDevices', () => {
+    it('should send test push to all registered FCM tokens', async () => {
+      prisma.fcmToken.findMany.mockResolvedValue([
+        { token: 'token-1', actorType: ActorType.user, actorId: 'user-1', device: 'android-1' },
+        { token: 'token-2', actorType: ActorType.user, actorId: 'user-2', device: 'android-2' },
+      ] as any);
+      firebase.sendToMultipleDevices.mockResolvedValueOnce([
+        { token: 'token-1', success: true },
+        {
+          token: 'token-2',
+          success: false,
+          errorCode: 'firebase/not-initialized',
+          errorMessage: 'Firebase Admin SDK is not initialized',
+        },
+      ]);
+
+      const result = await service.sendTestPushToAllDevices({
+        title: 'Test push',
+        message: 'Hello devices',
+        data: { screen: 'notifications' },
+      });
+
+      expect(firebase.sendToMultipleDevices).toHaveBeenCalledWith(
+        ['token-1', 'token-2'],
+        'Test push',
+        'Hello devices',
+        expect.objectContaining({
+          type: 'test_push',
+          source: 'notifications.test-push-all',
+          screen: 'notifications',
+        }),
+      );
+      expect(prisma.fcmToken.deleteMany).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        totalTokens: 2,
+        successCount: 1,
+        failedCount: 1,
+        invalidTokenCount: 0,
+      });
+    });
+  });
   describe('findAll', () => {
     it('should return all notifications', async () => {
       const notifications = [mockNotification()];
