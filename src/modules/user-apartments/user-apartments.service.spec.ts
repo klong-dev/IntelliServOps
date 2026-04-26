@@ -72,6 +72,24 @@ describe('UserApartmentsService', () => {
     });
   });
 
+  it('only queries active or inactive user-apartment assignments for current user', async () => {
+    prisma.userApartment.findMany.mockResolvedValue([baseAssignment()] as any);
+    prisma.ioTDevice.findMany.mockResolvedValue([] as any);
+
+    await service.findMy(mockUserJwtPayload());
+
+    expect(prisma.userApartment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId: 'user-123',
+          status: {
+            in: [UserApartmentStatus.active, UserApartmentStatus.inactive],
+          },
+        },
+      }),
+    );
+  });
+
   it('returns isFirstPass true when a door smart lock exists without pinHash', async () => {
     prisma.userApartment.findMany.mockResolvedValue([baseAssignment()] as any);
     prisma.ioTDevice.findMany.mockResolvedValue([
