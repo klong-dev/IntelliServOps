@@ -1853,12 +1853,12 @@ export class IoTService {
       );
       const title =
         event.type === 'fire'
-          ? 'Fire alert detected'
-          : 'Fire alert acknowledged';
+          ? 'Cảnh báo cháy'
+          : 'Đã ghi nhận cảnh báo cháy';
       const message =
         event.type === 'fire'
-          ? `A fire alert was detected for ${apartmentLabel} from board ${event.espId}. Please evacuate and contact emergency support immediately if needed.`
-          : `A fire alert acknowledgement was received for ${apartmentLabel} from board ${event.espId}. Please confirm the situation is safe.`;
+          ? `Phát hiện cảnh báo cháy tại ${apartmentLabel} từ mạch ${event.espId}. Vui lòng kiểm tra ngay và tắt báo cháy khi đã an toàn.`
+          : `Mạch ${event.espId} đã ghi nhận xác nhận cảnh báo cháy tại ${apartmentLabel}. Vui lòng kiểm tra lại tình trạng an toàn.`;
       const actionUrl = this.buildFireAlarmActionUrl(
         recipient.apartmentId,
         event,
@@ -1875,10 +1875,11 @@ export class IoTService {
         message,
         actionUrl,
         actionLabel:
-          event.type === 'fire' ? 'Turn off fire alarm' : 'Review fire alarm',
+          event.type === 'fire' ? 'Tắt báo cháy' : 'Kiểm tra báo cháy',
         relatedEntityType: 'Apartment',
         relatedEntityId: recipient.apartmentId,
         data: {
+          type: 'fire_alarm',
           eventType: event.type,
           screen: 'fire_alarm_control',
           actionUrl,
@@ -1983,11 +1984,11 @@ export class IoTService {
     streetAddress: string | null,
   ) {
     if (apartmentNumber && streetAddress) {
-      return `apartment ${apartmentNumber} (${streetAddress})`;
+      return `căn hộ ${apartmentNumber} (${streetAddress})`;
     }
 
     if (apartmentNumber) {
-      return `apartment ${apartmentNumber}`;
+      return `căn hộ ${apartmentNumber}`;
     }
 
     if (streetAddress) {

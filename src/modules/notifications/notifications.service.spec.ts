@@ -273,6 +273,24 @@ describe('NotificationsService', () => {
   });
 
   describe('sendTestPushToAllDevices', () => {
+    it('should explain when no FCM tokens are registered', async () => {
+      prisma.fcmToken.findMany.mockResolvedValue([] as any);
+
+      const result = await service.sendTestPushToAllDevices({
+        title: 'Test push',
+        message: 'Hello devices',
+      });
+
+      expect(firebase.sendToMultipleDevices).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        totalTokens: 0,
+        successCount: 0,
+        failedCount: 0,
+        invalidTokenCount: 0,
+        failureReason: 'No FCM tokens registered',
+        results: [],
+      });
+    });
     it('should send test push to all registered FCM tokens', async () => {
       prisma.fcmToken.findMany.mockResolvedValue([
         { token: 'token-1', actorType: ActorType.user, actorId: 'user-1', device: 'android-1' },
