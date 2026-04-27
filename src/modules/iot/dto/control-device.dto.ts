@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
 import { MQTT_DEVICE_TOPICS } from '../iot-mqtt.types';
 
 export const IOT_DEVICE_CONTROL_ACTIONS = [
@@ -64,4 +64,29 @@ export class DirectMqttControlDto {
   })
   @IsIn(IOT_DIRECT_MQTT_ACTIONS)
   action: (typeof IOT_DIRECT_MQTT_ACTIONS)[number];
+}
+
+
+export class FakeFireAlertDto {
+  @ApiProperty({
+    example: 'ESP_A101',
+    description: 'ESP board id to fake a FIRE status event for',
+  })
+  espId: string;
+
+  @ApiProperty({
+    required: false,
+    example: 3,
+    description:
+      'Optional alarm device channel id. If omitted, backend uses the alarm device configured for the board.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  })
+  @IsInt()
+  @Min(1)
+  deviceId?: number;
 }

@@ -1546,6 +1546,29 @@ export class IoTService {
     });
   }
 
+  async fakeFireAlert(espId: string, deviceId?: number) {
+    const receivedAt = new Date();
+    await this.onMqttStatusEvent({
+      espId,
+      rawTopic: `HOMEIQ/${espId}/status`,
+      message: 'FIRE',
+      receivedAt,
+      type: 'fire',
+      deviceTopic: 'alarm',
+      ...(deviceId ? { deviceId } : {}),
+      state: 'FIRE',
+    });
+
+    return {
+      success: true,
+      espId,
+      deviceTopic: 'alarm',
+      deviceId: deviceId ?? null,
+      message:
+        'Fake fire alert dispatched. Matching active residents will receive push notifications.',
+      emittedAt: receivedAt,
+    };
+  }
   @OnEvent('iot.mqtt.status')
   async onMqttStatusEvent(event: IoTMqttStatusEvent) {
     const devices = await this.findDevicesByEspId(event.espId);
