@@ -2389,14 +2389,15 @@ describe('IoTService', () => {
           notificationType: 'error',
           channel: 'in_app',
           priority: 'high',
-          title: 'Fire alert detected',
-          message: expect.stringContaining('apartment A101'),
+          title: 'Cảnh báo cháy',
+          message: expect.stringContaining('cảnh báo cháy tại căn hộ A101'),
           actionUrl:
             '/iot/fire-alarm?apartmentId=apt-123&espId=ESP_A101&deviceTopic=alarm&deviceId=3&action=OFF',
-          actionLabel: 'Turn off fire alarm',
+          actionLabel: 'Tắt báo cháy',
           relatedEntityType: 'Apartment',
           relatedEntityId: 'apt-123',
           data: expect.objectContaining({
+            type: 'fire_alarm',
             screen: 'fire_alarm_control',
             apartmentId: 'apt-123',
             espId: 'ESP_A101',

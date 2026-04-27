@@ -178,12 +178,14 @@ export class NotificationsService {
 
     const tokenList = Array.from(new Set(tokens.map((item) => item.token)));
     if (tokenList.length === 0) {
+      this.logger.warn('Test push skipped because no FCM tokens are registered');
       return {
         firebase: this.firebase.getDiagnostics(),
         totalTokens: 0,
         successCount: 0,
         failedCount: 0,
         invalidTokenCount: 0,
+        failureReason: 'No FCM tokens registered',
         results: [],
       };
     }
