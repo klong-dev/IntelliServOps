@@ -17,6 +17,7 @@ import {
   DoorHistoryListDto,
   DoorHistoryQueryDto,
   DirectMqttControlDto,
+  FakeFireAlertDto,
   IoTBoardDeleteResultDto,
   IoTBoardDeviceDeleteResultDto,
   IoTBoardDeviceControlResultDto,
@@ -43,6 +44,16 @@ import type { JwtPayload } from '../auth/auth.service';
 @Controller('iot')
 export class IoTController {
   constructor(private readonly iotService: IoTService) {}
+
+  @Post('test/fire-alert')
+  @Public()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Fake a FIRE MQTT status event to test resident push notifications',
+  })
+  async fakeFireAlert(@Body() body: FakeFireAlertDto) {
+    return this.iotService.fakeFireAlert(body.espId, body.deviceId);
+  }
 
   @Get('devices/:espId/check-health')
   @Public()

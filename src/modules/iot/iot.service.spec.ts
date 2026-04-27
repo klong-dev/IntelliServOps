@@ -2270,6 +2270,58 @@ describe('IoTService', () => {
     });
   });
 
+  describe('fakeFireAlert', () => {
+    it('should dispatch a fake fire alert through the MQTT status handler', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        {
+          id: 'device-123',
+          apartmentId: 'apt-123',
+          deviceType: 'alarm',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              topic: 'alarm',
+              deviceId: 3,
+              state: 'OFF',
+            },
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.userApartment.findMany.mockResolvedValue([
+        {
+          apartmentId: 'apt-123',
+          userId: 'user-123',
+          apartment: {
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+      ] as any);
+
+      const result = await service.fakeFireAlert('ESP_A101', 3);
+
+      expect(result).toMatchObject({
+        success: true,
+        espId: 'ESP_A101',
+        deviceTopic: 'alarm',
+        deviceId: 3,
+      });
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientId: 'user-123',
+          title: 'Cảnh báo cháy',
+          data: expect.objectContaining({
+            type: 'fire_alarm',
+            screen: 'fire_alarm_control',
+            espId: 'ESP_A101',
+            deviceId: '3',
+          }),
+        }),
+      );
+    });
+  });
+
   describe('mqtt event handlers', () => {
     it('should update device runtime state on MQTT status events', async () => {
       prisma.ioTDevice.findMany.mockResolvedValue([
