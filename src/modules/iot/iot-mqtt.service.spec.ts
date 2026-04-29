@@ -21,7 +21,14 @@ describe('IoTMqttService', () => {
     const client = {
       connected,
       publish: jest.fn(),
-      subscribe: jest.fn((topic, callback) => callback?.()),
+      subscribe: jest.fn((topic, options, callback) => {
+        if (typeof options === 'function') {
+          options();
+          return;
+        }
+
+        callback?.();
+      }),
       on: jest.fn((event: string, handler: (...args: any[]) => void) => {
         handlers[event] = handler;
         return client;
@@ -240,6 +247,60 @@ describe('IoTMqttService', () => {
       expect.objectContaining({
         espId: 'ESP_A101',
         type: 'door_password_requested',
+      }),
+    );
+  });
+
+  it('should subscribe to MQTT topics with QoS 1 for more reliable status delivery', () => {
+    const { client } = createService();
+
+    client.handlers.connect();
+
+    expect(client.subscribe).toHaveBeenCalledWith(
+      'HOMEIQ/+/status',
+      { qos: 1 },
+      expect.any(Function),
+    );
+    expect(client.subscribe).toHaveBeenCalledWith(
+      'HOMEIQ/+/telemetry',
+      { qos: 1 },
+      expect.any(Function),
+    );
+  });
+
+  it('should parse fire alert payloads with device ids', () => {
+    const { client, eventEmitter } = createService();
+
+    client.handlers.message('HOMEIQ/ESP_A101/status', Buffer.from('FIRE_3'));
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'iot.mqtt.status',
+      expect.objectContaining({
+        espId: 'ESP_A101',
+        type: 'fire',
+        deviceTopic: 'alarm',
+        deviceId: 3,
+        state: 'FIRE',
+      }),
+    );
+  });
+
+  it('should parse JSON fire ACK payloads', () => {
+    const { client, eventEmitter } = createService();
+
+    client.handlers.message(
+      'HOMEIQ/ESP_A101/status',
+      Buffer.from('{"event":"FIRE_ACK","deviceId":3}'),
+    );
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'iot.mqtt.status',
+      expect.objectContaining({
+        espId: 'ESP_A101',
+        type: 'fire_ack',
+        deviceTopic: 'alarm',
+        deviceId: 3,
+        state: 'FIRE_ACK',
       }),
     );
   });

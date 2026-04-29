@@ -1574,6 +1574,12 @@ export class IoTService {
     const devices = await this.findDevicesByEspId(event.espId);
 
     if (devices.length === 0) {
+      if (event.type === 'fire' || event.type === 'fire_ack') {
+        this.logger.warn(
+          `No IoT device mapping found for fire alert from ${event.espId}; falling back to board apartment mapping`,
+        );
+        await this.notifyResidentsForFireAlert(event, []);
+      }
       return;
     }
 
@@ -1796,7 +1802,7 @@ export class IoTService {
       deviceType: IoTDeviceType;
     }>,
   ) {
-    const notificationKey = `fire-alert:${event.espId}`;
+    const notificationKey = `fire-alert:${event.espId}:${event.type}`;
     if (
       this.isFireAlertNotificationSuppressed(
         notificationKey,
@@ -1861,6 +1867,10 @@ export class IoTService {
       );
       return;
     }
+
+    this.logger.log(
+      `Dispatching ${event.type} notification for ${event.espId} to ${recipients.length} active resident(s)`,
+    );
 
     this.fireAlertNotificationTimestamps.set(
       notificationKey,
