@@ -26,6 +26,7 @@ const MQTT_STATUS_TOPIC_DEFAULT = 'HOMEIQ/+/status';
 const MQTT_TELEMETRY_TOPIC_DEFAULT = 'HOMEIQ/+/telemetry';
 const MQTT_RECONNECT_PERIOD_MS = 2000;
 const MQTT_CONNECT_TIMEOUT_MS = 10_000;
+const MQTT_SUBSCRIBE_QOS = 1;
 const DEFAULT_TEST_HOLD_MS = 2000;
 const DEFAULT_CONTROL_ACK_TIMEOUT_MS = 5000;
 const MQTT_ALLOW_DEFAULT_DOOR_PASSWORD_FALLBACK = 'MQTT_ALLOW_DEFAULT_DOOR_PASSWORD_FALLBACK';
@@ -84,7 +85,7 @@ export class IoTMqttService implements OnModuleDestroy {
       this.logger.log(`Connected to MQTT broker ${this.brokerUrl}`);
 
       [this.statusTopic, this.telemetryTopic].forEach((topic) => {
-        this.client?.subscribe(topic, (error) => {
+        this.client?.subscribe(topic, { qos: MQTT_SUBSCRIBE_QOS }, (error) => {
           if (error) {
             this.logger.error(
               `Failed to subscribe to MQTT topic ${topic}: ${error.message}`,
@@ -92,7 +93,9 @@ export class IoTMqttService implements OnModuleDestroy {
             return;
           }
 
-          this.logger.log(`Subscribed to MQTT topic ${topic}`);
+          this.logger.log(
+            `Subscribed to MQTT topic ${topic} with QoS ${MQTT_SUBSCRIBE_QOS}`,
+          );
         });
       });
     });
@@ -629,27 +632,19 @@ export class IoTMqttService implements OnModuleDestroy {
       };
     }
 
-    if (upperMessage === MQTT_MESSAGE_FIRE) {
+    const fireStatus = this.parseFireStatusMessage(normalizedMessage);
+    if (fireStatus) {
       return {
         espId,
         rawTopic: topic,
         message: normalizedMessage,
         receivedAt,
-        type: 'fire',
+        type: fireStatus.type,
         deviceTopic: 'alarm',
-        state: 'FIRE',
-      };
-    }
-
-    if (upperMessage === MQTT_MESSAGE_FIRE_ACK) {
-      return {
-        espId,
-        rawTopic: topic,
-        message: normalizedMessage,
-        receivedAt,
-        type: 'fire_ack',
-        deviceTopic: 'alarm',
-        state: 'FIRE_ACK',
+        ...(fireStatus.deviceId !== undefined
+          ? { deviceId: fireStatus.deviceId }
+          : {}),
+        state: fireStatus.state,
       };
     }
 
@@ -783,6 +778,81 @@ export class IoTMqttService implements OnModuleDestroy {
       ...(deviceIdToken ? { deviceId: Number(deviceIdToken) } : {}),
       ...(state ? { state } : {}),
     };
+  }
+
+  private parseFireStatusMessage(message: string):
+    | {
+        type: 'fire' | 'fire_ack';
+        state: 'FIRE' | 'FIRE_ACK';
+        deviceId?: number;
+      }
+    | null {
+    const parsedJson = this.tryParseJsonObject(message);
+
+    if (parsedJson) {
+      const rawEvent =
+        parsedJson.event ??
+        parsedJson.type ??
+        parsedJson.status ??
+        parsedJson.state ??
+        parsedJson.message ??
+        parsedJson.action;
+      const normalizedEvent =
+        typeof rawEvent === 'string' ? rawEvent.trim().toUpperCase() : '';
+      const deviceId = this.readPositiveIntegerFromUnknown(
+        parsedJson.deviceId ?? parsedJson.id ?? parsedJson.channelId,
+      );
+
+      if (normalizedEvent === MQTT_MESSAGE_FIRE) {
+        return {
+          type: 'fire',
+          state: 'FIRE',
+          ...(deviceId !== undefined ? { deviceId } : {}),
+        };
+      }
+
+      if (normalizedEvent === MQTT_MESSAGE_FIRE_ACK) {
+        return {
+          type: 'fire_ack',
+          state: 'FIRE_ACK',
+          ...(deviceId !== undefined ? { deviceId } : {}),
+        };
+      }
+
+      return null;
+    }
+
+    const tokens = message
+      .trim()
+      .toUpperCase()
+      .split(/[^A-Z0-9]+/)
+      .filter(Boolean);
+
+    if (tokens.length === 0) {
+      return null;
+    }
+
+    const deviceId = tokens
+      .map((token) => Number.parseInt(token, 10))
+      .find((value) => Number.isInteger(value) && value > 0);
+
+    if (tokens.includes('FIRE') && tokens.includes('ACK')) {
+      return {
+        type: 'fire_ack',
+        state: 'FIRE_ACK',
+        ...(deviceId !== undefined ? { deviceId } : {}),
+      };
+    }
+
+    if (tokens.includes('FIRE')) {
+      return {
+        type: 'fire',
+        state: 'FIRE',
+        ...(deviceId !== undefined ? { deviceId } : {}),
+      };
+    }
+
+    return null;
   }
 
   private parseDoorPinUpdateStatusMessage(message: string): {

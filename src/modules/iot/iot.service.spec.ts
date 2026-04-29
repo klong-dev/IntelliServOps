@@ -2502,6 +2502,105 @@ describe('IoTService', () => {
       await service.onMqttStatusEvent({
         espId: 'ESP_A101',
         rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'FIRE',
+        receivedAt: new Date('2026-04-24T06:38:45.000Z'),
+        type: 'fire',
+        deviceTopic: 'alarm',
+        state: 'FIRE',
+      });
+
+      expect(notificationsService.createAndPush).toHaveBeenCalledTimes(1);
+      expect(prisma.userApartment.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('should notify active residents from board mapping when fire device mapping is missing', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([] as any);
+      prisma.ioTBoard.findUnique.mockResolvedValue({
+        id: 'ESP_A101',
+        apartment: {
+          id: 'apt-123',
+          apartmentNumber: 'A101',
+          streetAddress: '123 Nguyen Hue',
+        },
+      } as any);
+      prisma.userApartment.findMany.mockResolvedValue([
+        {
+          apartmentId: 'apt-123',
+          userId: 'user-123',
+          apartment: {
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+      ] as any);
+
+      await service.onMqttStatusEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'FIRE_3',
+        receivedAt: new Date('2026-04-24T06:38:29.000Z'),
+        type: 'fire',
+        deviceTopic: 'alarm',
+        deviceId: 3,
+        state: 'FIRE',
+      });
+
+      expect(prisma.ioTBoard.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'ESP_A101' } }),
+      );
+      expect(notificationsService.createAndPush).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientId: 'user-123',
+          title: expect.any(String),
+          data: expect.objectContaining({
+            type: 'fire_alarm',
+            espId: 'ESP_A101',
+            deviceId: '3',
+          }),
+        }),
+      );
+    });
+
+    it('should not suppress a fire ACK notification after a fire alert', async () => {
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        {
+          id: 'device-123',
+          apartmentId: 'apt-123',
+          deviceType: 'alarm',
+          configuration: {
+            mqtt: {
+              espId: 'ESP_A101',
+              topic: 'alarm',
+              deviceId: 3,
+              state: 'OFF',
+            },
+          },
+        },
+      ] as any);
+      prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
+      prisma.userApartment.findMany.mockResolvedValue([
+        {
+          apartmentId: 'apt-123',
+          userId: 'user-123',
+          apartment: {
+            apartmentNumber: 'A101',
+            streetAddress: '123 Nguyen Hue',
+          },
+        },
+      ] as any);
+
+      await service.onMqttStatusEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
+        message: 'FIRE',
+        receivedAt: new Date('2026-04-24T06:38:29.000Z'),
+        type: 'fire',
+        deviceTopic: 'alarm',
+        state: 'FIRE',
+      });
+      await service.onMqttStatusEvent({
+        espId: 'ESP_A101',
+        rawTopic: 'HOMEIQ/ESP_A101/status',
         message: 'FIRE_ACK',
         receivedAt: new Date('2026-04-24T06:38:45.000Z'),
         type: 'fire_ack',
@@ -2509,8 +2608,7 @@ describe('IoTService', () => {
         state: 'FIRE_ACK',
       });
 
-      expect(notificationsService.createAndPush).toHaveBeenCalledTimes(1);
-      expect(prisma.userApartment.findMany).toHaveBeenCalledTimes(1);
+      expect(notificationsService.createAndPush).toHaveBeenCalledTimes(2);
     });
 
     it('should sync telemetry into automatic utility readings', async () => {
