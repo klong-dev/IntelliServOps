@@ -2503,7 +2503,7 @@ describe('IoTService', () => {
         espId: 'ESP_A101',
         rawTopic: 'HOMEIQ/ESP_A101/status',
         message: 'FIRE',
-        receivedAt: new Date('2026-04-24T06:38:45.000Z'),
+        receivedAt: new Date('2026-04-24T06:38:38.000Z'),
         type: 'fire',
         deviceTopic: 'alarm',
         state: 'FIRE',
