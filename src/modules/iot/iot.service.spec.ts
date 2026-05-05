@@ -2225,6 +2225,69 @@ describe('IoTService', () => {
     });
   });
 
+  describe('utility rate plans', () => {
+    it('should calculate progressive tier usage and amount', () => {
+      const result = service.calculateProgressiveUtilityAmount(120, {
+        calculationMode: 'progressive',
+        unit: 'kWh',
+        tiers: [
+          { tier: 1, from: 0, to: 50, unitPrice: 1800 },
+          { tier: 2, from: 50, to: 100, unitPrice: 1900 },
+          { tier: 3, from: 100, to: null, unitPrice: 2200 },
+        ],
+      });
+
+      expect(result).toEqual({
+        unit: 'kWh',
+        amount: 229000,
+        tiersApplied: [
+          { tier: 1, from: 0, to: 50, usage: 50, unitPrice: 1800, amount: 90000 },
+          { tier: 2, from: 50, to: 100, usage: 50, unitPrice: 1900, amount: 95000 },
+          { tier: 3, from: 100, to: null, usage: 20, unitPrice: 2200, amount: 44000 },
+        ],
+      });
+    });
+
+    it('should reject utility rate tiers with gaps', () => {
+      expect(() =>
+        service.calculateProgressiveUtilityAmount(120, {
+          calculationMode: 'progressive',
+          unit: 'kWh',
+          tiers: [
+            { tier: 1, from: 0, to: 50, unitPrice: 1800 },
+            { tier: 2, from: 60, to: null, unitPrice: 1900 },
+          ],
+        }),
+      ).toThrow(BadRequestException);
+    });
+
+    it('should resolve effective rate plan by contract before global', async () => {
+      const contractRatePlan = { id: 'contract-plan' };
+      prisma.utilityRatePlan.findFirst
+        .mockResolvedValueOnce(contractRatePlan as any)
+        .mockResolvedValueOnce({ id: 'global-plan' } as any);
+
+      const result = await service.resolveEffectiveUtilityRatePlan({
+        meterType: 'electricity' as any,
+        meterId: 'meter-123',
+        apartmentId: 'apt-123',
+        contractId: 'contract-123',
+        at: new Date('2026-04-30T00:00:00.000Z'),
+      });
+
+      expect(result).toBe(contractRatePlan);
+      expect(prisma.utilityRatePlan.findFirst).toHaveBeenCalledTimes(1);
+      expect(prisma.utilityRatePlan.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            scopeType: 'contract',
+            scopeId: 'contract-123',
+          }),
+        }),
+      );
+    });
+  });
+
   describe('createReading', () => {
     it('should create reading and update meter snapshot', async () => {
       prisma.utilityMeter.findUnique.mockResolvedValue(mockMeter() as any);

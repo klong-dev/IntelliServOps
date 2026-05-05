@@ -45,7 +45,12 @@ export class CreateUtilityMeterDto {
   @IsOptional()
   unitOfMeasurement?: string;
 
-  @ApiPropertyOptional({ example: 3500, description: 'Rate per unit in VND' })
+  @ApiPropertyOptional({
+    example: 3500,
+    description:
+      'Deprecated legacy flat rate. Use utility rate plans for tiered pricing.',
+    deprecated: true,
+  })
   @IsNumber()
   @IsOptional()
   @Min(0)

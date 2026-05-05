@@ -5,6 +5,7 @@ export * from './update-iot-board.dto';
 export * from './create-utility-meter.dto';
 export * from './update-utility-meter.dto';
 export * from './create-utility-reading.dto';
+export * from './utility-rate-plan.dto';
 export * from './control-device.dto';
 export * from './device-action.dto';
 export * from './set-door-password.dto';

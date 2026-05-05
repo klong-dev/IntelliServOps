@@ -356,6 +356,18 @@ export class MonthlyUtilityBreakdownDto {
   @ApiPropertyOptional({ example: '3500.00', nullable: true })
   ratePerUnit: string | null;
 
+  @ApiPropertyOptional({
+    description: 'Snapshot of tiered utility rate plan used by this invoice',
+    nullable: true,
+  })
+  ratePlanSnapshot?: unknown;
+
+  @ApiPropertyOptional({
+    description: 'Tier usage breakdown applied to this invoice item',
+    type: [Object],
+  })
+  tiersApplied?: unknown;
+
   @ApiPropertyOptional({ example: '525000.00', nullable: true })
   amount: string | null;
 }
