@@ -61,6 +61,8 @@ type UtilityBreakdown = {
   unit: string | null;
   ratePerUnit: string | null;
   amount: string | null;
+  ratePlanSnapshot?: unknown;
+  tiersApplied?: unknown;
 };
 
 type OverdueRentUtilityInvoiceCandidate = {
@@ -2737,6 +2739,10 @@ export class InvoicesService {
         breakdown.ratePerUnit ?? breakdown.rate,
       ),
       amount: this.readDecimalString(breakdown.amount),
+      ratePlanSnapshot: breakdown.ratePlanSnapshot ?? null,
+      tiersApplied: Array.isArray(breakdown.tiersApplied)
+        ? breakdown.tiersApplied
+        : [],
     };
   }
 

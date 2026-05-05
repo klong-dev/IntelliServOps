@@ -16,10 +16,14 @@ import {
   CreateIoTBoardDeviceDto,
   CreateUtilityMeterDto,
   CreateUtilityReadingDto,
+  CreateUtilityRatePlanDto,
+  EffectiveUtilityRatePlanQueryDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
   UpdateIoTDeviceDto,
   UpdateUtilityMeterDto,
+  UpdateUtilityRatePlanDto,
+  UtilityRatePlanQueryDto,
 } from './dto';
 import { IoTMqttService } from './iot-mqtt.service';
 import {
@@ -39,11 +43,24 @@ import {
   MeterStatus,
   MeterType,
   Prisma,
+  UtilityRatePlanStatus,
+  UtilityRateScope,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 type UtilityMqttTopic = Extract<MqttDeviceTopic, 'electric' | 'water'>;
+type UtilityRateTier = {
+  tier: number;
+  from: number;
+  to: number | null;
+  unitPrice: number;
+};
+type UtilityRateTiersConfig = {
+  calculationMode: 'progressive';
+  unit: string;
+  tiers: UtilityRateTier[];
+};
 const BOARD_ONLINE_WINDOW_MS = 30_000;
 const BOARD_CONTROL_ACK_TIMEOUT_MS = 7000;
 const DOOR_PIN_HASH_BCRYPT_ROUNDS = 12;
@@ -1350,10 +1367,18 @@ export class IoTService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return meters.map((meter) => ({
-      ...meter,
-      apartment: this.toApartmentSummary(meter.apartment),
-    }));
+    return Promise.all(
+      meters.map(async (meter) => ({
+        ...meter,
+        apartment: this.toApartmentSummary(meter.apartment),
+        effectiveRatePlan: await this.resolveEffectiveUtilityRatePlan({
+          meterType: meter.meterType,
+          meterId: meter.id,
+          apartmentId: meter.apartment?.id,
+          at: new Date(),
+        }),
+      })),
+    );
   }
 
   async findOneMeter(id: string) {
@@ -1389,6 +1414,12 @@ export class IoTService {
     return {
       ...meter,
       apartment: this.toApartmentSummary(meter.apartment),
+      effectiveRatePlan: await this.resolveEffectiveUtilityRatePlan({
+        meterType: meter.meterType,
+        meterId: meter.id,
+        apartmentId: meter.apartmentId,
+        at: new Date(),
+      }),
     };
   }
 
@@ -1443,6 +1474,352 @@ export class IoTService {
     });
 
     return this.findOneMeter(id);
+  }
+
+  // ============================================================================
+  // Utility Rate Plans
+  // ============================================================================
+
+  async findAllUtilityRatePlans(query: UtilityRatePlanQueryDto = {}) {
+    const where: Prisma.UtilityRatePlanWhereInput = {};
+
+    if (query.meterType) where.meterType = query.meterType;
+    if (query.scopeType) where.scopeType = query.scopeType;
+    if (query.scopeId) where.scopeId = query.scopeId;
+    if (query.status) where.status = query.status;
+
+    return this.prisma.utilityRatePlan.findMany({
+      where,
+      orderBy: [{ meterType: 'asc' }, { effectiveFrom: 'desc' }],
+    });
+  }
+
+  async findOneUtilityRatePlan(id: string) {
+    const ratePlan = await this.prisma.utilityRatePlan.findUnique({
+      where: { id },
+    });
+
+    if (!ratePlan) {
+      throw new NotFoundException('Utility rate plan not found');
+    }
+
+    return ratePlan;
+  }
+
+  async createUtilityRatePlan(dto: CreateUtilityRatePlanDto) {
+    const scopeType = dto.scopeType ?? UtilityRateScope.global;
+    await this.validateUtilityRatePlanScope(scopeType, dto.scopeId);
+    const tiers = this.normalizeUtilityRateTiers(dto.tiers);
+
+    const created = await this.prisma.utilityRatePlan.create({
+      data: {
+        name: dto.name,
+        meterType: dto.meterType,
+        scopeType,
+        scopeId: scopeType === UtilityRateScope.global ? null : dto.scopeId,
+        effectiveFrom: new Date(dto.effectiveFrom),
+        effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
+        status: dto.status ?? UtilityRatePlanStatus.active,
+        currency: dto.currency ?? 'VND',
+        tiers: tiers as unknown as Prisma.InputJsonValue,
+        notes: dto.notes,
+      },
+      select: { id: true },
+    });
+
+    return this.findOneUtilityRatePlan(created.id);
+  }
+
+  async updateUtilityRatePlan(id: string, dto: UpdateUtilityRatePlanDto) {
+    const existing = await this.prisma.utilityRatePlan.findUnique({
+      where: { id },
+      select: { id: true, scopeType: true, scopeId: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Utility rate plan not found');
+    }
+
+    const nextScopeType = dto.scopeType ?? existing.scopeType;
+    const nextScopeId = dto.scopeId ?? existing.scopeId ?? undefined;
+    await this.validateUtilityRatePlanScope(nextScopeType, nextScopeId);
+
+    const data: Prisma.UtilityRatePlanUncheckedUpdateInput = {
+      ...(dto.name !== undefined && { name: dto.name }),
+      ...(dto.meterType !== undefined && { meterType: dto.meterType }),
+      ...(dto.scopeType !== undefined && { scopeType: dto.scopeType }),
+      ...(dto.scopeType !== undefined || dto.scopeId !== undefined
+        ? {
+            scopeId:
+              nextScopeType === UtilityRateScope.global ? null : nextScopeId,
+          }
+        : {}),
+      ...(dto.effectiveFrom !== undefined && {
+        effectiveFrom: new Date(dto.effectiveFrom),
+      }),
+      ...(dto.effectiveTo !== undefined && {
+        effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
+      }),
+      ...(dto.status !== undefined && { status: dto.status }),
+      ...(dto.currency !== undefined && { currency: dto.currency }),
+      ...(dto.tiers !== undefined && {
+        tiers: this.normalizeUtilityRateTiers(
+          dto.tiers,
+        ) as unknown as Prisma.InputJsonValue,
+      }),
+      ...(dto.notes !== undefined && { notes: dto.notes }),
+    };
+
+    await this.prisma.utilityRatePlan.update({
+      where: { id },
+      data,
+      select: { id: true },
+    });
+
+    return this.findOneUtilityRatePlan(id);
+  }
+
+  async archiveUtilityRatePlan(id: string) {
+    await this.findOneUtilityRatePlan(id);
+    await this.prisma.utilityRatePlan.update({
+      where: { id },
+      data: { status: UtilityRatePlanStatus.archived },
+      select: { id: true },
+    });
+
+    return this.findOneUtilityRatePlan(id);
+  }
+
+  async findEffectiveRatePlanForMeter(
+    meterId: string,
+    query: EffectiveUtilityRatePlanQueryDto = {},
+  ) {
+    const meter = await this.prisma.utilityMeter.findUnique({
+      where: { id: meterId },
+      select: { id: true, meterType: true, apartmentId: true },
+    });
+
+    if (!meter) {
+      throw new NotFoundException('Utility meter not found');
+    }
+
+    const at = query.at ? new Date(query.at) : new Date();
+
+    return this.resolveEffectiveUtilityRatePlan({
+      meterType: meter.meterType,
+      meterId: meter.id,
+      apartmentId: meter.apartmentId,
+      contractId: query.contractId,
+      at,
+    });
+  }
+
+  async resolveEffectiveUtilityRatePlan(params: {
+    meterType: MeterType;
+    meterId?: string | null;
+    apartmentId?: string | null;
+    contractId?: string | null;
+    at: Date;
+  }) {
+    const scopes: Array<{ scopeType: UtilityRateScope; scopeId: string | null }> = [
+      ...(params.contractId
+        ? [
+            {
+              scopeType: UtilityRateScope.contract,
+              scopeId: params.contractId,
+            },
+          ]
+        : []),
+      ...(params.meterId
+        ? [{ scopeType: UtilityRateScope.meter, scopeId: params.meterId }]
+        : []),
+      ...(params.apartmentId
+        ? [
+            {
+              scopeType: UtilityRateScope.apartment,
+              scopeId: params.apartmentId,
+            },
+          ]
+        : []),
+      { scopeType: UtilityRateScope.global, scopeId: null },
+    ];
+
+    for (const scope of scopes) {
+      const ratePlan = await this.prisma.utilityRatePlan.findFirst({
+        where: {
+          meterType: params.meterType,
+          scopeType: scope.scopeType,
+          scopeId: scope.scopeId,
+          status: UtilityRatePlanStatus.active,
+          effectiveFrom: { lte: params.at },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: params.at } }],
+        },
+        orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+      });
+
+      if (ratePlan) {
+        return ratePlan;
+      }
+    }
+
+    return null;
+  }
+
+  calculateProgressiveUtilityAmount(
+    consumption: number,
+    tiersConfig: Prisma.JsonValue | UtilityRateTiersConfig,
+  ) {
+    const normalized = this.normalizeUtilityRateTiers(tiersConfig);
+    const roundedConsumption = this.roundTo2(consumption);
+    const tiersApplied = [] as Array<{
+      tier: number;
+      from: number;
+      to: number | null;
+      usage: number;
+      unitPrice: number;
+      amount: number;
+    }>;
+    let totalAmount = 0;
+
+    for (const tier of normalized.tiers) {
+      const tierEnd = tier.to ?? roundedConsumption;
+      const usage = Math.max(
+        0,
+        Math.min(roundedConsumption, tierEnd) - tier.from,
+      );
+
+      if (usage <= 0) {
+        continue;
+      }
+
+      const amount = this.roundTo2(usage * tier.unitPrice);
+      totalAmount += amount;
+      tiersApplied.push({
+        ...tier,
+        usage: this.roundTo2(usage),
+        amount,
+      });
+    }
+
+    return {
+      unit: normalized.unit,
+      amount: this.roundTo2(totalAmount),
+      tiersApplied,
+    };
+  }
+
+  private normalizeUtilityRateTiers(
+    value: Prisma.JsonValue | UtilityRateTiersConfig | CreateUtilityRatePlanDto['tiers'],
+  ): UtilityRateTiersConfig {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new BadRequestException('Utility rate tiers must be an object');
+    }
+
+    const raw = value as Record<string, unknown>;
+    const calculationMode = raw.calculationMode;
+    if (calculationMode !== 'progressive') {
+      throw new BadRequestException('Only progressive utility rate tiers are supported');
+    }
+
+    const unit = typeof raw.unit === 'string' && raw.unit.trim() ? raw.unit : null;
+    const rawTiers = raw.tiers;
+    if (!unit || !Array.isArray(rawTiers) || rawTiers.length === 0) {
+      throw new BadRequestException('Utility rate tiers require unit and tiers');
+    }
+
+    const tiers = rawTiers.map((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new BadRequestException('Each utility rate tier must be an object');
+      }
+      const source = item as Record<string, unknown>;
+      const tier = Number(source.tier ?? index + 1);
+      const from = Number(source.from);
+      const toRaw = source.to;
+      const to = toRaw === null || toRaw === undefined ? null : Number(toRaw);
+      const unitPrice = Number(source.unitPrice);
+
+      if (
+        !Number.isInteger(tier) ||
+        tier <= 0 ||
+        !Number.isFinite(from) ||
+        from < 0 ||
+        (to !== null && (!Number.isFinite(to) || to <= from)) ||
+        !Number.isFinite(unitPrice) ||
+        unitPrice < 0
+      ) {
+        throw new BadRequestException('Invalid utility rate tier values');
+      }
+
+      return {
+        tier,
+        from: this.roundTo2(from),
+        to: to === null ? null : this.roundTo2(to),
+        unitPrice: this.roundTo2(unitPrice),
+      };
+    });
+
+    tiers.sort((a, b) => a.from - b.from);
+
+    if (tiers[0].from !== 0) {
+      throw new BadRequestException('Utility rate tiers must start at 0');
+    }
+
+    for (let index = 0; index < tiers.length; index += 1) {
+      const tier = tiers[index];
+      const nextTier = tiers[index + 1];
+      if (tier.to === null && nextTier) {
+        throw new BadRequestException('Only the final utility rate tier can be open-ended');
+      }
+      if (nextTier && tier.to !== nextTier.from) {
+        throw new BadRequestException('Utility rate tiers must be continuous');
+      }
+    }
+
+    if (tiers[tiers.length - 1].to !== null) {
+      throw new BadRequestException('Final utility rate tier must be open-ended');
+    }
+
+    return { calculationMode: 'progressive', unit, tiers };
+  }
+
+  private async validateUtilityRatePlanScope(
+    scopeType: UtilityRateScope,
+    scopeId?: string | null,
+  ) {
+    if (scopeType === UtilityRateScope.global) {
+      return;
+    }
+    if (!scopeId) {
+      throw new BadRequestException('scopeId is required for non-global rate plans');
+    }
+
+    if (scopeType === UtilityRateScope.apartment) {
+      await this.ensureApartmentExists(scopeId);
+      return;
+    }
+
+    if (scopeType === UtilityRateScope.meter) {
+      const meter = await this.prisma.utilityMeter.findUnique({
+        where: { id: scopeId },
+        select: { id: true },
+      });
+      if (!meter) {
+        throw new NotFoundException('Utility meter not found');
+      }
+      return;
+    }
+
+    const contract = await this.prisma.rentalContract.findUnique({
+      where: { id: scopeId },
+      select: { id: true },
+    });
+    if (!contract) {
+      throw new NotFoundException('Rental contract not found');
+    }
+  }
+
+  private roundTo2(value: number): number {
+    return Number(value.toFixed(2));
   }
 
   // ============================================================================

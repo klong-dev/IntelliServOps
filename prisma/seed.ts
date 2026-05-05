@@ -2581,6 +2581,60 @@ async function main() {
     );
   }
 
+  const utilityRatePlanSeeds = [
+    {
+      name: `${SEED_NAMESPACE}-GLOBAL-ELECTRICITY-2026`,
+      meterType: 'electricity',
+      unit: 'kWh',
+      tiers: [
+        { tier: 1, from: 0, to: 50, unitPrice: 1806 },
+        { tier: 2, from: 50, to: 100, unitPrice: 1866 },
+        { tier: 3, from: 100, to: 200, unitPrice: 2167 },
+        { tier: 4, from: 200, to: 300, unitPrice: 2729 },
+        { tier: 5, from: 300, to: 400, unitPrice: 3050 },
+        { tier: 6, from: 400, to: null, unitPrice: 3151 },
+      ],
+    },
+    {
+      name: `${SEED_NAMESPACE}-GLOBAL-WATER-2026`,
+      meterType: 'water',
+      unit: 'm3',
+      tiers: [
+        { tier: 1, from: 0, to: 10, unitPrice: 8500 },
+        { tier: 2, from: 10, to: 20, unitPrice: 9900 },
+        { tier: 3, from: 20, to: 30, unitPrice: 16000 },
+        { tier: 4, from: 30, to: null, unitPrice: 27000 },
+      ],
+    },
+  ] as const;
+
+  for (const ratePlanSeed of utilityRatePlanSeeds) {
+    await ensureRecord(
+      prisma.utilityRatePlan,
+      {
+        name: ratePlanSeed.name,
+        meterType: ratePlanSeed.meterType,
+        scopeType: 'global',
+      },
+      {
+        name: ratePlanSeed.name,
+        meterType: ratePlanSeed.meterType,
+        scopeType: 'global',
+        scopeId: null,
+        effectiveFrom: localDate('2026-01-01'),
+        effectiveTo: null,
+        status: 'active',
+        currency: CURRENCY,
+        tiers: {
+          calculationMode: 'progressive',
+          unit: ratePlanSeed.unit,
+          tiers: ratePlanSeed.tiers,
+        },
+        notes: `Progressive ${ratePlanSeed.meterType} utility tariff used by seed invoices.`,
+      },
+    );
+  }
+
   const readingMonths = [
     localDate('2026-02-28'),
     localDate('2026-03-31'),
