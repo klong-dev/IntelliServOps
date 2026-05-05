@@ -285,6 +285,20 @@ export class ApartmentListItemDto {
   status: string;
 
   @ApiPropertyOptional({
+    type: Date,
+    nullable: true,
+    description: 'Ngay bat dau hop dong cooperation (neu co)',
+  })
+  cooperationContractStartDate?: Date | null;
+
+  @ApiPropertyOptional({
+    type: Date,
+    nullable: true,
+    description: 'Ngay ket thuc hop dong cooperation (neu co)',
+  })
+  cooperationContractEndDate?: Date | null;
+
+  @ApiPropertyOptional({
     type: Number,
     example: 4.5,
     nullable: true,

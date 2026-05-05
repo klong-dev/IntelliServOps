@@ -988,10 +988,20 @@ export class ApartmentsService {
       throw new NotFoundException('Apartment not found');
     }
 
-    const ratingAggregate = await this.prisma.apartmentRating.aggregate({
-      where: { apartmentId: apartment.id },
-      _avg: { rating: true },
-    });
+    const [ratingAggregate, cooperationContract] = await Promise.all([
+      this.prisma.apartmentRating.aggregate({
+        where: { apartmentId: apartment.id },
+        _avg: { rating: true },
+      }),
+      this.prisma.partnerCooperationContract.findFirst({
+        where: { apartmentId: apartment.id },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          startDate: true,
+          endDate: true,
+        },
+      }),
+    ]);
 
     let canRateApartment = false;
     let hasRatedApartment = false;
@@ -1060,6 +1070,8 @@ export class ApartmentsService {
       amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       streetAddress: apartment.streetAddress,
       rating: this.toRoundedRating(ratingAggregate._avg.rating),
+      cooperationContractStartDate: cooperationContract?.startDate ?? null,
+      cooperationContractEndDate: cooperationContract?.endDate ?? null,
       canRateApartment,
       hasRatedApartment,
       ratingEligibilityReason,
