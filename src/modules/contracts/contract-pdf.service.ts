@@ -39,6 +39,8 @@ export interface ContractPdfData {
   paymentMethod?: string;
   specialConditions?: string;
   contractTerms?: string;
+  electricityRateText?: string;
+  waterRateText?: string;
   // Signatures (null = blank)
   landlordSignature?: Buffer | null;
   tenantSignature?: Buffer | null;
@@ -639,6 +641,19 @@ export class ContractPdfService {
     doc.text(
       `3.4. Ngày thanh toán hàng tháng: Ngày ${data.paymentDueDay || '...'} hàng tháng.`,
     );
+
+    if (data.electricityRateText || data.waterRateText) {
+      doc.moveDown(0.2);
+      doc.text(
+        '     Giá điện nước hiện tại (theo bảng giá Utility Rate Plan):',
+      );
+      if (data.electricityRateText) {
+        doc.text(`       - Điện: ${data.electricityRateText}`);
+      }
+      if (data.waterRateText) {
+        doc.text(`       - Nước: ${data.waterRateText}`);
+      }
+    }
 
     doc.moveDown(0.2);
     doc.text(
