@@ -109,6 +109,19 @@ describe('AuthController', () => {
     });
   });
 
+  it('should pass returnUrl to Supabase OAuth URL builder', () => {
+    mockAuthService.getSupabaseUrl.mockReturnValue({
+      url: 'https://example.supabase.co/auth?redirect_to=homeiq%3A%2F%2Flogin',
+      redirectTo: 'homeiq://login',
+    });
+
+    expect(controller.getSupabaseUrl('homeiq://login')).toEqual({
+      url: 'https://example.supabase.co/auth?redirect_to=homeiq%3A%2F%2Flogin',
+      redirectTo: 'homeiq://login',
+    });
+    expect(authService.getSupabaseUrl).toHaveBeenCalledWith('homeiq://login');
+  });
+
   it('should refresh tokens', async () => {
     const refreshDto: RefreshTokenDto = { refreshToken: 'refresh-token' };
     mockAuthService.refresh.mockResolvedValue({

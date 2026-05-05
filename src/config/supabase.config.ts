@@ -7,4 +7,8 @@ export default registerAs('supabase', () => ({
   chatImagesBucket: process.env.SUPABASE_CHAT_IMAGES_BUCKET || 'chat-images',
   redirectUrl:
     process.env.SUPABASE_REDIRECT_URL || 'http://localhost:3000/auth/callback',
+  allowedRedirectUrls: (process.env.SUPABASE_ALLOWED_REDIRECT_URLS || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean),
 }));
