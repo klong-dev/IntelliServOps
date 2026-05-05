@@ -5,6 +5,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -100,8 +101,8 @@ export class AuthController {
   })
   @ApiResponse({ status: 200, description: 'Google OAuth URL returned' })
   @ApiResponse({ status: 400, description: 'Supabase is not configured' })
-  getSupabaseUrl() {
-    return this.authService.getSupabaseUrl();
+  getSupabaseUrl(@Query('returnUrl') returnUrl?: string) {
+    return this.authService.getSupabaseUrl(returnUrl);
   }
 
   @Post('refresh')

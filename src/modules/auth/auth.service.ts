@@ -501,10 +501,14 @@ export class AuthService {
   /**
    * Return full Supabase Google OAuth login URL for frontend to open popup
    */
-  getSupabaseUrl(): { url: string } {
+  getSupabaseUrl(returnUrl?: string): { url: string; redirectTo: string } {
     const supabaseUrl = this.configService.get<string>('supabase.url');
     const redirectUrl =
       this.configService.get<string>('supabase.redirectUrl') || '';
+    const redirectTo = this.resolveSupabaseRedirectUrl(
+      returnUrl,
+      redirectUrl,
+    );
 
     if (!supabaseUrl) {
       throw new BadRequestException(
@@ -512,9 +516,37 @@ export class AuthService {
       );
     }
 
-    const url = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+    const url = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
 
-    return { url };
+    return { url, redirectTo };
+  }
+
+  private resolveSupabaseRedirectUrl(
+    returnUrl: string | undefined,
+    defaultRedirectUrl: string,
+  ): string {
+    const candidate = returnUrl?.trim() || defaultRedirectUrl;
+
+    if (!candidate) {
+      throw new BadRequestException('Supabase redirect URL is not configured');
+    }
+
+    if (!returnUrl?.trim()) {
+      return candidate;
+    }
+
+    const allowedRedirectUrls = this.configService.get<string[]>(
+      'supabase.allowedRedirectUrls',
+    );
+    const allowedUrls = [defaultRedirectUrl, ...(allowedRedirectUrls ?? [])]
+      .map((url) => url.trim())
+      .filter(Boolean);
+
+    if (!allowedUrls.includes(candidate)) {
+      throw new BadRequestException('Supabase returnUrl is not allowed');
+    }
+
+    return candidate;
   }
 
   // ============================================================================

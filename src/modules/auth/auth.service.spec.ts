@@ -109,6 +109,7 @@ describe('AuthService', () => {
         'supabase.url': 'https://test.supabase.co',
         'supabase.anonKey': 'test-anon-key',
         'supabase.redirectUrl': 'http://localhost:3000/auth/callback',
+        'supabase.allowedRedirectUrls': ['homeiq://login'],
       };
       return config[key];
     }),
@@ -896,6 +897,22 @@ describe('AuthService', () => {
       );
       expect(result.url).toContain('provider=google');
       expect(result.url).toContain('redirect_to=');
+      expect(result.redirectTo).toBe('http://localhost:3000/auth/callback');
+    });
+
+    it('should allow configured mobile returnUrl', () => {
+      const result = service.getSupabaseUrl('homeiq://login');
+
+      expect(result.redirectTo).toBe('homeiq://login');
+      expect(result.url).toContain(
+        `redirect_to=${encodeURIComponent('homeiq://login')}`,
+      );
+    });
+
+    it('should reject unconfigured returnUrl', () => {
+      expect(() => service.getSupabaseUrl('https://evil.example/callback')).toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw BadRequestException when supabase is not configured', () => {
