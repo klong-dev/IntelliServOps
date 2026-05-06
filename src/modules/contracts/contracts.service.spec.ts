@@ -43,8 +43,6 @@ describe('ContractsService', () => {
   const ioTService = {
     syncApartmentDoorPin: jest.fn(),
     clearApartmentDoorPinHash: jest.fn(),
-    resolveEffectiveUtilityRatePlan: jest.fn(),
-    calculateProgressiveUtilityAmount: jest.fn(),
   };
   const contractPdfService = {
     generateContractPdf: jest.fn().mockResolvedValue(Buffer.from('pdf')),
@@ -95,9 +93,6 @@ describe('ContractsService', () => {
       deviceId: 1,
       message: 'Door PIN hash cleared successfully.',
     });
-    ioTService.resolveEffectiveUtilityRatePlan.mockReset();
-    ioTService.calculateProgressiveUtilityAmount.mockReset();
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ContractsService,
@@ -1791,7 +1786,9 @@ describe('ContractsService', () => {
             totalAmount: 10000000,
             utilityCharges: undefined,
             invoiceContent: expect.objectContaining({
-              items: [expect.objectContaining({ itemType: 'rent', amount: 10000000 })],
+              items: [
+                expect.objectContaining({ itemType: 'rent', amount: 10000000 }),
+              ],
             }),
           }),
         }),
@@ -1799,7 +1796,7 @@ describe('ContractsService', () => {
       expect(prisma.utilityMeter.findMany).not.toHaveBeenCalled();
     });
 
-    it('should create utility invoices with progressive tier breakdown', async () => {
+    it('should create utility invoices with current flat rate snapshot', async () => {
       prisma.rentalContract.findUnique.mockResolvedValue({
         id: 'contract-utility-1',
         apartmentId: 'apt-utility-1',
@@ -1820,6 +1817,7 @@ describe('ContractsService', () => {
           meterType: 'electricity',
           meterNumber: 'PE-001',
           unitOfMeasurement: 'kWh',
+          ratePerUnit: 3500,
           readings: [{ id: 'reading-electricity' }],
         },
         {
@@ -1827,6 +1825,7 @@ describe('ContractsService', () => {
           meterType: 'water',
           meterNumber: 'PW-001',
           unitOfMeasurement: 'm3',
+          ratePerUnit: 15000,
           readings: [{ id: 'reading-water' }],
         },
       ] as any);
@@ -1863,37 +1862,6 @@ describe('ContractsService', () => {
         id: 'snapshot-end',
       } as any);
       prisma.utilityReading.updateMany.mockResolvedValue({ count: 2 } as any);
-      ioTService.resolveEffectiveUtilityRatePlan.mockResolvedValue({
-        id: 'rate-plan-1',
-        name: 'Progressive utility rate',
-        meterType: 'electricity',
-        scopeType: 'global',
-        scopeId: null,
-        effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
-        effectiveTo: null,
-        currency: 'VND',
-        tiers: {
-          calculationMode: 'progressive',
-          unit: 'kWh',
-          tiers: [{ tier: 1, from: 0, to: null, unitPrice: 1 }],
-        },
-      } as any);
-      ioTService.calculateProgressiveUtilityAmount
-        .mockReturnValueOnce({
-          unit: 'kWh',
-          amount: 525000,
-          tiersApplied: [
-            { tier: 1, from: 0, to: 100, usage: 100, unitPrice: 3500, amount: 350000 },
-            { tier: 2, from: 100, to: null, usage: 50, unitPrice: 3500, amount: 175000 },
-          ],
-        })
-        .mockReturnValueOnce({
-          unit: 'm3',
-          amount: 180000,
-          tiersApplied: [
-            { tier: 1, from: 0, to: null, usage: 12, unitPrice: 15000, amount: 180000 },
-          ],
-        });
       prisma.invoice.count.mockResolvedValue(0);
       prisma.invoice.create.mockResolvedValue({
         id: 'invoice-utility-1',
@@ -1919,16 +1887,15 @@ describe('ContractsService', () => {
                 previousReading: 1100,
                 currentReading: 1250,
                 consumption: 150,
+                ratePerUnit: 3500,
                 amount: 525000,
-                tiersApplied: expect.arrayContaining([
-                  expect.objectContaining({ usage: 100, amount: 350000 }),
-                ]),
               }),
               water: expect.objectContaining({
                 meterType: 'water',
                 previousReading: 30,
                 currentReading: 42,
                 consumption: 12,
+                ratePerUnit: 15000,
                 amount: 180000,
               }),
             }),
@@ -1936,10 +1903,12 @@ describe('ContractsService', () => {
               items: expect.arrayContaining([
                 expect.objectContaining({
                   type: 'electricity',
+                  ratePerUnit: 3500,
                   amount: 525000,
                 }),
                 expect.objectContaining({
                   type: 'water',
+                  ratePerUnit: 15000,
                   amount: 180000,
                 }),
               ]),

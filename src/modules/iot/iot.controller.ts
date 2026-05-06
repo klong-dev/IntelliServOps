@@ -9,18 +9,23 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { IoTService } from './iot.service';
 import {
   CreateIoTBoardDeviceDto,
   CreateIoTBoardDto,
   CreateUtilityMeterDto,
   CreateUtilityReadingDto,
-  CreateUtilityRatePlanDto,
+  CurrentUtilityRateQueryDto,
   DoorHistoryListDto,
   DoorHistoryQueryDto,
   DirectMqttControlDto,
-  EffectiveUtilityRatePlanQueryDto,
   FakeFireAlertDto,
   IoTBoardDeleteResultDto,
   IoTBoardDeviceDeleteResultDto,
@@ -37,9 +42,8 @@ import {
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
   UpdateDoorPinDto,
+  UpdateCurrentUtilityRateDto,
   UpdateUtilityMeterDto,
-  UpdateUtilityRatePlanDto,
-  UtilityRatePlanQueryDto,
   UtilityReadingListQueryDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
@@ -57,7 +61,8 @@ export class IoTController {
   @Post('test/fire-alert')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
   @ApiOperation({
-    summary: 'Fake a FIRE MQTT status event to test resident push notifications',
+    summary:
+      'Fake a FIRE MQTT status event to test resident push notifications',
   })
   async fakeFireAlert(@Body() body: FakeFireAlertDto) {
     return this.iotService.fakeFireAlert(body.espId, body.deviceId);
@@ -74,7 +79,6 @@ export class IoTController {
   async checkHealth(@Param('espId') espId: string) {
     return this.iotService.checkHealth(espId);
   }
-
 
   @Post('devices/:espId/:deviceId')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
@@ -148,42 +152,22 @@ export class IoTController {
     return this.iotService.findUtilityMeters(boardId, apartmentId, status);
   }
 
-  @Get('utility-rate-plans')
+  @Get('utility-rates/current')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'List tiered utility rate plans' })
-  async findAllUtilityRatePlans(@Query() query: UtilityRatePlanQueryDto) {
-    return this.iotService.findAllUtilityRatePlans(query);
+  @ApiOperation({
+    summary: 'Get current flat electricity/water rates for an apartment',
+  })
+  async getCurrentUtilityRates(@Query() query: CurrentUtilityRateQueryDto) {
+    return this.iotService.getCurrentUtilityRates(query.apartmentId);
   }
 
-  @Get('utility-rate-plans/:id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Get tiered utility rate plan detail' })
-  async findOneUtilityRatePlan(@Param('id') id: string) {
-    return this.iotService.findOneUtilityRatePlan(id);
-  }
-
-  @Post('utility-rate-plans')
+  @Patch('utility-rates/current')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Create tiered utility rate plan' })
-  async createUtilityRatePlan(@Body() body: CreateUtilityRatePlanDto) {
-    return this.iotService.createUtilityRatePlan(body);
-  }
-
-  @Patch('utility-rate-plans/:id')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Update tiered utility rate plan' })
-  async updateUtilityRatePlan(
-    @Param('id') id: string,
-    @Body() body: UpdateUtilityRatePlanDto,
-  ) {
-    return this.iotService.updateUtilityRatePlan(id, body);
-  }
-
-  @Post('utility-rate-plans/:id/archive')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: 'Archive tiered utility rate plan' })
-  async archiveUtilityRatePlan(@Param('id') id: string) {
-    return this.iotService.archiveUtilityRatePlan(id);
+  @ApiOperation({
+    summary: 'Update current flat electricity/water rates for an apartment',
+  })
+  async updateCurrentUtilityRates(@Body() body: UpdateCurrentUtilityRateDto) {
+    return this.iotService.updateCurrentUtilityRates(body);
   }
 
   @Get('meters')
@@ -196,16 +180,6 @@ export class IoTController {
     @Query('status') status?: MeterStatus,
   ) {
     return this.iotService.findAllMeters(apartmentId, status);
-  }
-
-  @Get('meters/:id/effective-rate-plan')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Preview effective tiered rate plan for a meter' })
-  async findEffectiveRatePlanForMeter(
-    @Param('id') id: string,
-    @Query() query: EffectiveUtilityRatePlanQueryDto,
-  ) {
-    return this.iotService.findEffectiveRatePlanForMeter(id, query);
   }
 
   @Get('meters/:id/readings')
@@ -301,7 +275,9 @@ export class IoTController {
 
   @Patch('boards/:boardId/unlink-apartment')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Remove apartment link from a board and its child devices' })
+  @ApiOperation({
+    summary: 'Remove apartment link from a board and its child devices',
+  })
   @ApiJsonResponse(IoTBoardUnlinkResultDto, {
     description: 'Board-to-apartment link removed successfully',
   })
@@ -311,13 +287,14 @@ export class IoTController {
 
   @Patch('boards/unlink-apartment-by-apartment/:apartmentId')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
-  @ApiOperation({ summary: 'Remove apartment link from all boards currently assigned to an apartment' })
+  @ApiOperation({
+    summary:
+      'Remove apartment link from all boards currently assigned to an apartment',
+  })
   @ApiJsonResponse(IoTApartmentBoardsUnlinkResultDto, {
     description: 'Apartment-to-boards links removed successfully',
   })
-  async unlinkBoardsByApartment(
-    @Param('apartmentId') apartmentId: string,
-  ) {
+  async unlinkBoardsByApartment(@Param('apartmentId') apartmentId: string) {
     return this.iotService.unlinkBoardsByApartment(apartmentId);
   }
 
@@ -338,16 +315,17 @@ export class IoTController {
     return this.iotService.createBoardDevice(boardId, createDto);
   }
 
-
   @Post('doors/:boardId/:deviceId/unlock')
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
-    summary: 'Unlock smart door with a 6-digit PIN and wait for board acknowledgement',
+    summary:
+      'Unlock smart door with a 6-digit PIN and wait for board acknowledgement',
   })
   @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
     status: 201,
-    description: 'Returns success only when the board confirms the door unlock action',
+    description:
+      'Returns success only when the board confirms the door unlock action',
   })
   async unlockDoor(
     @Param('boardId') boardId: string,
@@ -365,7 +343,8 @@ export class IoTController {
     summary: 'List door open and close history',
   })
   @ApiJsonResponse(DoorHistoryListDto, {
-    description: 'Door open and close history derived from MQTT board state updates',
+    description:
+      'Door open and close history derived from MQTT board state updates',
   })
   async findDoorHistory(
     @Query() query: DoorHistoryQueryDto,
@@ -403,7 +382,8 @@ export class IoTController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
   @ApiOperation({
-    summary: 'Reset smart door PIN by staff/operator/admin and wait for board acknowledgement',
+    summary:
+      'Reset smart door PIN by staff/operator/admin and wait for board acknowledgement',
   })
   @ApiJsonResponse(IoTBoardDeviceControlResultDto, {
     description: 'Returns success only when the board confirms the PIN reset',
@@ -448,5 +428,4 @@ export class IoTController {
   ) {
     return this.iotService.removeBoardDevice(boardId, deviceId);
   }
-
 }

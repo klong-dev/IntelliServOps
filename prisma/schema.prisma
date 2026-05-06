@@ -356,19 +356,6 @@ enum ReadingType {
   estimated
 }
 
-enum UtilityRateScope {
-  global
-  apartment
-  meter
-  contract
-}
-
-enum UtilityRatePlanStatus {
-  active
-  inactive
-  archived
-}
-
 // --- Document Enums ---
 enum PolicyType {
   rental_rules
@@ -1361,29 +1348,6 @@ model UtilityMeter {
   @@index([status])
   @@index([readingDate])
   @@map("utility_meters")
-}
-
-model UtilityRatePlan {
-  id            String                @id @default(uuid())
-  name          String
-  meterType     MeterType
-  scopeType     UtilityRateScope      @default(global)
-  scopeId       String?
-  effectiveFrom DateTime
-  effectiveTo   DateTime?
-  status        UtilityRatePlanStatus @default(active)
-  currency      String                @default("VND")
-  tiers         Json
-  notes         String?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-
-  @@index([meterType])
-  @@index([scopeType, scopeId])
-  @@index([effectiveFrom])
-  @@index([effectiveTo])
-  @@index([status])
-  @@map("utility_rate_plans")
 }
 
 model UtilityReading {
