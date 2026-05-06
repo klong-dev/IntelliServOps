@@ -303,21 +303,23 @@ describe('IoTService', () => {
 
     it('should create a board and propagate board metadata to child devices', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
-      prisma.ioTBoard.findMany.mockResolvedValueOnce([] as any).mockResolvedValueOnce([
-        {
-          id: 'ESP_A101',
-          name: 'A101 Main Board',
-          status: IoTStatus.active,
-          lastOnlineAt: null,
-          createdAt: new Date('2026-03-01T00:00:00.000Z'),
-          updatedAt: new Date('2026-03-31T00:00:00.000Z'),
-          apartment: {
-            id: 'apt-123',
-            apartmentNumber: 'A101',
-            streetAddress: '123 Nguyen Hue',
+      prisma.ioTBoard.findMany
+        .mockResolvedValueOnce([] as any)
+        .mockResolvedValueOnce([
+          {
+            id: 'ESP_A101',
+            name: 'A101 Main Board',
+            status: IoTStatus.active,
+            lastOnlineAt: null,
+            createdAt: new Date('2026-03-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+            apartment: {
+              id: 'apt-123',
+              apartmentNumber: 'A101',
+              streetAddress: '123 Nguyen Hue',
+            },
           },
-        },
-      ] as any);
+        ] as any);
       prisma.ioTDevice.findMany
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
@@ -455,9 +457,13 @@ describe('IoTService', () => {
             },
           }),
         ] as any);
-      prisma.ioTDevice.create.mockResolvedValue({ id: 'device-electricity' } as any);
+      prisma.ioTDevice.create.mockResolvedValue({
+        id: 'device-electricity',
+      } as any);
       prisma.utilityMeter.findFirst.mockResolvedValue(null as any);
-      prisma.utilityMeter.create.mockResolvedValue({ id: 'meter-electricity' } as any);
+      prisma.utilityMeter.create.mockResolvedValue({
+        id: 'meter-electricity',
+      } as any);
       prisma.ioTDevice.findUnique.mockResolvedValue(
         mockDeviceDetail({
           id: 'device-electricity',
@@ -548,7 +554,9 @@ describe('IoTService', () => {
         deviceId: 1,
         state: 'OFF',
       });
-      expect(result[0].devices.find((device) => device.id === 'device-electric')).toBeUndefined();
+      expect(
+        result[0].devices.find((device) => device.id === 'device-electric'),
+      ).toBeUndefined();
     });
 
     it('should return electric and water meters separately for an apartment', async () => {
@@ -634,17 +642,19 @@ describe('IoTService', () => {
 
     it('should accept legacy device name field when creating a board', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
-      prisma.ioTBoard.findMany.mockResolvedValueOnce([] as any).mockResolvedValueOnce([
-        {
-          id: 'ESP_A101',
-          name: 'A101 Main Board',
-          status: IoTStatus.active,
-          lastOnlineAt: null,
-          createdAt: new Date('2026-03-01T00:00:00.000Z'),
-          updatedAt: new Date('2026-03-31T00:00:00.000Z'),
-          apartment: null,
-        },
-      ] as any);
+      prisma.ioTBoard.findMany
+        .mockResolvedValueOnce([] as any)
+        .mockResolvedValueOnce([
+          {
+            id: 'ESP_A101',
+            name: 'A101 Main Board',
+            status: IoTStatus.active,
+            lastOnlineAt: null,
+            createdAt: new Date('2026-03-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-03-31T00:00:00.000Z'),
+            apartment: null,
+          },
+        ] as any);
       prisma.ioTDevice.findMany
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
@@ -684,14 +694,14 @@ describe('IoTService', () => {
     });
 
     it('should fall back to device-derived boards when iot_boards table is missing', async () => {
-      prisma.ioTBoard.findMany.mockRejectedValue(
-        {
-          code: 'P2021',
-          message:
-            'The table `public.iot_boards` does not exist in the current database.',
-        } as any,
-      );
-      prisma.ioTDevice.findMany.mockResolvedValue([mockBoardSourceDevice()] as any);
+      prisma.ioTBoard.findMany.mockRejectedValue({
+        code: 'P2021',
+        message:
+          'The table `public.iot_boards` does not exist in the current database.',
+      } as any);
+      prisma.ioTDevice.findMany.mockResolvedValue([
+        mockBoardSourceDevice(),
+      ] as any);
 
       const result = await service.findAllBoards();
 
@@ -2193,7 +2203,9 @@ describe('IoTService', () => {
         timedOut: false,
       });
 
-      return expect(service.triggerLight('ESP_A101', 1, 'ON')).resolves.toMatchObject({
+      return expect(
+        service.triggerLight('ESP_A101', 1, 'ON'),
+      ).resolves.toMatchObject({
         success: true,
       });
     });
@@ -2225,66 +2237,117 @@ describe('IoTService', () => {
     });
   });
 
-  describe('utility rate plans', () => {
-    it('should calculate progressive tier usage and amount', () => {
-      const result = service.calculateProgressiveUtilityAmount(120, {
-        calculationMode: 'progressive',
-        unit: 'kWh',
-        tiers: [
-          { tier: 1, from: 0, to: 50, unitPrice: 1800 },
-          { tier: 2, from: 50, to: 100, unitPrice: 1900 },
-          { tier: 3, from: 100, to: null, unitPrice: 2200 },
-        ],
+  describe('current utility rates', () => {
+    const electricityMeter = (overrides = {}) =>
+      mockMeter({
+        id: 'meter-electricity',
+        meterNumber: 'PE-001',
+        meterType: 'electricity',
+        unitOfMeasurement: 'kWh',
+        ratePerUnit: 3500,
+        updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        ...overrides,
       });
+    const waterMeter = (overrides = {}) =>
+      mockMeter({
+        id: 'meter-water',
+        meterNumber: 'PW-001',
+        meterType: 'water',
+        unitOfMeasurement: 'm3',
+        ratePerUnit: 15000,
+        updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        ...overrides,
+      });
+
+    it('should return current flat utility rates for an apartment', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.utilityMeter.findMany.mockResolvedValue([
+        electricityMeter(),
+        waterMeter(),
+      ] as any);
+
+      const result = await service.getCurrentUtilityRates('apt-123');
 
       expect(result).toEqual({
-        unit: 'kWh',
-        amount: 229000,
-        tiersApplied: [
-          { tier: 1, from: 0, to: 50, usage: 50, unitPrice: 1800, amount: 90000 },
-          { tier: 2, from: 50, to: 100, usage: 50, unitPrice: 1900, amount: 95000 },
-          { tier: 3, from: 100, to: null, usage: 20, unitPrice: 2200, amount: 44000 },
-        ],
-      });
-    });
-
-    it('should reject utility rate tiers with gaps', () => {
-      expect(() =>
-        service.calculateProgressiveUtilityAmount(120, {
-          calculationMode: 'progressive',
-          unit: 'kWh',
-          tiers: [
-            { tier: 1, from: 0, to: 50, unitPrice: 1800 },
-            { tier: 2, from: 60, to: null, unitPrice: 1900 },
-          ],
-        }),
-      ).toThrow(BadRequestException);
-    });
-
-    it('should resolve effective rate plan by contract before global', async () => {
-      const contractRatePlan = { id: 'contract-plan' };
-      prisma.utilityRatePlan.findFirst
-        .mockResolvedValueOnce(contractRatePlan as any)
-        .mockResolvedValueOnce({ id: 'global-plan' } as any);
-
-      const result = await service.resolveEffectiveUtilityRatePlan({
-        meterType: 'electricity' as any,
-        meterId: 'meter-123',
         apartmentId: 'apt-123',
-        contractId: 'contract-123',
-        at: new Date('2026-04-30T00:00:00.000Z'),
+        electricity: expect.objectContaining({
+          meterId: 'meter-electricity',
+          meterNumber: 'PE-001',
+          unit: 'kWh',
+          ratePerUnit: '3500',
+        }),
+        water: expect.objectContaining({
+          meterId: 'meter-water',
+          meterNumber: 'PW-001',
+          unit: 'm3',
+          ratePerUnit: '15000',
+        }),
       });
-
-      expect(result).toBe(contractRatePlan);
-      expect(prisma.utilityRatePlan.findFirst).toHaveBeenCalledTimes(1);
-      expect(prisma.utilityRatePlan.findFirst).toHaveBeenCalledWith(
+      expect(prisma.utilityMeter.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            scopeType: 'contract',
-            scopeId: 'contract-123',
+            apartmentId: 'apt-123',
+            status: MeterStatus.active,
+            meterType: { in: ['electricity', 'water'] },
           }),
         }),
       );
+    });
+
+    it('should update current flat utility rates on active meters', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.utilityMeter.findMany
+        .mockResolvedValueOnce([electricityMeter(), waterMeter()] as any)
+        .mockResolvedValueOnce([
+          electricityMeter(),
+          waterMeter({ ratePerUnit: 16000 }),
+        ] as any);
+      prisma.utilityMeter.update.mockResolvedValue({
+        id: 'updated-meter',
+      } as any);
+
+      const result = await service.updateCurrentUtilityRates({
+        apartmentId: 'apt-123',
+        electricityRatePerUnit: 4000,
+        waterRatePerUnit: 16000,
+      });
+
+      expect(prisma.utilityMeter.update).toHaveBeenCalledTimes(2);
+      expect(prisma.utilityMeter.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'meter-electricity' },
+          data: { ratePerUnit: 4000 },
+        }),
+      );
+      expect(prisma.utilityMeter.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'meter-water' },
+          data: { ratePerUnit: 16000 },
+        }),
+      );
+      expect(result.water).toEqual(
+        expect.objectContaining({ ratePerUnit: '16000' }),
+      );
+    });
+
+    it('should reject current utility rate update without rates', async () => {
+      await expect(
+        service.updateCurrentUtilityRates({ apartmentId: 'apt-123' } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.utilityMeter.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject current utility rate update when requested meter is missing', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
+      prisma.utilityMeter.findMany.mockResolvedValue([waterMeter()] as any);
+
+      await expect(
+        service.updateCurrentUtilityRates({
+          apartmentId: 'apt-123',
+          electricityRatePerUnit: 4000,
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.utilityMeter.update).not.toHaveBeenCalled();
     });
   });
 
@@ -2727,12 +2790,17 @@ describe('IoTService', () => {
       prisma.ioTDevice.update.mockResolvedValue({ id: 'device-123' } as any);
       prisma.utilityMeter.findFirst
         .mockResolvedValueOnce(null as any)
-        .mockResolvedValueOnce({ id: 'meter-auto', currentReading: null } as any);
+        .mockResolvedValueOnce({
+          id: 'meter-auto',
+          currentReading: null,
+        } as any);
       prisma.utilityMeter.create.mockResolvedValue({
         id: 'meter-auto',
         currentReading: null,
       } as any);
-      prisma.utilityReading.create.mockResolvedValue({ id: 'reading-1' } as any);
+      prisma.utilityReading.create.mockResolvedValue({
+        id: 'reading-1',
+      } as any);
       prisma.utilityMeter.update.mockResolvedValue({ id: 'meter-auto' } as any);
 
       await service.onMqttTelemetryEvent({

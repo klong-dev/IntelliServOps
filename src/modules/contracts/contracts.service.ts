@@ -77,8 +77,7 @@ type UtilityChargeItem = {
   readingEndId: string;
   readingStartDate: string;
   readingEndDate: string;
-  ratePlanSnapshot: Prisma.InputJsonValue;
-  tiersApplied: Prisma.InputJsonValue;
+  ratePerUnit: number;
 };
 
 type MeterReadingSnapshot = {
@@ -887,10 +886,7 @@ export class ContractsService {
     return `${prefix}-${String(count + 1).padStart(5, '0')}`;
   }
 
-  private resolveUtilityInvoiceDueDate(
-    paymentDueDay: number,
-    now: Date,
-  ): Date {
+  private resolveUtilityInvoiceDueDate(paymentDueDay: number, now: Date): Date {
     const todayStart = this.getUtcDayStart(now);
     const dueDate = new Date(
       Date.UTC(
@@ -1036,6 +1032,7 @@ export class ContractsService {
         meterType: true,
         meterNumber: true,
         unitOfMeasurement: true,
+        ratePerUnit: true,
         readings: { select: { id: true } },
       },
     });
@@ -1097,44 +1094,27 @@ export class ContractsService {
         oldReading = newReading - consumption;
       }
 
-      const ratePlan = await this.ioTService.resolveEffectiveUtilityRatePlan({
-        meterType: typeKey,
-        meterId: meter.id,
-        apartmentId: params.apartmentId,
-        contractId: params.contractId,
-        at: params.periodEnd,
-      });
+      const ratePerUnit =
+        meter.ratePerUnit !== null ? Number(meter.ratePerUnit) : null;
 
-      if (!ratePlan) {
+      if (!ratePerUnit || !Number.isFinite(ratePerUnit) || ratePerUnit <= 0) {
         this.logger.warn(
-          `Skipping ${typeKey} utility invoice item for contract ${params.contractId}: no active rate plan`,
+          `Skipping ${typeKey} utility invoice item for contract ${params.contractId}: missing ratePerUnit`,
         );
         continue;
       }
 
       const normalizedConsumption = this.roundTo2(consumption);
-      const calculation = this.ioTService.calculateProgressiveUtilityAmount(
-        normalizedConsumption,
-        ratePlan.tiers,
-      );
-      const amount = calculation.amount;
+      const normalizedRate = this.roundTo2(ratePerUnit);
+      const amount = this.roundTo2(normalizedConsumption * normalizedRate);
       const meterTypeLabel =
         typeKey === MeterType.electricity ? 'Electricity' : 'Water';
-      const unit = meter.unitOfMeasurement ?? calculation.unit;
-      const ratePlanSnapshot = {
-        id: ratePlan.id,
-        name: ratePlan.name,
-        meterType: ratePlan.meterType,
-        scopeType: ratePlan.scopeType,
-        scopeId: ratePlan.scopeId,
-        effectiveFrom: ratePlan.effectiveFrom.toISOString(),
-        effectiveTo: ratePlan.effectiveTo?.toISOString() ?? null,
-        currency: ratePlan.currency,
-        tiers: ratePlan.tiers,
-      } as Prisma.InputJsonObject;
+      const unit =
+        meter.unitOfMeasurement ??
+        (typeKey === MeterType.electricity ? 'kWh' : 'm3');
 
       utilityItems.push({
-        description: `${meterTypeLabel} usage (${meter.meterNumber}): ${normalizedConsumption} ${unit} by progressive tiers`,
+        description: `${meterTypeLabel} usage (${meter.meterNumber}): ${normalizedConsumption} ${unit} x ${normalizedRate} VND`,
         amount,
         quantity: normalizedConsumption,
         itemType: `utility_${typeKey}`,
@@ -1149,9 +1129,7 @@ export class ContractsService {
         readingEndId: endSnapshot.id,
         readingStartDate: startSnapshot.readingDate.toISOString(),
         readingEndDate: endSnapshot.readingDate.toISOString(),
-        ratePlanSnapshot,
-        tiersApplied:
-          calculation.tiersApplied as unknown as Prisma.InputJsonValue,
+        ratePerUnit: normalizedRate,
       });
 
       await this.prisma.utilityReading.updateMany({
@@ -1316,8 +1294,8 @@ export class ContractsService {
         currentReading: item.currentReading,
         quantity: item.consumption,
         unit: item.unit,
+        ratePerUnit: item.ratePerUnit,
         amount: item.amount,
-        tiersApplied: item.tiersApplied,
       })),
     };
     const electricityItem = utilityItems.find(
