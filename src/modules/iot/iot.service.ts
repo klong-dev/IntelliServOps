@@ -1497,7 +1497,42 @@ export class IoTService {
       update: data,
     });
 
-    return this.toGlobalUtilityRateResponse(setting);
+    const meterUpdates: Promise<{ count: number }>[] = [];
+
+    if (dto.electricityRatePerUnit !== undefined) {
+      meterUpdates.push(
+        this.prisma.utilityMeter.updateMany({
+          where: {
+            meterType: MeterType.electricity,
+            status: MeterStatus.active,
+          },
+          data: { ratePerUnit: dto.electricityRatePerUnit },
+        }),
+      );
+    }
+
+    if (dto.waterRatePerUnit !== undefined) {
+      meterUpdates.push(
+        this.prisma.utilityMeter.updateMany({
+          where: {
+            meterType: MeterType.water,
+            status: MeterStatus.active,
+          },
+          data: { ratePerUnit: dto.waterRatePerUnit },
+        }),
+      );
+    }
+
+    const updateResults = await Promise.all(meterUpdates);
+    const updatedMeterCount = updateResults.reduce(
+      (total, result) => total + result.count,
+      0,
+    );
+
+    return {
+      ...this.toGlobalUtilityRateResponse(setting),
+      updatedMeterCount,
+    };
   }
 
   async getCurrentUtilityRates(apartmentId: string) {

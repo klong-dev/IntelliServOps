@@ -2313,7 +2313,7 @@ describe('IoTService', () => {
       });
     });
 
-    it('should update global default utility rates without changing existing meters', async () => {
+    it('should update global default utility rates and existing active meters', async () => {
       prisma.utilityRateSetting.upsert.mockResolvedValue(
         mockGlobalUtilityRateSetting({
           electricityRatePerUnit: 4000,
@@ -2321,6 +2321,9 @@ describe('IoTService', () => {
           notes: 'Updated global rates',
         }) as any,
       );
+      prisma.utilityMeter.updateMany
+        .mockResolvedValueOnce({ count: 12 } as any)
+        .mockResolvedValueOnce({ count: 10 } as any);
 
       const result = await service.updateGlobalUtilityRates({
         electricityRatePerUnit: 4000,
@@ -2338,9 +2341,24 @@ describe('IoTService', () => {
           }),
         }),
       );
-      expect(prisma.utilityMeter.update).not.toHaveBeenCalled();
+      expect(prisma.utilityMeter.updateMany).toHaveBeenCalledTimes(2);
+      expect(prisma.utilityMeter.updateMany).toHaveBeenCalledWith({
+        where: {
+          meterType: 'electricity',
+          status: MeterStatus.active,
+        },
+        data: { ratePerUnit: 4000 },
+      });
+      expect(prisma.utilityMeter.updateMany).toHaveBeenCalledWith({
+        where: {
+          meterType: 'water',
+          status: MeterStatus.active,
+        },
+        data: { ratePerUnit: 16000 },
+      });
       expect(result.electricity.ratePerUnit).toBe('4000');
       expect(result.water.ratePerUnit).toBe('16000');
+      expect(result.updatedMeterCount).toBe(22);
     });
 
     it('should reject global utility rate update without fields', async () => {
