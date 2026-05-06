@@ -947,95 +947,24 @@ export class ContractsService {
     return Number(parsed.toFixed(2));
   }
 
-  private parseUtilityRatePlanTiers(
-    value: Prisma.JsonValue | null | undefined,
-  ): {
-    unit: string;
-    tiers: Array<{ from: number; to: number | null; unitPrice: number }>;
-  } | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-
-    const raw = value as Record<string, unknown>;
-    const unit = typeof raw.unit === 'string' ? raw.unit.trim() : '';
-    const tiersRaw = Array.isArray(raw.tiers) ? raw.tiers : [];
-
-    if (!unit || tiersRaw.length === 0) {
-      return null;
-    }
-
-    const tiers = tiersRaw
-      .map((item) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-          return null;
-        }
-        const tier = item as Record<string, unknown>;
-        const from = Number(tier.from);
-        const toRaw = tier.to;
-        const to = toRaw === null || toRaw === undefined ? null : Number(toRaw);
-        const unitPrice = Number(tier.unitPrice);
-
-        if (
-          !Number.isFinite(from) ||
-          from < 0 ||
-          !Number.isFinite(unitPrice) ||
-          unitPrice < 0 ||
-          (to !== null && (!Number.isFinite(to) || to <= from))
-        ) {
-          return null;
-        }
-
-        return {
-          from: this.roundTo2(from),
-          to: to === null ? null : this.roundTo2(to),
-          unitPrice: this.roundTo2(unitPrice),
-        };
-      })
-      .filter(
-        (
-          item,
-        ): item is { from: number; to: number | null; unitPrice: number } =>
-          !!item,
-      );
-
-    if (!tiers.length) {
-      return null;
-    }
-
-    return { unit, tiers };
-  }
-
-  private formatUtilityRatePlanText(
-    ratePlan: {
-      name: string;
-      currency: string;
-      tiers: Prisma.JsonValue;
+  private formatUtilityMeterRateText(
+    meter: {
+      ratePerUnit: Prisma.Decimal | number | string | null;
+      unitOfMeasurement: string | null;
     } | null,
+    fallbackUnit: string,
   ): string | null {
-    if (!ratePlan) {
+    if (!meter?.ratePerUnit) {
       return null;
     }
 
-    const parsed = this.parseUtilityRatePlanTiers(ratePlan.tiers);
-    if (!parsed) {
+    const rate = Number(meter.ratePerUnit);
+    if (!Number.isFinite(rate) || rate <= 0) {
       return null;
     }
 
-    const currency = ratePlan.currency || 'VND';
-    const tierText = parsed.tiers
-      .map((tier) => {
-        const rangeText =
-          tier.to === null
-            ? `tu ${tier.from} tro len`
-            : `tu ${tier.from} den ${tier.to}`;
-        const unitPrice =
-          this.formatCurrency(tier.unitPrice) ?? String(tier.unitPrice);
-        return `${rangeText} ${parsed.unit}: ${unitPrice} ${currency}/${parsed.unit}`;
-      })
-      .join('; ');
-
-    return `${ratePlan.name}: ${tierText}`;
+    const rateText = this.formatCurrency(rate) ?? String(rate);
+    return `${rateText} VND/${meter.unitOfMeasurement ?? fallbackUnit}`;
   }
 
   private roundTo2(value: number): number {
@@ -1781,25 +1710,31 @@ export class ContractsService {
       memberType: member.memberType,
     }));
 
-    const rateAt = new Date();
     const apartmentId = contract.apartment?.id ?? null;
-    const [electricityRatePlan, waterRatePlan] = await Promise.all([
-      this.ioTService.resolveEffectiveUtilityRatePlan({
-        meterType: MeterType.electricity,
-        apartmentId,
-        contractId: contract.id,
-        at: rateAt,
-      }),
-      this.ioTService.resolveEffectiveUtilityRatePlan({
-        meterType: MeterType.water,
-        apartmentId,
-        contractId: contract.id,
-        at: rateAt,
-      }),
-    ]);
-    const electricityRateText =
-      this.formatUtilityRatePlanText(electricityRatePlan);
-    const waterRateText = this.formatUtilityRatePlanText(waterRatePlan);
+    const utilityMeters = apartmentId
+      ? await this.prisma.utilityMeter.findMany({
+          where: {
+            apartmentId,
+            status: MeterStatus.active,
+            meterType: { in: [MeterType.electricity, MeterType.water] },
+          },
+          select: {
+            meterType: true,
+            unitOfMeasurement: true,
+            ratePerUnit: true,
+          },
+          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        })
+      : [];
+    const electricityRateText = this.formatUtilityMeterRateText(
+      utilityMeters.find((meter) => meter.meterType === MeterType.electricity) ??
+        null,
+      'kWh',
+    );
+    const waterRateText = this.formatUtilityMeterRateText(
+      utilityMeters.find((meter) => meter.meterType === MeterType.water) ?? null,
+      'm3',
+    );
     const partyAFields = resolveContractPartyAFields({
       landlordName: contract.landlordName,
       landlordIdNumber: contract.landlordIdNumber,
