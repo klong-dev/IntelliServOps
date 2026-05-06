@@ -1350,6 +1350,19 @@ model UtilityMeter {
   @@map("utility_meters")
 }
 
+model UtilityRateSetting {
+  id                     String   @id @default(uuid())
+  key                    String   @unique
+  electricityRatePerUnit Decimal  @db.Decimal(10, 2)
+  waterRatePerUnit       Decimal  @db.Decimal(10, 2)
+  currency               String   @default("VND")
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("utility_rate_settings")
+}
+
 model UtilityReading {
   id                   String      @id @default(uuid())
   utilityMeterId       String

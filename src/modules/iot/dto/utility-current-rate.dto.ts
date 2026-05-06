@@ -1,5 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+
+export class UpdateGlobalUtilityRateDto {
+  @ApiPropertyOptional({
+    example: 3500,
+    description: 'Default electricity rate in VND per kWh for new meters',
+  })
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  electricityRatePerUnit?: number;
+
+  @ApiPropertyOptional({
+    example: 15000,
+    description: 'Default water rate in VND per m3 for new meters',
+  })
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  waterRatePerUnit?: number;
+
+  @ApiPropertyOptional({
+    example: 'Default rates for new utility meters',
+  })
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
 
 export class CurrentUtilityRateQueryDto {
   @ApiProperty({ description: 'Apartment ID' })

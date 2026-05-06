@@ -220,6 +220,23 @@ async function main() {
   const maintenanceRequests: Record<string, any> = {};
   const chatConversations: Record<string, any> = {};
 
+  await prisma.utilityRateSetting.upsert({
+    where: { key: 'global' },
+    create: {
+      key: 'global',
+      electricityRatePerUnit: decimal(3500),
+      waterRatePerUnit: decimal(15000),
+      currency: CURRENCY,
+      notes: 'Giá điện/nước mặc định toàn hệ thống, dùng cho đồng hồ mới tạo.',
+    },
+    update: {
+      electricityRatePerUnit: decimal(3500),
+      waterRatePerUnit: decimal(15000),
+      currency: CURRENCY,
+      notes: 'Giá điện/nước mặc định toàn hệ thống, dùng cho đồng hồ mới tạo.',
+    },
+  });
+
   const adminSeeds = [
     {
       key: 'admin-01',

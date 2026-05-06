@@ -17,6 +17,7 @@ import {
   CreateUtilityMeterDto,
   CreateUtilityReadingDto,
   UpdateCurrentUtilityRateDto,
+  UpdateGlobalUtilityRateDto,
   UpdateIoTBoardDeviceDto,
   UpdateIoTBoardDto,
   UpdateIoTDeviceDto,
@@ -50,6 +51,9 @@ const BOARD_CONTROL_ACK_TIMEOUT_MS = 7000;
 const DOOR_PIN_HASH_BCRYPT_ROUNDS = 12;
 const IOT_BLOCK_OVERDUE_DAYS = 15;
 const FIRE_ALERT_NOTIFICATION_COOLDOWN_MS = 10_000;
+const GLOBAL_UTILITY_RATE_KEY = 'global';
+const DEFAULT_ELECTRICITY_RATE_PER_UNIT = 3500;
+const DEFAULT_WATER_RATE_PER_UNIT = 15000;
 
 @Injectable()
 export class IoTService {
@@ -1397,6 +1401,9 @@ export class IoTService {
 
   async createMeter(createDto: CreateUtilityMeterDto) {
     await this.ensureApartmentExists(createDto.apartmentId);
+    const ratePerUnit =
+      createDto.ratePerUnit ??
+      (await this.getDefaultRatePerUnitForMeterType(createDto.meterType));
 
     const created = await this.prisma.utilityMeter.create({
       data: {
@@ -1407,7 +1414,7 @@ export class IoTService {
         apartmentId: createDto.apartmentId,
         installationDate: new Date(createDto.installationDate),
         unitOfMeasurement: createDto.unitOfMeasurement,
-        ratePerUnit: createDto.ratePerUnit,
+        ratePerUnit,
         isDigital: createDto.isDigital ?? false,
         notes: createDto.notes,
         status: MeterStatus.active,
@@ -1451,6 +1458,47 @@ export class IoTService {
   // ============================================================================
   // Current Utility Rates
   // ============================================================================
+
+  async getGlobalUtilityRates() {
+    const setting = await this.ensureGlobalUtilityRateSetting();
+    return this.toGlobalUtilityRateResponse(setting);
+  }
+
+  async updateGlobalUtilityRates(dto: UpdateGlobalUtilityRateDto) {
+    if (
+      dto.electricityRatePerUnit === undefined &&
+      dto.waterRatePerUnit === undefined &&
+      dto.notes === undefined
+    ) {
+      throw new BadRequestException(
+        'At least one electricityRatePerUnit, waterRatePerUnit or notes is required',
+      );
+    }
+
+    const data: Prisma.UtilityRateSettingUpdateInput = {
+      ...(dto.electricityRatePerUnit !== undefined && {
+        electricityRatePerUnit: dto.electricityRatePerUnit,
+      }),
+      ...(dto.waterRatePerUnit !== undefined && {
+        waterRatePerUnit: dto.waterRatePerUnit,
+      }),
+      ...(dto.notes !== undefined && { notes: dto.notes }),
+    };
+
+    const setting = await this.prisma.utilityRateSetting.upsert({
+      where: { key: GLOBAL_UTILITY_RATE_KEY },
+      create: {
+        key: GLOBAL_UTILITY_RATE_KEY,
+        electricityRatePerUnit:
+          dto.electricityRatePerUnit ?? DEFAULT_ELECTRICITY_RATE_PER_UNIT,
+        waterRatePerUnit: dto.waterRatePerUnit ?? DEFAULT_WATER_RATE_PER_UNIT,
+        notes: dto.notes,
+      },
+      update: data,
+    });
+
+    return this.toGlobalUtilityRateResponse(setting);
+  }
 
   async getCurrentUtilityRates(apartmentId: string) {
     await this.ensureApartmentExists(apartmentId);
@@ -1507,6 +1555,58 @@ export class IoTService {
 
     await Promise.all(updates);
     return this.getCurrentUtilityRates(dto.apartmentId);
+  }
+
+  private async ensureGlobalUtilityRateSetting() {
+    return this.prisma.utilityRateSetting.upsert({
+      where: { key: GLOBAL_UTILITY_RATE_KEY },
+      create: {
+        key: GLOBAL_UTILITY_RATE_KEY,
+        electricityRatePerUnit: DEFAULT_ELECTRICITY_RATE_PER_UNIT,
+        waterRatePerUnit: DEFAULT_WATER_RATE_PER_UNIT,
+        notes:
+          'Default global utility rates used when creating new utility meters.',
+      },
+      update: {},
+    });
+  }
+
+  private async getDefaultRatePerUnitForMeterType(meterType: MeterType) {
+    if (meterType !== MeterType.electricity && meterType !== MeterType.water) {
+      return undefined;
+    }
+
+    const setting = await this.ensureGlobalUtilityRateSetting();
+    return Number(
+      meterType === MeterType.electricity
+        ? setting.electricityRatePerUnit
+        : setting.waterRatePerUnit,
+    );
+  }
+
+  private toGlobalUtilityRateResponse(setting: {
+    key: string;
+    electricityRatePerUnit: Prisma.Decimal | number | string;
+    waterRatePerUnit: Prisma.Decimal | number | string;
+    currency: string;
+    notes: string | null;
+    updatedAt: Date;
+  }) {
+    return {
+      key: setting.key,
+      electricity: {
+        unit: 'kWh',
+        ratePerUnit: setting.electricityRatePerUnit.toString(),
+        currency: setting.currency,
+      },
+      water: {
+        unit: 'm3',
+        ratePerUnit: setting.waterRatePerUnit.toString(),
+        currency: setting.currency,
+      },
+      notes: setting.notes,
+      updatedAt: setting.updatedAt,
+    };
   }
 
   private async findActiveUtilityMetersForApartment(apartmentId: string) {
@@ -2860,6 +2960,7 @@ export class IoTService {
       apartmentId,
       meterType,
     );
+    const ratePerUnit = await this.getDefaultRatePerUnitForMeterType(meterType);
 
     try {
       return await this.prisma.utilityMeter.create({
@@ -2869,6 +2970,7 @@ export class IoTService {
           apartmentId,
           installationDate: event.receivedAt,
           unitOfMeasurement: meterType === MeterType.electricity ? 'kWh' : 'm3',
+          ratePerUnit,
           isDigital: true,
           status: MeterStatus.active,
           notes: `Auto-created from MQTT telemetry ${event.espId}`,
@@ -3312,6 +3414,8 @@ export class IoTService {
       return;
     }
 
+    const ratePerUnit = await this.getDefaultRatePerUnitForMeterType(meterType);
+
     await this.prisma.utilityMeter.create({
       data: {
         meterNumber: this.buildUtilityMeterNumber(
@@ -3323,6 +3427,7 @@ export class IoTService {
         apartmentId,
         installationDate: new Date(),
         unitOfMeasurement: device.topic === 'electric' ? 'kWh' : 'm3',
+        ratePerUnit,
         isDigital: true,
         status: MeterStatus.active,
         notes: `Auto-created from board ${boardName} (${boardId}) for device ${device.deviceName} [${deviceRecordId}]`,
