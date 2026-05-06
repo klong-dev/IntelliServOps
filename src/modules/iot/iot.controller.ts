@@ -43,6 +43,7 @@ import {
   UpdateIoTBoardDto,
   UpdateDoorPinDto,
   UpdateCurrentUtilityRateDto,
+  UpdateGlobalUtilityRateDto,
   UpdateUtilityMeterDto,
   UtilityReadingListQueryDto,
 } from './dto';
@@ -150,6 +151,25 @@ export class IoTController {
     @Query('status') status?: MeterStatus,
   ) {
     return this.iotService.findUtilityMeters(boardId, apartmentId, status);
+  }
+
+  @Get('utility-rates/global')
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @ApiOperation({
+    summary: 'Get global default electricity/water rates for new meters',
+  })
+  async getGlobalUtilityRates() {
+    return this.iotService.getGlobalUtilityRates();
+  }
+
+  @Patch('utility-rates/global')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({
+    summary:
+      'Update global default electricity/water rates used when creating new meters',
+  })
+  async updateGlobalUtilityRates(@Body() body: UpdateGlobalUtilityRateDto) {
+    return this.iotService.updateGlobalUtilityRates(body);
   }
 
   @Get('utility-rates/current')

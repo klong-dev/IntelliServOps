@@ -95,6 +95,18 @@ describe('IoTService', () => {
     ...overrides,
   });
 
+  const mockGlobalUtilityRateSetting = (overrides = {}) => ({
+    id: 'utility-rate-setting-global',
+    key: 'global',
+    electricityRatePerUnit: 3500,
+    waterRatePerUnit: 15000,
+    currency: 'VND',
+    notes: 'Default utility rates',
+    createdAt: new Date('2026-05-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+    ...overrides,
+  });
+
   const mockBoardSourceDevice = (overrides = {}) => ({
     id: 'device-123',
     apartmentId: 'apt-123',
@@ -139,6 +151,9 @@ describe('IoTService', () => {
     notificationsService.createAndPush.mockResolvedValue({
       id: 'notification-123',
     });
+    prisma.utilityRateSetting.upsert.mockResolvedValue(
+      mockGlobalUtilityRateSetting() as any,
+    );
     prisma.utilityMeter.findMany.mockResolvedValue([] as any);
   });
 
@@ -502,6 +517,7 @@ describe('IoTService', () => {
             apartmentId: 'apt-123',
             meterType: 'electricity',
             meterNumber: 'UTILITY-ESP_A101-electric-5',
+            ratePerUnit: 3500,
           }),
         }),
       );
@@ -2259,6 +2275,80 @@ describe('IoTService', () => {
         ...overrides,
       });
 
+    it('should return global default utility rates', async () => {
+      prisma.utilityRateSetting.upsert.mockResolvedValue(
+        mockGlobalUtilityRateSetting({
+          electricityRatePerUnit: 3600,
+          waterRatePerUnit: 15500,
+          updatedAt: new Date('2026-05-06T00:00:00.000Z'),
+        }) as any,
+      );
+
+      const result = await service.getGlobalUtilityRates();
+
+      expect(prisma.utilityRateSetting.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { key: 'global' },
+          create: expect.objectContaining({
+            electricityRatePerUnit: 3500,
+            waterRatePerUnit: 15000,
+          }),
+          update: {},
+        }),
+      );
+      expect(result).toEqual({
+        key: 'global',
+        electricity: {
+          unit: 'kWh',
+          ratePerUnit: '3600',
+          currency: 'VND',
+        },
+        water: {
+          unit: 'm3',
+          ratePerUnit: '15500',
+          currency: 'VND',
+        },
+        notes: 'Default utility rates',
+        updatedAt: new Date('2026-05-06T00:00:00.000Z'),
+      });
+    });
+
+    it('should update global default utility rates without changing existing meters', async () => {
+      prisma.utilityRateSetting.upsert.mockResolvedValue(
+        mockGlobalUtilityRateSetting({
+          electricityRatePerUnit: 4000,
+          waterRatePerUnit: 16000,
+          notes: 'Updated global rates',
+        }) as any,
+      );
+
+      const result = await service.updateGlobalUtilityRates({
+        electricityRatePerUnit: 4000,
+        waterRatePerUnit: 16000,
+        notes: 'Updated global rates',
+      });
+
+      expect(prisma.utilityRateSetting.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { key: 'global' },
+          update: expect.objectContaining({
+            electricityRatePerUnit: 4000,
+            waterRatePerUnit: 16000,
+            notes: 'Updated global rates',
+          }),
+        }),
+      );
+      expect(prisma.utilityMeter.update).not.toHaveBeenCalled();
+      expect(result.electricity.ratePerUnit).toBe('4000');
+      expect(result.water.ratePerUnit).toBe('16000');
+    });
+
+    it('should reject global utility rate update without fields', async () => {
+      await expect(service.updateGlobalUtilityRates({})).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
     it('should return current flat utility rates for an apartment', async () => {
       prisma.apartment.findUnique.mockResolvedValue({ id: 'apt-123' } as any);
       prisma.utilityMeter.findMany.mockResolvedValue([
@@ -2818,6 +2908,7 @@ describe('IoTService', () => {
             meterType: 'electricity',
             meterNumber: 'AUTO-ESP_A101-apt-123-electric',
             unitOfMeasurement: 'kWh',
+            ratePerUnit: 3500,
             isDigital: true,
           }),
         }),

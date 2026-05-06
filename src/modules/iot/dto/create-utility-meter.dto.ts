@@ -48,12 +48,11 @@ export class CreateUtilityMeterDto {
   @ApiPropertyOptional({
     example: 3500,
     description:
-      'Deprecated legacy flat rate. Use utility rate plans for tiered pricing.',
-    deprecated: true,
+      'Optional per-meter override. When omitted, the global default utility rate is used for electricity/water meters.',
   })
   @IsNumber()
   @IsOptional()
-  @Min(0)
+  @Min(1)
   ratePerUnit?: number;
 
   @ApiPropertyOptional({ default: false })
