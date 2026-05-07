@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { MQTT_DEVICE_TOPICS } from '../iot-mqtt.types';
 
 export const IOT_DEVICE_CONTROL_ACTIONS = [
@@ -72,6 +72,7 @@ export class FakeFireAlertDto {
     example: 'ESP_A101',
     description: 'ESP board id to fake a FIRE status event for',
   })
+  @IsString()
   espId: string;
 
   @ApiProperty({
