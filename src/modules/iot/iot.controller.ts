@@ -48,7 +48,7 @@ import {
   UtilityReadingListQueryDto,
 } from './dto';
 import { ApiJsonResponse } from '../../common/dto';
-import { CurrentUser, Roles } from '../../common/decorators';
+import { CurrentUser, Public, Roles } from '../../common/decorators';
 import { Role } from '../../common/enums/role.enum';
 import { IoTStatus, MeterStatus } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
@@ -82,7 +82,7 @@ export class IoTController {
   }
 
   @Post('devices/:espId/:deviceId')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Public()
   @ApiOperation({
     summary:
       'Control a board device directly by espId/topic/deviceId and wait for board acknowledgement',
