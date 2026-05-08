@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { Allow, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 
 const YEAR_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -153,6 +153,7 @@ export class ConfirmPartnerMonthlyPayoutDto {
     format: 'binary',
     description: 'Transfer proof image (JPG/PNG/WebP)',
   })
+  @Allow()
   transferProof: any;
 }
 
