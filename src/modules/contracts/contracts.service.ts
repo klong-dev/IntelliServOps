@@ -1355,10 +1355,10 @@ export class ContractsService {
       await this.notifySafely({
         recipientType: ActorType.user,
         recipientId: userId,
-        title: 'Hoa don dien nuoc moi',
-        message: `Hoa don ${createdInvoice.invoiceNumber} da duoc tao. Han thanh toan: ${this.formatDate(createdInvoice.dueDate)}.`,
+        title: 'Hóa đơn điện nước mới',
+        message: `Hóa đơn ${createdInvoice.invoiceNumber} đã được tạo. Hạn thanh toán: ${this.formatDate(createdInvoice.dueDate)}.`,
         actionUrl: `/invoices/${createdInvoice.id}`,
-        actionLabel: 'Thanh toan ngay',
+        actionLabel: 'Thanh toán ngay',
         relatedEntityType: 'Invoice',
         relatedEntityId: createdInvoice.id,
       });

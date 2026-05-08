@@ -989,7 +989,7 @@ export class UsersService {
 
       if (!autoVerified) {
         throw new BadRequestException(
-          'Khong the doc day du ca 2 mat CCCD. Vui long chup ro mat truoc va mat sau.',
+          'Không thể đọc đầy đủ cả 2 mặt CCCD. Vui lòng chụp rõ mặt trước và mặt sau.',
         );
       }
 

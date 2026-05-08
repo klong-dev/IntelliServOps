@@ -1874,7 +1874,7 @@ export class PaymentsService {
 
     return [
       {
-        name: this.toPayOSItemName(`Hoa don ${invoiceContent.invoiceNumber}`),
+        name: this.toPayOSItemName(`Hóa đơn ${invoiceContent.invoiceNumber}`),
         quantity: 1,
         price: Math.round(invoiceContent.totalAmount),
       },

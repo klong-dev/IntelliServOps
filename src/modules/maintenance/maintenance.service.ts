@@ -556,13 +556,13 @@ export class MaintenanceService {
     await this.notificationsService.createAndPush({
       recipientType: ActorType.staff,
       recipientId: assignedStaffId,
-      title: 'Yeu cau bao tri moi',
-      message: `Yeu cau "${requestPayload.title}" da duoc giao cho ban.`,
+      title: 'Yêu cầu bảo trì mới',
+      message: `Yêu cầu "${requestPayload.title}" đã được giao cho bạn.`,
       channel: 'in_app',
       priority: 'high',
       notificationType: 'info',
       actionUrl: `/maintenance/${created.id}`,
-      actionLabel: 'Xem chi tiet',
+      actionLabel: 'Xem chi tiết',
       relatedEntityType: 'MaintenanceRequest',
       relatedEntityId: created.id,
     });
@@ -844,13 +844,13 @@ export class MaintenanceService {
     await this.notificationsService.createAndPush({
       recipientType: ActorType.user,
       recipientId: request.userId,
-      title: 'Yeu cau bao tri da hoan tat',
-      message: 'Vui long danh gia chat luong ho tro cua nhan vien bao tri.',
+      title: 'Yêu cầu bảo trì đã hoàn tất',
+      message: 'Vui lòng đánh giá chất lượng hỗ trợ của nhân viên bảo trì.',
       channel: 'in_app',
       priority: 'high',
       notificationType: 'info',
       actionUrl: `/maintenance/${id}`,
-      actionLabel: 'Danh gia ngay',
+      actionLabel: 'Đánh giá ngay',
       relatedEntityType: 'MaintenanceRequest',
       relatedEntityId: id,
     });
