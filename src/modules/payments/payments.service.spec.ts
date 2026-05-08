@@ -875,6 +875,69 @@ describe('PaymentsService', () => {
       expect(result.payoutPaymentId).toBe('refund-payment-123');
     });
 
+    it('should materialize partner payout rows when listing due payouts', async () => {
+      const staff = mockStaffJwtPayload();
+      const paidAt = new Date('2026-04-10T00:00:00.000Z');
+      prisma.partnerCooperationContract.findMany.mockResolvedValue([
+        {
+          apartmentId: 'apt-123',
+          partnerId: 'partner-123',
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          endDate: new Date('2026-12-31T00:00:00.000Z'),
+          commissionRate: 10,
+          partner: {
+            id: 'partner-123',
+            fullName: 'Partner A',
+            companyName: 'Partner Co',
+            bankName: 'VCB',
+            bankAccountNumber: '9876543210',
+            paymentTerms: 'day 5',
+          },
+        },
+      ] as any);
+      prisma.invoice.findMany.mockResolvedValue([
+        {
+          totalAmount: 10000000,
+          currency: 'VND',
+          paidAt,
+          rentalContract: { apartmentId: 'apt-123' },
+        },
+      ] as any);
+      prisma.partnerMonthlyPayout.findMany.mockResolvedValue([
+        {
+          id: 'payout-123',
+          partnerId: 'partner-123',
+          status: PartnerMonthlyPayoutStatus.pending,
+          dueDate: new Date('2026-05-05T00:00:00.000Z'),
+          transferProofUrl: null,
+          transferReference: null,
+          transferNote: null,
+          confirmedAt: null,
+          confirmedByStaffId: null,
+        },
+      ] as any);
+
+      const result = await service.listDuePartnerMonthlyPayouts(staff, {
+        month: '2026-04',
+      });
+
+      expect(prisma.partnerMonthlyPayout.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            payoutMonth: '2026-04',
+            grossRevenue: 10000000,
+            commissionAmount: 1000000,
+            payoutAmount: 9000000,
+            status: PartnerMonthlyPayoutStatus.pending,
+          }),
+        }),
+      );
+      expect(result[0]).toMatchObject({
+        payoutId: 'payout-123',
+        payoutAmount: '9000000.00',
+      });
+    });
+
     it('should create pending partner payout immediately when rent invoice is paid', async () => {
       const payment = mockPayment({ status: PaymentStatus.pending });
       const paidAt = new Date('2026-04-10T00:00:00.000Z');

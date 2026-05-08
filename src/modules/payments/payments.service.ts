@@ -134,6 +134,44 @@ export class PaymentsService {
       return [];
     }
 
+    await Promise.all(
+      drafts
+        .filter((draft) => draft.payoutAmount > 0)
+        .map((draft) =>
+          this.prisma.partnerMonthlyPayout.upsert({
+            where: {
+              partnerId_payoutMonth: {
+                partnerId: draft.partnerId,
+                payoutMonth: draft.payoutMonth,
+              },
+            },
+            create: {
+              partner: { connect: { id: draft.partnerId } },
+              payoutMonth: draft.payoutMonth,
+              billingPeriodStart: draft.billingPeriodStart,
+              billingPeriodEnd: draft.billingPeriodEndExclusive,
+              dueDate: draft.dueDate,
+              grossRevenue: draft.grossRevenue,
+              commissionAmount: draft.commissionAmount,
+              payoutAmount: draft.payoutAmount,
+              effectiveCommissionRate: draft.effectiveCommissionRate,
+              currency: draft.currency,
+              status: PartnerMonthlyPayoutStatus.pending,
+            },
+            update: {
+              billingPeriodStart: draft.billingPeriodStart,
+              billingPeriodEnd: draft.billingPeriodEndExclusive,
+              dueDate: draft.dueDate,
+              grossRevenue: draft.grossRevenue,
+              commissionAmount: draft.commissionAmount,
+              payoutAmount: draft.payoutAmount,
+              effectiveCommissionRate: draft.effectiveCommissionRate,
+              currency: draft.currency,
+            },
+          }),
+        ),
+    );
+
     const existingPayouts = await this.prisma.partnerMonthlyPayout.findMany({
       where: {
         payoutMonth: monthRange.payoutMonth,
