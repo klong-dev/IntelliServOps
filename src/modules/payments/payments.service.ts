@@ -405,10 +405,11 @@ export class PaymentsService {
             totalAmount: true,
             payments: {
               where: {
-                status: PaymentStatus.refunded,
+                paymentGateway: 'manual_refund',
+                status: { in: [PaymentStatus.pending, PaymentStatus.refunded] },
               },
               orderBy: {
-                refundDate: 'desc',
+                createdAt: 'desc',
               },
               select: {
                 id: true,
@@ -572,10 +573,15 @@ export class PaymentsService {
             paymentMethod: true,
             payments: {
               where: {
-                status: PaymentStatus.refunded,
+                paymentGateway: 'manual_refund',
+                status: { in: [PaymentStatus.pending, PaymentStatus.refunded] },
+              },
+              orderBy: {
+                createdAt: 'desc',
               },
               select: {
                 id: true,
+                status: true,
               },
             },
           },
@@ -604,11 +610,18 @@ export class PaymentsService {
       );
     }
 
-    if (paidDepositInvoice.payments.length > 0) {
+    const refundedPayout = paidDepositInvoice.payments.find(
+      (payment) => payment.status === PaymentStatus.refunded,
+    );
+    if (refundedPayout) {
       throw new ConflictException(
         'Contract deposit payout is already confirmed',
       );
     }
+
+    const pendingPayout = paidDepositInvoice.payments.find(
+      (payment) => payment.status === PaymentStatus.pending,
+    );
 
     const primaryMember =
       contract.members.find((member) => member.memberType === 'primary') ||
@@ -643,37 +656,50 @@ export class PaymentsService {
       transferProof,
     );
 
-    const paymentReference = `REFUND-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
     const refundDate = new Date();
-    const payoutPayment = await this.prisma.payment.create({
-      data: {
-        paymentReference,
-        invoice: { connect: { id: paidDepositInvoice.id } },
-        user: { connect: { id: primaryMember.userId } },
-        amount: payoutAmount,
-        currency: paidDepositInvoice.currency || 'VND',
-        paymentMethod:
-          paidDepositInvoice.paymentMethod || PaymentMethodType.bank_transfer,
-        paymentGateway: 'manual_refund',
-        transactionId: body.transferReference?.trim() || null,
-        paymentDate: refundDate,
-        status: PaymentStatus.refunded,
-        paymentProofUrl: transferProofUrl,
-        notes: body.transferNote?.trim() || null,
-        processedByStaff: { connect: { id: currentUser.sub } },
-        refundAmount: payoutAmount,
-        refundDate,
-        refundReason:
-          body.refundReason?.trim() ||
-          'Contract ended, security deposit payout',
-      },
-      select: {
-        id: true,
-        status: true,
-        refundDate: true,
-        processedByStaffId: true,
-      },
-    });
+    const payoutData = {
+      transactionId: body.transferReference?.trim() || null,
+      paymentDate: refundDate,
+      status: PaymentStatus.refunded,
+      paymentProofUrl: transferProofUrl,
+      notes: body.transferNote?.trim() || null,
+      processedByStaff: { connect: { id: currentUser.sub } },
+      refundAmount: payoutAmount,
+      refundDate,
+      refundReason:
+        body.refundReason?.trim() || 'Contract ended, security deposit payout',
+    };
+
+    const payoutPayment = pendingPayout
+      ? await this.prisma.payment.update({
+          where: { id: pendingPayout.id },
+          data: payoutData,
+          select: {
+            id: true,
+            status: true,
+            refundDate: true,
+            processedByStaffId: true,
+          },
+        })
+      : await this.prisma.payment.create({
+          data: {
+            paymentReference: `REFUND-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+            invoice: { connect: { id: paidDepositInvoice.id } },
+            user: { connect: { id: primaryMember.userId } },
+            amount: payoutAmount,
+            currency: paidDepositInvoice.currency || 'VND',
+            paymentMethod:
+              paidDepositInvoice.paymentMethod || PaymentMethodType.bank_transfer,
+            paymentGateway: 'manual_refund',
+            ...payoutData,
+          },
+          select: {
+            id: true,
+            status: true,
+            refundDate: true,
+            processedByStaffId: true,
+          },
+        });
 
     return {
       message: 'Contract deposit payout confirmed successfully',
@@ -1511,6 +1537,119 @@ export class PaymentsService {
   private async handleInvoicePaidSideEffects(invoiceId: string) {
     await this.resolveRentOverdueOnPaid(invoiceId);
     await this.upsertPendingPartnerPayoutForPaidRentInvoice(invoiceId);
+    await this.createPendingContractDepositPayoutIfEligible(invoiceId);
+  }
+
+  private async createPendingContractDepositPayoutIfEligible(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        invoiceType: true,
+        paidAt: true,
+        rentalContract: {
+          select: {
+            id: true,
+            status: true,
+            endDate: true,
+            depositAmount: true,
+            members: {
+              select: {
+                userId: true,
+                memberType: true,
+                isPrimaryContact: true,
+              },
+            },
+            invoices: {
+              where: {
+                invoiceType: {
+                  in: [InvoiceType.deposit, InvoiceType.contractDeposit],
+                },
+                status: InvoiceStatus.paid,
+              },
+              orderBy: { paidAt: 'desc' },
+              select: {
+                id: true,
+                totalAmount: true,
+                currency: true,
+                paymentMethod: true,
+                payments: {
+                  where: {
+                    paymentGateway: 'manual_refund',
+                    status: {
+                      in: [PaymentStatus.pending, PaymentStatus.refunded],
+                    },
+                  },
+                  select: { id: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (
+      !invoice?.paidAt ||
+      (invoice.invoiceType !== InvoiceType.rent &&
+        invoice.invoiceType !== InvoiceType.utility)
+    ) {
+      return;
+    }
+
+    const contract = invoice.rentalContract;
+    if (
+      contract.endDate > new Date() ||
+      (contract.status !== ContractStatus.expired &&
+        contract.status !== ContractStatus.active &&
+        contract.status !== ContractStatus.signed)
+    ) {
+      return;
+    }
+
+    if (await this.hasUnpaidRentUtilityInvoices(contract.id)) {
+      return;
+    }
+
+    const paidDepositInvoice = contract.invoices[0];
+    if (!paidDepositInvoice || paidDepositInvoice.payments.length > 0) {
+      return;
+    }
+
+    const primaryMember =
+      contract.members.find((member) => member.memberType === 'primary') ||
+      contract.members.find((member) => member.isPrimaryContact) ||
+      contract.members[0];
+    if (!primaryMember) {
+      return;
+    }
+
+    const depositAmount = Number(contract.depositAmount);
+    const fallbackAmount = Number(paidDepositInvoice.totalAmount);
+    const payoutAmount =
+      Number.isFinite(depositAmount) && depositAmount > 0
+        ? depositAmount
+        : fallbackAmount;
+    if (!Number.isFinite(payoutAmount) || payoutAmount <= 0) {
+      return;
+    }
+
+    await this.prisma.payment.create({
+      data: {
+        paymentReference: `REFUND-PENDING-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+        invoice: { connect: { id: paidDepositInvoice.id } },
+        user: { connect: { id: primaryMember.userId } },
+        amount: payoutAmount,
+        currency: paidDepositInvoice.currency || 'VND',
+        paymentMethod:
+          paidDepositInvoice.paymentMethod || PaymentMethodType.bank_transfer,
+        paymentGateway: 'manual_refund',
+        paymentDate: invoice.paidAt,
+        status: PaymentStatus.pending,
+        refundAmount: payoutAmount,
+        refundReason: 'Contract ended, security deposit payout',
+      },
+    });
   }
 
   private async resolveRentOverdueOnPaid(invoiceId: string) {

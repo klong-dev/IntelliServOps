@@ -622,6 +622,210 @@ describe('PaymentsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should return materialized pending deposit payout payment id', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findMany.mockResolvedValue([
+        {
+          id: 'contract-123',
+          contractNumber: 'CNT-001',
+          apartmentId: 'apt-123',
+          endDate: new Date('2026-04-01T00:00:00.000Z'),
+          depositAmount: 10000000,
+          apartment: { apartmentNumber: 'A101' },
+          members: [
+            {
+              userId: 'user-123',
+              memberType: 'primary',
+              isPrimaryContact: true,
+              user: {
+                id: 'user-123',
+                fullName: 'Nguyen Van A',
+                phone: '0901234567',
+                bankName: 'VCB',
+                bankAccountNumber: '0123456789',
+              },
+            },
+          ],
+          invoices: [
+            {
+              id: 'deposit-invoice-123',
+              currency: 'VND',
+              totalAmount: 10000000,
+              payments: [
+                {
+                  id: 'refund-payment-123',
+                  status: PaymentStatus.pending,
+                  paymentProofUrl: null,
+                  transactionId: null,
+                  notes: null,
+                  refundDate: null,
+                  processedByStaffId: null,
+                },
+              ],
+            },
+          ],
+          _count: { invoices: 0 },
+        },
+      ] as any);
+
+      const result = await service.listDueContractDepositPayouts(staff, {
+        month: '2026-04',
+      });
+
+      expect(result[0]).toMatchObject({
+        payoutPaymentId: 'refund-payment-123',
+        status: PaymentStatus.pending,
+      });
+    });
+
+    it('should create pending deposit payout after final utility invoice is paid', async () => {
+      const payment = mockPayment({ status: PaymentStatus.pending });
+      const paidAt = new Date('2026-04-10T00:00:00.000Z');
+      prisma.payment.findUnique.mockResolvedValue({
+        ...payment,
+        invoice: mockInvoice({
+          invoiceType: InvoiceType.utility,
+          rentalContract: {
+            id: 'contract-123',
+            status: ContractStatus.expired,
+            apartmentId: 'apt-123',
+            members: [{ userId: 'user-123' }],
+          },
+        }),
+      } as any);
+      prisma.$transaction.mockResolvedValue([] as any);
+      prisma.invoice.findUnique
+        .mockResolvedValueOnce({
+          id: 'invoice-123',
+          invoiceType: InvoiceType.utility,
+          rentalContract: { apartmentId: 'apt-123' },
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'invoice-123',
+          invoiceType: InvoiceType.utility,
+          paidAt,
+        } as any)
+        .mockResolvedValueOnce({
+          id: 'invoice-123',
+          invoiceType: InvoiceType.utility,
+          paidAt,
+          rentalContract: {
+            id: 'contract-123',
+            status: ContractStatus.expired,
+            endDate: new Date('2026-04-01T00:00:00.000Z'),
+            depositAmount: 10000000,
+            members: [{ userId: 'user-123', memberType: 'primary' }],
+            invoices: [
+              {
+                id: 'deposit-invoice-123',
+                totalAmount: 10000000,
+                currency: 'VND',
+                paymentMethod: 'bank_transfer',
+                payments: [],
+              },
+            ],
+          },
+        } as any);
+      prisma.invoice.count.mockResolvedValue(0 as any);
+
+      await service.confirm('payment-123', 'tx-123');
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            invoice: { connect: { id: 'deposit-invoice-123' } },
+            user: { connect: { id: 'user-123' } },
+            paymentGateway: 'manual_refund',
+            status: PaymentStatus.pending,
+            refundAmount: 10000000,
+          }),
+        }),
+      );
+    });
+
+    it('should not create pending deposit payout while rent or utility remains unpaid', async () => {
+      prisma.invoice.findUnique.mockResolvedValue({
+        id: 'invoice-123',
+        invoiceType: InvoiceType.utility,
+        paidAt: new Date('2026-04-10T00:00:00.000Z'),
+        rentalContract: {
+          id: 'contract-123',
+          status: ContractStatus.expired,
+          endDate: new Date('2026-04-01T00:00:00.000Z'),
+          depositAmount: 10000000,
+          members: [{ userId: 'user-123', memberType: 'primary' }],
+          invoices: [
+            {
+              id: 'deposit-invoice-123',
+              totalAmount: 10000000,
+              currency: 'VND',
+              paymentMethod: 'bank_transfer',
+              payments: [],
+            },
+          ],
+        },
+      } as any);
+      prisma.invoice.count.mockResolvedValue(1 as any);
+
+      await (service as any).createPendingContractDepositPayoutIfEligible(
+        'invoice-123',
+      );
+
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('should update pending deposit payout when staff confirms transfer proof', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        contractNumber: 'CNT-001',
+        endDate: new Date('2026-04-01T00:00:00.000Z'),
+        depositAmount: 10000000,
+        members: [{ userId: 'user-123', memberType: 'primary' }],
+        invoices: [
+          {
+            id: 'deposit-invoice-123',
+            currency: 'VND',
+            totalAmount: 10000000,
+            paymentMethod: 'bank_transfer',
+            payments: [
+              { id: 'refund-payment-123', status: PaymentStatus.pending },
+            ],
+          },
+        ],
+      } as any);
+      prisma.invoice.count.mockResolvedValue(0 as any);
+      storageService.uploadFile.mockResolvedValue('https://proof.local/img.png');
+      prisma.payment.update.mockResolvedValue({
+        id: 'refund-payment-123',
+        status: PaymentStatus.refunded,
+        refundDate: new Date('2026-04-11T00:00:00.000Z'),
+        processedByStaffId: staff.sub,
+      } as any);
+
+      const result = await service.confirmContractDepositPayout(
+        staff,
+        {
+          contractId: 'contract-123',
+          transferReference: 'BANK-TX-1',
+          transferNote: 'done',
+        },
+        { mimetype: 'image/png', buffer: Buffer.from('proof') },
+      );
+
+      expect(prisma.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'refund-payment-123' },
+          data: expect.objectContaining({
+            status: PaymentStatus.refunded,
+            transactionId: 'BANK-TX-1',
+            paymentProofUrl: 'https://proof.local/img.png',
+          }),
+        }),
+      );
+      expect(result.payoutPaymentId).toBe('refund-payment-123');
+    });
+
     it('should create pending partner payout immediately when rent invoice is paid', async () => {
       const payment = mockPayment({ status: PaymentStatus.pending });
       const paidAt = new Date('2026-04-10T00:00:00.000Z');
