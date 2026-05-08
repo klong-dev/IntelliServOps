@@ -332,7 +332,7 @@ export class InvoicesService {
     }));
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_MINUTE)
   async autoMarkOverdueInvoices(): Promise<void> {
     await this.markOverdue(true);
   }
