@@ -16,10 +16,13 @@ describe('ChatAiService', () => {
 
     const configValues = new Map<string, unknown>([
       ['aiService.enabled', true],
-      ['aiService.provider', 'service'],
+      ['aiService.provider', 'gemini'],
       ['aiService.serviceUrl', 'http://pc.klong.dev:3007'],
       ['aiService.timeoutMs', 20_000],
       ['aiService.apiKey', 'test-api-key'],
+      ['aiService.geminiApiKey', 'test-gemini-key'],
+      ['aiService.geminiModel', 'gemini-2.5-flash'],
+      ['aiService.confidenceThreshold', 0.72],
       ['aiService.maxContextChunks', 6],
       ['aiService.faqFile', 'documents/ai/faq.vi.jsonl'],
     ]);
@@ -74,6 +77,25 @@ describe('ChatAiService', () => {
     expect(prisma.chatConversation.update).toHaveBeenCalled();
   });
 
+  const mockGeminiResponse = (body: Record<string, unknown>) => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          candidates: [
+            {
+              finishReason: 'STOP',
+              content: {
+                parts: [{ text: JSON.stringify(body) }],
+              },
+            },
+          ],
+          usageMetadata: {},
+        }),
+      ),
+    } as any);
+  };
+
   it('injects apartment catalog context for Sai Gon listing requests', async () => {
     prisma.apartment.findMany.mockResolvedValue([
       {
@@ -92,20 +114,18 @@ describe('ChatAiService', () => {
         description: 'Căn hộ phù hợp khách thuê làm việc khu trung tâm.',
       },
     ] as any);
-    mockFetch.mockResolvedValue({
-      ok: true,
-      text: jest.fn().mockResolvedValue(
-        JSON.stringify({
-          answer: 'Mình tìm thấy một số căn phù hợp ở Sài Gòn.',
-          model: 'qwen3:4b',
-          confidence: 0.91,
-          shouldHandoff: false,
-          handoffReason: null,
-          sourceIds: ['S1'],
-          usage: {},
-        }),
-      ),
-    } as any);
+    mockGeminiResponse({
+      answer: 'Mình tìm thấy một số căn phù hợp ở Sài Gòn.',
+      intent: 'ai_chat',
+      confidence: 0.91,
+      shouldHandoff: false,
+      handoffReason: null,
+      sourceIds: ['S1'],
+      blocks: [
+        { type: 'text', text: 'Mình tìm thấy một số căn phù hợp ở Sài Gòn.' },
+        { type: 'apartment_card', apartmentId: 'apt-1' },
+      ],
+    });
 
     const result = await service.generateReply({
       conversationId: 'conversation-2',
@@ -118,14 +138,63 @@ describe('ChatAiService', () => {
 
     const [, requestInit] = mockFetch.mock.calls[0];
     const payload = JSON.parse((requestInit?.body as string) || '{}');
-    expect(payload.context).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          sourceType: 'apartment_catalog',
-          title: expect.stringContaining('Sai Gon'),
-          content: expect.stringContaining('Saigon Pearl'),
+    expect(payload.contents[0].parts[0].text).toContain('Saigon Pearl');
+    expect(payload.contents[0].parts[0].text).toContain('ID: apt-1');
+  });
+
+  it('injects cheap apartments for budget queries', async () => {
+    prisma.apartment.findMany.mockResolvedValue([
+      {
+        id: 'apt-cheap',
+        buildingName: 'Căn hộ HomeIQ',
+        apartmentNumber: 'HIQ-001B',
+        slug: 'can-ho-homeiq-hiq-001b',
+        streetAddress: 'Quận 1',
+        totalArea: new Prisma.Decimal(25),
+        numberOfBedrooms: 1,
+        numberOfBathrooms: 1,
+        furnishingStatus: FurnishingStatus.fully_furnished,
+        baseRentPrice: new Prisma.Decimal(5_000),
+        depositAmount: new Prisma.Decimal(5_000),
+        status: ApartmentStatus.available,
+        description: 'Căn hộ giá rẻ.',
+      },
+    ] as any);
+    mockGeminiResponse({
+      answer: 'Có căn HomeIQ HIQ-001B dưới 1 triệu/tháng.',
+      intent: 'ai_chat',
+      confidence: 0.93,
+      shouldHandoff: false,
+      handoffReason: null,
+      sourceIds: ['S1'],
+      blocks: [
+        { type: 'text', text: 'Có căn HomeIQ HIQ-001B dưới 1 triệu/tháng.' },
+        { type: 'apartment_card', apartmentId: 'apt-cheap' },
+      ],
+    });
+
+    const result = await service.generateReply({
+      conversationId: 'conversation-3',
+      actorType: SenderType.user,
+      message: 'Tôi muốn tìm nhà dưới 1tr 1 tháng',
+    });
+
+    expect(result?.blocks).toContainEqual({
+      type: 'apartment_card',
+      apartmentId: 'apt-cheap',
+    });
+    expect(prisma.apartment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          baseRentPrice: { lte: new Prisma.Decimal(1_000_000) },
         }),
-      ]),
+        orderBy: [{ baseRentPrice: 'asc' }, { updatedAt: 'desc' }],
+      }),
     );
+
+    const [, requestInit] = mockFetch.mock.calls[0];
+    const payload = JSON.parse((requestInit?.body as string) || '{}');
+    expect(payload.contents[0].parts[0].text).toContain('HIQ-001B');
+    expect(payload.contents[0].parts[0].text).toContain('Gia thue: 5000 VND/thang');
   });
 });

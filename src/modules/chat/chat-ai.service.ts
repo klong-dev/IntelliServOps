@@ -10,7 +10,6 @@ import {
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { isAbsolute, resolve } from 'path';
-import { randomUUID } from 'crypto';
 import { DEFAULT_AI_FAQ_ENTRIES } from './default-ai-faq';
 
 type FaqEntry = {
@@ -29,10 +28,27 @@ export type AiContextChunk = {
   priority: number;
 };
 
-type AiServiceResponse = {
+export type AiIntent = 'ai_chat' | 'human_support';
+
+export type ChatBlock =
+  | { type: 'text'; text: string }
+  | { type: 'apartment_card'; apartmentId: string };
+
+type GeminiModelOutput = {
+  answer?: string;
+  intent?: AiIntent;
+  confidence?: number;
+  shouldHandoff?: boolean;
+  handoffReason?: string | null;
+  sourceIds?: string[];
+  blocks?: ChatBlock[];
+};
+
+export type AiServiceResponse = {
   answer: string;
   model: string;
   finishReason?: string;
+  intent: AiIntent;
   confidence: number;
   shouldHandoff: boolean;
   handoffReason?: string | null;
@@ -41,10 +57,11 @@ type AiServiceResponse = {
     sourceId?: string;
     title: string;
   }>;
+  blocks?: ChatBlock[];
   usage?: {
-    totalDuration?: number;
-    promptEvalCount?: number;
-    evalCount?: number;
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
   };
 };
 
@@ -90,6 +107,20 @@ const HO_CHI_MINH_ALIASES = [
   'hcm',
 ];
 
+const BUDGET_PHRASES = [
+  'duoi',
+  'toi da',
+  'khong qua',
+  'nho hon',
+  're hon',
+  'tam gia',
+  'ngan sach',
+  'budget',
+  'under',
+  'below',
+  'max',
+];
+
 @Injectable()
 export class ChatAiService {
   private readonly logger = new Logger(ChatAiService.name);
@@ -129,8 +160,7 @@ export class ChatAiService {
     });
 
     try {
-      const response = await this.callAiService({
-        conversationId: params.conversationId,
+      const response = await this.callGemini({
         actorType: params.actorType,
         message,
         context,
@@ -146,6 +176,7 @@ export class ChatAiService {
         answer:
           'Mình đang tạm thời không kết nối được trợ lý AI. Mình sẽ chuyển cuộc trò chuyện này cho bộ phận hỗ trợ để phản hồi chi tiết hơn.',
         model: 'service_unavailable',
+        intent: 'human_support',
         confidence: 0,
         shouldHandoff: true,
         handoffReason: 'service_unavailable',
@@ -164,18 +195,14 @@ export class ChatAiService {
   private isEnabled(): boolean {
     const enabled = this.configService.get<boolean>('aiService.enabled');
     const provider = this.configService.get<string>('aiService.provider');
-    const serviceUrl = this.configService.get<string>('aiService.serviceUrl');
-    const apiKey = this.configService.get<string>('aiService.apiKey');
+    const apiKey = this.configService.get<string>('aiService.geminiApiKey');
 
     const isConfigured =
-      enabled === true &&
-      provider === 'service' &&
-      Boolean(serviceUrl) &&
-      Boolean(apiKey);
+      enabled === true && provider === 'gemini' && Boolean(apiKey);
 
     if (!isConfigured && !this.hasLoggedDisabledWarning) {
       this.logger.log(
-        'AI service integration disabled or not fully configured; skipping auto-replies.',
+        'Gemini chat integration disabled or not fully configured; skipping auto-replies.',
       );
       this.hasLoggedDisabledWarning = true;
     }
@@ -183,60 +210,230 @@ export class ChatAiService {
     return isConfigured;
   }
 
-  private async callAiService(payload: {
-    conversationId: string;
+  private async callGemini(payload: {
     actorType: SenderType;
     message: string;
     context: AiContextChunk[];
   }): Promise<AiServiceResponse> {
-    const serviceUrl = this.configService.getOrThrow<string>(
-      'aiService.serviceUrl',
+    const apiKey = this.configService.getOrThrow<string>(
+      'aiService.geminiApiKey',
     );
+    const model =
+      this.configService.get<string>('aiService.geminiModel') || 'gemini-2.5-flash';
     const timeoutMs = this.configService.get<number>('aiService.timeoutMs') ?? 0;
-    const apiKey = this.configService.getOrThrow<string>('aiService.apiKey');
-
-    const baseUrl = serviceUrl.replace(/\/+$/g, '');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${baseUrl}/v1/chat/respond`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'X-Source-Service': 'intellirentops-api',
-          'X-Request-Id': randomUUID(),
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.buildGeminiRequest(payload)),
+          signal: controller.signal,
         },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
+      );
 
       const responseText = await response.text();
       if (!response.ok) {
-        throw new Error(
-          `AI service request failed (${response.status}): ${responseText}`,
-        );
+        throw new Error(`Gemini request failed (${response.status}): ${responseText}`);
       }
 
-      const parsed = JSON.parse(responseText) as AiServiceResponse;
-      if (!parsed.answer && !parsed.shouldHandoff) {
-        throw new Error('AI service returned an empty answer');
-      }
-
-      return {
-        answer: parsed.answer,
-        model: parsed.model,
-        finishReason: parsed.finishReason,
-        confidence: parsed.confidence,
-        shouldHandoff: parsed.shouldHandoff,
-        handoffReason: parsed.handoffReason ?? null,
-        citations: parsed.citations ?? [],
-        usage: parsed.usage,
+      const parsed = JSON.parse(responseText) as {
+        candidates?: Array<{
+          finishReason?: string;
+          content?: { parts?: Array<{ text?: string }> };
+        }>;
+        usageMetadata?: AiServiceResponse['usage'];
       };
+      const rawText =
+        parsed.candidates?.[0]?.content?.parts
+          ?.map((part) => part.text ?? '')
+          .join('') ?? '';
+      const modelOutput = this.parseModelOutput(rawText);
+
+      return this.normalizeGeminiResponse({
+        model,
+        finishReason: parsed.candidates?.[0]?.finishReason,
+        modelOutput,
+        context: payload.context,
+        usage: parsed.usageMetadata,
+      });
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private buildGeminiRequest(payload: {
+    actorType: SenderType;
+    message: string;
+    context: AiContextChunk[];
+  }) {
+    const sourceSections = payload.context.map((chunk, index) =>
+      [
+        `[S${index + 1}] ${chunk.title}`,
+        `sourceType: ${chunk.sourceType}`,
+        chunk.sourceId ? `sourceId: ${chunk.sourceId}` : null,
+        chunk.content,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join('\n'),
+    );
+
+    return {
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: [
+                'Bạn là HomeIQ Assistant cho nền tảng cho thuê căn hộ.',
+                'Mặc định trả lời bằng tiếng Việt như AI tư vấn.',
+                'Chỉ chuyển CSKH khi người dùng yêu cầu gặp người thật/CSKH/nhân viên, khiếu nại, hoặc câu hỏi nhạy cảm về tài khoản/thanh toán/hợp đồng riêng.',
+                'Chỉ dùng CONTEXT, không bịa dữ liệu.',
+                'Nếu gợi ý căn hộ, có thể thêm block apartment_card với apartmentId bằng sourceId từ context sourceType apartment hoặc ID xuất hiện trong apartment_catalog.',
+                'Trả JSON strict: {"answer":"string","intent":"ai_chat|human_support","confidence":0.0,"shouldHandoff":false,"handoffReason":null,"sourceIds":["S1"],"blocks":[{"type":"text","text":"string"},{"type":"apartment_card","apartmentId":"string"}]}',
+                '',
+                `ACTOR: ${payload.actorType}`,
+                `QUESTION: ${payload.message}`,
+                '',
+                'CONTEXT:',
+                sourceSections.length > 0
+                  ? sourceSections.join('\n\n')
+                  : 'No context was provided.',
+              ].join('\n'),
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private parseModelOutput(rawText: string): GeminiModelOutput {
+    const trimmed = rawText.trim();
+    if (!trimmed) {
+      throw new Error('Gemini returned an empty response');
+    }
+
+    const jsonText = trimmed
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```$/i, '')
+      .trim();
+
+    return JSON.parse(jsonText) as GeminiModelOutput;
+  }
+
+  private normalizeGeminiResponse(params: {
+    model: string;
+    finishReason?: string;
+    modelOutput: GeminiModelOutput;
+    context: AiContextChunk[];
+    usage?: AiServiceResponse['usage'];
+  }): AiServiceResponse {
+    const sourceMap = new Map<string, AiContextChunk>(
+      params.context.map((chunk, index) => [`S${index + 1}`, chunk]),
+    );
+    const allowedApartmentIds = new Set(
+      params.context
+        .filter((chunk) => ['apartment', 'apartment_catalog'].includes(chunk.sourceType))
+        .flatMap((chunk) => [
+          ...(chunk.sourceId ? [chunk.sourceId] : []),
+          ...Array.from(chunk.content.matchAll(/ID: ([^\n]+)/g)).map((match) => match[1]),
+        ]),
+    );
+
+    for (const chunk of params.context) {
+      if (chunk.sourceType === 'apartment' && chunk.sourceId) {
+        allowedApartmentIds.add(chunk.sourceId);
+      }
+      const idMatches = chunk.content.matchAll(/ID: ([^\n]+)/g);
+      for (const match of idMatches) {
+        allowedApartmentIds.add(match[1]);
+      }
+    }
+
+    const answer = (params.modelOutput.answer ?? '').trim();
+    const confidence =
+      typeof params.modelOutput.confidence === 'number'
+        ? this.clampNumber(params.modelOutput.confidence, 0, 1)
+        : 0.8;
+    const intent = params.modelOutput.intent === 'human_support' ? 'human_support' : 'ai_chat';
+    let shouldHandoff = params.modelOutput.shouldHandoff === true || intent === 'human_support';
+    let handoffReason = params.modelOutput.handoffReason ?? null;
+
+    if (!answer) {
+      shouldHandoff = true;
+      handoffReason = handoffReason || 'empty_answer';
+    }
+
+    const citations = (params.modelOutput.sourceIds ?? [])
+      .filter((sourceId, index, values) => values.indexOf(sourceId) === index)
+      .map((sourceId) => sourceMap.get(sourceId))
+      .filter((chunk): chunk is AiContextChunk => Boolean(chunk))
+      .map((chunk) => ({
+        sourceType: chunk.sourceType,
+        sourceId: chunk.sourceId,
+        title: chunk.title,
+      }));
+
+    const blocks = this.normalizeBlocks(params.modelOutput.blocks, allowedApartmentIds, answer);
+
+    return {
+      answer: shouldHandoff
+        ? answer ||
+          'Mình sẽ chuyển cuộc trò chuyện này cho bộ phận hỗ trợ để phản hồi chi tiết hơn.'
+        : answer,
+      model: params.model,
+      finishReason: params.finishReason,
+      intent: shouldHandoff ? 'human_support' : 'ai_chat',
+      confidence,
+      shouldHandoff,
+      handoffReason,
+      citations,
+      blocks,
+      usage: params.usage,
+    };
+  }
+
+  private normalizeBlocks(
+    blocks: ChatBlock[] | undefined,
+    allowedApartmentIds: Set<string>,
+    answer: string,
+  ): ChatBlock[] {
+    const normalized: ChatBlock[] = [];
+
+    for (const block of blocks ?? []) {
+      if (block.type === 'text' && block.text.trim()) {
+        normalized.push({ type: 'text', text: block.text.trim() });
+      }
+
+      if (
+        block.type === 'apartment_card' &&
+        allowedApartmentIds.has(String(block.apartmentId))
+      ) {
+        normalized.push({ type: 'apartment_card', apartmentId: String(block.apartmentId) });
+      }
+    }
+
+    if (normalized.length === 0 && answer.trim()) {
+      normalized.push({ type: 'text', text: answer.trim() });
+    }
+
+    return normalized;
+  }
+
+  private clampNumber(value: number | undefined, min: number, max: number): number {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return 0;
+    }
+
+    return Math.min(max, Math.max(min, value));
   }
 
   private async buildContext(params: {
@@ -364,7 +561,8 @@ export class ChatAiService {
     }
 
     const normalizedMessage = this.normalizeText(message);
-    if (!this.isApartmentDiscoveryMessage(normalizedMessage)) {
+    const maxBudgetVnd = this.extractMaxBudgetVnd(normalizedMessage);
+    if (!this.isApartmentDiscoveryMessage(normalizedMessage, maxBudgetVnd)) {
       return [];
     }
 
@@ -387,24 +585,35 @@ export class ChatAiService {
       description: true,
     } satisfies Prisma.ApartmentSelect;
 
+    const apartmentWhere = {
+      status: { in: PUBLIC_LISTING_STATUSES },
+      ...(isHoChiMinhQuery ? { provinceCode: 79 } : {}),
+      ...(maxBudgetVnd
+        ? { baseRentPrice: { lte: new Prisma.Decimal(maxBudgetVnd) } }
+        : {}),
+    } satisfies Prisma.ApartmentWhereInput;
+    const apartmentOrderBy = maxBudgetVnd
+      ? [{ baseRentPrice: 'asc' as const }, { updatedAt: 'desc' as const }]
+      : [{ updatedAt: 'desc' as const }];
+
     let apartments = await this.prisma.apartment.findMany({
-      where: {
-        status: { in: PUBLIC_LISTING_STATUSES },
-        ...(isHoChiMinhQuery ? { provinceCode: 79 } : {}),
-      },
+      where: apartmentWhere,
       select: apartmentSelect,
-      orderBy: [{ updatedAt: 'desc' }],
-      take: 18,
+      orderBy: apartmentOrderBy,
+      take: maxBudgetVnd ? 30 : 18,
     });
 
     if (apartments.length === 0 && isHoChiMinhQuery) {
       apartments = await this.prisma.apartment.findMany({
         where: {
           status: { in: PUBLIC_LISTING_STATUSES },
+          ...(maxBudgetVnd
+            ? { baseRentPrice: { lte: new Prisma.Decimal(maxBudgetVnd) } }
+            : {}),
         },
         select: apartmentSelect,
-        orderBy: [{ updatedAt: 'desc' }],
-        take: 18,
+        orderBy: apartmentOrderBy,
+        take: maxBudgetVnd ? 30 : 18,
       });
     }
 
@@ -425,17 +634,25 @@ export class ChatAiService {
           .filter((value): value is string => Boolean(value))
           .join('\n');
 
+        const priceScore = maxBudgetVnd ? 50 : 0;
         const score =
           this.scoreHaystack(messageTokens, haystack) +
-          (isHoChiMinhQuery ? 20 : 0);
+          (isHoChiMinhQuery ? 20 : 0) +
+          priceScore;
 
         return {
           apartment,
           score,
         };
       })
-      .filter(({ score }) => score > 0)
-      .sort((a, b) => b.score - a.score)
+      .filter(({ score }) => score > 0 || Boolean(maxBudgetVnd))
+      .sort((a, b) => {
+        if (maxBudgetVnd) {
+          return Number(a.apartment.baseRentPrice) - Number(b.apartment.baseRentPrice);
+        }
+
+        return b.score - a.score;
+      })
       .slice(0, 5);
 
     if (scoredApartments.length === 0) {
@@ -445,13 +662,16 @@ export class ChatAiService {
     return [
       {
         sourceType: 'apartment_catalog',
-        title: isHoChiMinhQuery
-          ? 'Danh sach can ho tai khu vuc Sai Gon'
-          : 'Danh sach can ho phu hop voi yeu cau tim kiem',
+        title: maxBudgetVnd
+          ? `Danh sach can ho phu hop ngan sach duoi ${maxBudgetVnd} VND/thang`
+          : isHoChiMinhQuery
+            ? 'Danh sach can ho tai khu vuc Sai Gon'
+            : 'Danh sach can ho phu hop voi yeu cau tim kiem',
         content: scoredApartments
           .map(({ apartment }, index) =>
             [
               `${index + 1}. ${apartment.buildingName ? `${apartment.buildingName} ${apartment.apartmentNumber}` : apartment.apartmentNumber}`,
+              `ID: ${apartment.id}`,
               `Slug: ${apartment.slug}`,
               apartment.streetAddress
                 ? `Dia chi: ${apartment.streetAddress}`
@@ -669,13 +889,50 @@ export class ChatAiService {
       .trim();
   }
 
-  private isApartmentDiscoveryMessage(normalizedMessage: string): boolean {
+  private isApartmentDiscoveryMessage(
+    normalizedMessage: string,
+    maxBudgetVnd?: number | null,
+  ): boolean {
     return (
+      Boolean(maxBudgetVnd) ||
       APARTMENT_DISCOVERY_PHRASES.some((phrase) =>
         normalizedMessage.includes(phrase),
       ) ||
       HO_CHI_MINH_ALIASES.some((alias) => normalizedMessage.includes(alias))
     );
+  }
+
+  private extractMaxBudgetVnd(normalizedMessage: string): number | null {
+    const hasBudgetIntent = BUDGET_PHRASES.some((phrase) =>
+      normalizedMessage.includes(phrase),
+    );
+
+    if (!hasBudgetIntent) {
+      return null;
+    }
+
+    const match = normalizedMessage.match(
+      /(?:duoi|toi da|khong qua|nho hon|re hon|tam gia|ngan sach|budget|under|below|max)?\s*(\d+(?:[.,]\d+)?)\s*(trieu|tr|m|k|nghin|ngan)?/,
+    );
+
+    if (!match) {
+      return null;
+    }
+
+    const amount = Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return null;
+    }
+
+    const unit = match[2] ?? '';
+    if (['trieu', 'tr', 'm'].includes(unit)) {
+      return Math.round(amount * 1_000_000);
+    }
+    if (['k', 'nghin', 'ngan'].includes(unit)) {
+      return Math.round(amount * 1_000);
+    }
+
+    return amount < 1_000 ? Math.round(amount * 1_000_000) : Math.round(amount);
   }
 
   private getApartmentStatusLabel(status: ApartmentStatus): string {
@@ -795,7 +1052,12 @@ export class ChatAiService {
     conversationId: string,
     response: Pick<
       AiServiceResponse,
-      'model' | 'confidence' | 'shouldHandoff' | 'handoffReason' | 'citations'
+      | 'model'
+      | 'intent'
+      | 'confidence'
+      | 'shouldHandoff'
+      | 'handoffReason'
+      | 'citations'
     >,
   ) {
     const conversation = await this.prisma.chatConversation.findUnique({
@@ -813,6 +1075,7 @@ export class ChatAiService {
     aiMetadata.lastResponseAt = new Date().toISOString();
     aiMetadata.lastModel = response.model || null;
     aiMetadata.lastConfidence = response.confidence;
+    aiMetadata.lastIntent = response.intent;
     aiMetadata.needsHuman = response.shouldHandoff;
     aiMetadata.handoffReason = response.handoffReason ?? null;
     aiMetadata.citations = response.citations ?? [];
