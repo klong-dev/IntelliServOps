@@ -266,6 +266,93 @@ export class ChatService {
     return this.mapToFrontendMessage(message);
   }
 
+  async hasHumanHandoff(conversationId: string): Promise<boolean> {
+    const conversation = await this.prisma.chatConversation.findUnique({
+      where: { id: conversationId },
+      select: { metadata: true },
+    });
+
+    const metadata = this.asJsonObject(conversation?.metadata);
+    const handoff = this.asJsonObject(metadata.handoff);
+    if (handoff.reason === 'low_confidence') {
+      return false;
+    }
+    return handoff.status === 'connecting' || handoff.status === 'connected';
+  }
+
+  async clearHumanHandoff(conversationId: string) {
+    const conversation = await this.prisma.chatConversation.findUnique({
+      where: { id: conversationId },
+      select: { metadata: true },
+    });
+
+    if (!conversation) {
+      return;
+    }
+
+    const metadata = this.asJsonObject(conversation.metadata);
+    delete metadata.handoff;
+
+    await this.prisma.chatConversation.update({
+      where: { id: conversationId },
+      data: { metadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue },
+    });
+  }
+
+  async markHumanHandoff(params: {
+    conversationId: string;
+    handoffReason: string;
+    source: string;
+  }) {
+    const conversation = await this.prisma.chatConversation.findUnique({
+      where: { id: params.conversationId },
+      select: { metadata: true },
+    });
+
+    if (!conversation) {
+      return;
+    }
+
+    const metadata = this.asJsonObject(conversation.metadata);
+    metadata.handoff = {
+      status: 'connecting',
+      reason: params.handoffReason,
+      source: params.source,
+      requestedAt: new Date().toISOString(),
+    };
+
+    await this.prisma.chatConversation.update({
+      where: { id: params.conversationId },
+      data: { metadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue },
+    });
+  }
+
+  async sendSystemMessage(params: {
+    conversationId: string;
+    content: string;
+    attachments?: Prisma.InputJsonValue;
+  }) {
+    return this.sendMessage(
+      {
+        conversationId: params.conversationId,
+        content: params.content,
+        messageType: MessageType.system,
+        attachments: params.attachments as any,
+      },
+      SenderType.system,
+      undefined,
+      'HomeIQ Assistant',
+    );
+  }
+
+  private asJsonObject(value: unknown): Record<string, unknown> {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return { ...(value as Record<string, unknown>) };
+    }
+
+    return {};
+  }
+
   private async findReusableConversation(options: {
     userId?: string;
     guestSessionId?: string;
@@ -298,6 +385,8 @@ export class ChatService {
       content: msg.content,
       images: msg.images && msg.images.length > 0 ? msg.images : undefined,
       apartmentId: msg.apartmentId || undefined,
+      messageType: msg.messageType,
+      attachments: msg.attachments || undefined,
       sender: ['user', 'guest'].includes(msg.senderType) ? 'user' : 'support',
       timestamp: msg.createdAt,
     };

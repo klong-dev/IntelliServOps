@@ -16,6 +16,7 @@ import type { Cache } from 'cache-manager';
 import { Server, Socket } from 'socket.io';
 import { MessageType, SenderType } from '@prisma/client';
 import { ChatService } from './chat.service';
+import { ChatAiService } from './chat-ai.service';
 import { SendMessageDto, CreateConversationDto } from './dto';
 
 interface AuthenticatedSocket extends Socket {
@@ -32,6 +33,18 @@ interface AuthenticatedSocket extends Socket {
 const ONLINE_TTL = 60;
 const HEARTBEAT_INTERVAL = 30_000; // 30s
 const DIRECT_STAFF_HANDOFF_COOLDOWN_MS = 15_000;
+const AI_MODE_PHRASES = [
+  'chat voi ai',
+  'chat với ai',
+  'noi voi ai',
+  'nói với ai',
+  'tro lai ai',
+  'trở lại ai',
+  'quay lai ai',
+  'quay lại ai',
+  'hoi ai',
+  'hỏi ai',
+];
 
 @WebSocketGateway({
   namespace: '/chat',
@@ -51,6 +64,7 @@ export class ChatGateway
 
   constructor(
     private readonly chatService: ChatService,
+    private readonly chatAiService: ChatAiService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
@@ -302,7 +316,7 @@ export class ChatGateway
         senderType: actorType,
       });
 
-      this.routeConversationToStaff(actorType, data, roomId, fullName);
+      await this.handleAiResponse(actorType, data, roomId, fullName);
 
       return message;
     } catch (error) {
@@ -425,7 +439,19 @@ export class ChatGateway
     );
   }
 
-  private routeConversationToStaff(
+  private isAiModeRequest(content: string): boolean {
+    const normalized = content
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return AI_MODE_PHRASES.some((phrase) => normalized.includes(phrase));
+  }
+
+  private async handleAiResponse(
     actorType: SenderType,
     dto: SendMessageDto,
     roomId: string,
@@ -435,17 +461,88 @@ export class ChatGateway
       return;
     }
 
+    if (this.isAiModeRequest(dto.content)) {
+      await this.chatService.clearHumanHandoff(dto.conversationId);
+    } else if (await this.chatService.hasHumanHandoff(dto.conversationId)) {
+      return;
+    }
+
+    const aiResponse = await this.chatAiService.generateReply({
+      conversationId: dto.conversationId,
+      actorType,
+      message: dto.content,
+      apartmentId: dto.apartmentId,
+    });
+
+    if (!aiResponse) {
+      return;
+    }
+
+    if (aiResponse.shouldHandoff) {
+      await this.emitHandoffRequest({
+        actorType,
+        dto,
+        roomId,
+        senderName,
+        handoffReason: aiResponse.handoffReason || 'human_support_requested',
+        source: 'ai',
+      });
+      return;
+    }
+
+    const aiMessage = await this.chatService.sendSystemMessage({
+      conversationId: dto.conversationId,
+      content: aiResponse.answer,
+      attachments: {
+        ai: {
+          model: aiResponse.model,
+          intent: aiResponse.intent,
+          confidence: aiResponse.confidence,
+          citations: aiResponse.citations ?? [],
+        },
+        blocks: aiResponse.blocks ?? [],
+      } as any,
+    });
+
+    this.server.to(roomId).emit('chat:new_message', aiMessage);
+    this.emitConversationUpdated({
+      conversationId: dto.conversationId,
+      lastMessageAt: aiMessage.timestamp,
+      lastMessageText:
+        aiMessage.content.length > 100
+          ? `${aiMessage.content.substring(0, 100)}...`
+          : aiMessage.content,
+      senderName: 'HomeIQ Assistant',
+      senderType: SenderType.system,
+    });
+  }
+
+  private async emitHandoffRequest(params: {
+    actorType: SenderType;
+    dto: SendMessageDto;
+    roomId: string;
+    senderName?: string;
+    handoffReason: string;
+    source: string;
+  }) {
+    const { actorType, dto, roomId, senderName, handoffReason, source } = params;
+
     if (this.isDirectStaffRoutingSuppressed(dto.conversationId)) {
       return;
     }
 
     this.directStaffRoutingTimestamps.set(dto.conversationId, Date.now());
+    await this.chatService.markHumanHandoff({
+      conversationId: dto.conversationId,
+      handoffReason,
+      source,
+    });
 
     const handoffPayload = {
       conversationId: dto.conversationId,
-      handoffReason: 'ai_temporarily_disabled',
+      handoffReason,
       status: 'connecting',
-      source: 'direct',
+      source,
       actorType,
       senderName: senderName ?? null,
       preview:
