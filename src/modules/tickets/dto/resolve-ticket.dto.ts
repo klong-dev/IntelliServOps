@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Allow, IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { Allow, IsIn, IsNotEmpty, IsString } from 'class-validator';
 import { TicketAction } from '@prisma/client';
 
 export class ResolveTicketDto {
@@ -9,7 +9,7 @@ export class ResolveTicketDto {
       'tenant_stays = khách còn ở; tenant_left = khách không ở nữa/hủy hợp đồng',
     example: TicketAction.tenant_stays,
   })
-  @IsEnum(TicketAction)
+  @IsIn([TicketAction.tenant_left, TicketAction.tenant_stays])
   action: TicketAction;
 
   @ApiProperty({

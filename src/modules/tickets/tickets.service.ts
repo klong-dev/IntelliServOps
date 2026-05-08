@@ -17,7 +17,7 @@ import type { JwtPayload } from '../auth/auth.service';
 import { IoTService } from '../iot/iot.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ResolveTicketDto } from './dto';
+import { ResolveTicketDto, TicketListQueryDto } from './dto';
 
 @Injectable()
 export class TicketsService {
@@ -28,9 +28,13 @@ export class TicketsService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async findAll(currentUser: JwtPayload) {
+  async findAll(currentUser: JwtPayload, query: TicketListQueryDto = {}) {
     this.assertStaff(currentUser);
     return this.prisma.ticket.findMany({
+      where: {
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.type ? { type: query.type } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         invoice: true,
@@ -75,13 +79,17 @@ export class TicketsService {
       throw new ConflictException('Ticket is not open');
     }
     if (!ticket.invoiceId || !ticket.apartmentId) {
-      throw new BadRequestException('Ticket is not linked to a rent overdue invoice');
+      throw new BadRequestException(
+        'Ticket is not linked to a rent overdue invoice',
+      );
     }
     if (
       ticket.type === TicketType.rent_overdue_recovery &&
       dto.action !== TicketAction.tenant_left
     ) {
-      throw new BadRequestException('Recovery ticket only supports tenant_left');
+      throw new BadRequestException(
+        'Recovery ticket only supports tenant_left',
+      );
     }
 
     const now = new Date();
@@ -101,7 +109,11 @@ export class TicketsService {
         },
       });
       await this.ioTService.resumeBoardsForApartment(ticket.apartmentId);
-      await this.notifyMembers(ticket.invoiceId, 'Rent overdue grace approved', 'Your IoT access was restored for 3 days. Please complete payment.');
+      await this.notifyMembers(
+        ticket.invoiceId,
+        'Rent overdue grace approved',
+        'Your IoT access was restored for 3 days. Please complete payment.',
+      );
     } else {
       throw new BadRequestException('Unsupported ticket action');
     }
@@ -126,7 +138,11 @@ export class TicketsService {
     }
   }
 
-  private async notifyMembers(invoiceId: string, title: string, message: string) {
+  private async notifyMembers(
+    invoiceId: string,
+    title: string,
+    message: string,
+  ) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
       select: {

@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Body,
+  Query,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -22,7 +24,12 @@ import { Role } from '../../common/enums/role.enum';
 import type { JwtPayload } from '../auth/auth.service';
 import { SupabaseStorageService } from '../../shared/services/supabase-storage.service';
 import { TicketsService } from './tickets.service';
-import { ResolveTicketDto, ResolveTicketRequestDto } from './dto';
+import {
+  ResolveTicketDto,
+  ResolveTicketRequestDto,
+  TicketListQueryDto,
+  TicketResponseDto,
+} from './dto';
 
 type UploadedTicketImage = {
   originalname: string;
@@ -42,11 +49,18 @@ export class TicketsController {
   ) {}
 
   @Get()
-  findAll(@CurrentUser() currentUser: JwtPayload) {
-    return this.ticketsService.findAll(currentUser);
+  @ApiOperation({ summary: 'List rent overdue tickets' })
+  @ApiOkResponse({ type: TicketResponseDto, isArray: true })
+  findAll(
+    @CurrentUser() currentUser: JwtPayload,
+    @Query() query: TicketListQueryDto,
+  ) {
+    return this.ticketsService.findAll(currentUser, query);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Get ticket detail' })
+  @ApiOkResponse({ type: TicketResponseDto })
   findOne(@Param('id') id: string, @CurrentUser() currentUser: JwtPayload) {
     return this.ticketsService.findOne(id, currentUser);
   }
@@ -57,11 +71,13 @@ export class TicketsController {
   @ApiBody({
     type: ResolveTicketRequestDto,
   })
+  @ApiOkResponse({ type: TicketResponseDto })
   @UseInterceptors(
     FilesInterceptor('images', 10, {
       storage: memoryStorage(),
       fileFilter: (_req, file, cb) => {
-        if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) return cb(null, true);
+        if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype))
+          return cb(null, true);
         return cb(new BadRequestException('Invalid image format'), false);
       },
     }),
