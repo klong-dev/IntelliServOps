@@ -31,6 +31,9 @@ import {
   NotificationType,
   NotificationChannel,
   Priority,
+  TicketAction,
+  TicketStatus,
+  TicketType,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -987,6 +990,8 @@ export class PaymentsService {
 
     const txResult = await this.prisma.$transaction(txOperations);
 
+    await this.resolveRentOverdueOnPaid(payment.invoiceId);
+
     if (activationContext.shouldResetDoorPin) {
       const syncResult = await this.clearApartmentDoorPinHash(
         payment.invoice.rentalContract.apartmentId,
@@ -1427,6 +1432,8 @@ export class PaymentsService {
 
       await this.prisma.$transaction(txOperations);
 
+      await this.resolveRentOverdueOnPaid(payment.invoiceId);
+
       if (activationContext.shouldResetDoorPin) {
         const syncResult = await this.clearApartmentDoorPinHash(
           payment.invoice.rentalContract.apartmentId,
@@ -1480,6 +1487,56 @@ export class PaymentsService {
       paymentId: payment.id,
       status: PaymentStatus.failed,
     };
+  }
+
+  private async resolveRentOverdueOnPaid(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        invoiceType: true,
+        rentalContract: { select: { apartmentId: true } },
+      },
+    });
+
+    if (!invoice || invoice.invoiceType !== InvoiceType.rent) {
+      return;
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.ticket.updateMany({
+        where: {
+          invoiceId,
+          type: { in: [TicketType.rent_overdue, TicketType.rent_overdue_recovery] },
+          status: TicketStatus.open,
+        },
+        data: {
+          status: TicketStatus.resolved,
+          resolutionAction: TicketAction.paid,
+          resolutionNote: 'Invoice paid; system auto-closed rent overdue ticket',
+          resolvedAt: now,
+          closedAt: now,
+        },
+      }),
+      this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data: { rentOverdueResolvedAt: now },
+      }),
+      this.prisma.ioTBoard.updateMany({
+        where: { apartmentId: invoice.rentalContract.apartmentId },
+        data: {
+          status: 'active',
+          suspendedAt: null,
+          suspendedReason: null,
+          suspendedByTicketId: null,
+        },
+      }),
+      this.prisma.ioTDevice.updateMany({
+        where: { apartmentId: invoice.rentalContract.apartmentId },
+        data: { status: 'active' },
+      }),
+    ]);
   }
 
   private ensurePayOSConfigured(): PayOS {

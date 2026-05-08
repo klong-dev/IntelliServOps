@@ -3043,6 +3043,45 @@ export class ContractsService {
       );
     }
 
+    await this.terminateContractForfeitDeposit(
+      id,
+      `User cancelled: ${cancelDto.reason}`,
+      { actorType: currentUser.actorType, actorId: currentUser.sub },
+      contract,
+    );
+
+    return await this.findOne(id, currentUser);
+  }
+
+  async terminateContractForfeitDeposit(
+    id: string,
+    reason: string,
+    _actor?: { actorType: string; actorId: string },
+    preloadedContract?: {
+      id: string;
+      apartmentId: string;
+      status: ContractStatus;
+      endDate: Date;
+      renewedFromContractId: string | null;
+    },
+  ) {
+    const contract =
+      preloadedContract ??
+      (await this.prisma.rentalContract.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          apartmentId: true,
+          status: true,
+          endDate: true,
+          renewedFromContractId: true,
+        },
+      }));
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
     if (
       contract.status === ContractStatus.terminated ||
       contract.status === ContractStatus.expired
@@ -3050,7 +3089,7 @@ export class ContractsService {
       throw new ConflictException('Contract cannot be cancelled');
     }
 
-    const cancelReason = `User cancelled: ${cancelDto.reason}`;
+    const cancelReason = reason;
     const terminatedAt = new Date();
 
     await this.prisma.$transaction(async (tx) => {
@@ -3132,12 +3171,10 @@ export class ContractsService {
         where: { rentalContractId: id },
         data: {
           status: UserApartmentStatus.moved_out,
-          moveOutDate: contract.endDate,
+          moveOutDate: terminatedAt,
         },
       });
     });
-
-    return await this.findOne(id, currentUser);
   }
 
   /**

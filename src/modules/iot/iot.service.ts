@@ -369,6 +369,59 @@ export class IoTService {
     };
   }
 
+  async suspendBoardsForApartment(
+    apartmentId: string,
+    reason: string,
+    ticketId?: string | null,
+  ) {
+    const now = new Date();
+    const boards = await this.findAllBoards(apartmentId);
+    const boardIds = boards.map((board) => board.id);
+
+    if (boardIds.length) {
+      await this.updateStoredBoardMany({
+        where: { id: { in: boardIds } },
+        data: {
+          status: IoTStatus.inactive,
+          suspendedAt: now,
+          suspendedReason: reason,
+          suspendedByTicketId: ticketId ?? null,
+        },
+      });
+    }
+
+    await this.prisma.ioTDevice.updateMany({
+      where: { apartmentId },
+      data: { status: IoTStatus.inactive },
+    });
+
+    return { apartmentId, affectedBoards: boardIds.length };
+  }
+
+  async resumeBoardsForApartment(apartmentId: string) {
+    const boards = await this.findAllBoards(apartmentId);
+    const boardIds = boards.map((board) => board.id);
+
+    if (boardIds.length) {
+      await this.updateStoredBoardMany({
+        where: { id: { in: boardIds } },
+        data: {
+          status: IoTStatus.active,
+          suspendedAt: null,
+          suspendedReason: null,
+          suspendedByTicketId: null,
+        },
+      });
+    }
+
+    await this.prisma.ioTDevice.updateMany({
+      where: { apartmentId },
+      data: { status: IoTStatus.active },
+    });
+
+    return { apartmentId, affectedBoards: boardIds.length };
+  }
+
   async unlinkBoardApartment(boardId: string) {
     const board = await this.findOneBoard(boardId);
     const previousApartmentId = board.apartment?.id ?? null;
@@ -2761,6 +2814,20 @@ export class IoTService {
     userId: string,
     apartmentId: string,
   ): Promise<void> {
+    const suspendedBoard = await this.prisma.ioTBoard.findFirst({
+      where: {
+        apartmentId,
+        suspendedAt: { not: null },
+      },
+      select: { id: true },
+    });
+
+    if (suspendedBoard) {
+      throw new ForbiddenException(
+        'IoT services are temporarily disabled for this apartment',
+      );
+    }
+
     const thresholdDate = new Date(
       Date.now() - IOT_BLOCK_OVERDUE_DAYS * 24 * 60 * 60 * 1000,
     );
@@ -2768,12 +2835,19 @@ export class IoTService {
     const blockedInvoice = await this.prisma.invoice.findFirst({
       where: {
         status: InvoiceStatus.overdue,
-        invoiceType: {
-          in: [InvoiceType.rent, InvoiceType.utility],
-        },
-        dueDate: {
-          lte: thresholdDate,
-        },
+        OR: [
+          { invoiceType: InvoiceType.utility, dueDate: { lte: thresholdDate } },
+          {
+            invoiceType: InvoiceType.rent,
+            issueDate: { lte: thresholdDate },
+            rentOverdueGraceUntil: null,
+          },
+          {
+            invoiceType: InvoiceType.rent,
+            issueDate: { lte: thresholdDate },
+            rentOverdueGraceUntil: { lt: new Date() },
+          },
+        ],
         rentalContract: {
           apartmentId,
           status: 'active',
