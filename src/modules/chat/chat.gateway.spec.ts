@@ -11,7 +11,15 @@ describe('ChatGateway', () => {
 
   const chatService = {
     sendMessage: jest.fn(),
+    sendSystemMessage: jest.fn(),
+    hasHumanHandoff: jest.fn(),
+    clearHumanHandoff: jest.fn(),
+    markHumanHandoff: jest.fn(),
     markMessagesRead: jest.fn(),
+  };
+
+  const chatAiService = {
+    generateReply: jest.fn(),
   };
 
   const jwtService = {
@@ -58,6 +66,7 @@ describe('ChatGateway', () => {
   beforeEach(() => {
     gateway = new ChatGateway(
       chatService as any,
+      chatAiService as any,
       jwtService as any,
       configService as any,
       cacheManager as any,
@@ -65,15 +74,28 @@ describe('ChatGateway', () => {
     gateway.server = createServer();
     emittedEvents.length = 0;
     jest.clearAllMocks();
+    chatService.hasHumanHandoff.mockResolvedValue(false);
+    chatService.clearHumanHandoff.mockResolvedValue(undefined);
+    chatService.markHumanHandoff.mockResolvedValue(undefined);
   });
 
-  it('routes user messages directly to staff without generating AI replies', async () => {
+  it('routes human-support intent to staff', async () => {
     const message = {
       id: 1,
       content: 'Toi can ho tro gap nhan vien',
       timestamp: new Date('2026-04-24T08:00:00.000Z'),
     };
     chatService.sendMessage.mockResolvedValue(message);
+    chatAiService.generateReply.mockResolvedValue({
+      answer: 'Mình sẽ chuyển bạn tới bộ phận hỗ trợ.',
+      model: 'gemini-2.5-flash',
+      intent: 'human_support',
+      confidence: 0.95,
+      shouldHandoff: true,
+      handoffReason: 'human_support_requested',
+      citations: [],
+      blocks: [],
+    });
 
     const client = createClient();
 
@@ -92,9 +114,9 @@ describe('ChatGateway', () => {
       )?.payload,
     ).toMatchObject({
       conversationId: 'conv-123',
-      handoffReason: 'ai_temporarily_disabled',
+      handoffReason: 'human_support_requested',
       status: 'connecting',
-      source: 'direct',
+      source: 'ai',
       actorType: SenderType.user,
     });
     expect(
@@ -105,10 +127,27 @@ describe('ChatGateway', () => {
       )?.payload,
     ).toMatchObject({
       conversationId: 'conv-123',
-      handoffReason: 'ai_temporarily_disabled',
+      handoffReason: 'human_support_requested',
       status: 'connecting',
-      source: 'direct',
+      source: 'ai',
     });
+  });
+
+  it('does not call AI after human handoff is active', async () => {
+    chatService.sendMessage.mockResolvedValue({
+      id: 1,
+      content: 'Xin chao',
+      timestamp: new Date('2026-04-24T08:00:00.000Z'),
+    });
+    chatService.hasHumanHandoff.mockResolvedValue(true);
+
+    await gateway.handleSendMessage(createClient(), {
+      conversationId: 'conv-123',
+      content: 'Tôi nhắn tiếp',
+      messageType: MessageType.text,
+    });
+
+    expect(chatAiService.generateReply).not.toHaveBeenCalled();
   });
 
   it('suppresses duplicate direct-to-staff handoff events within the cooldown window', async () => {
@@ -116,6 +155,16 @@ describe('ChatGateway', () => {
       id: 1,
       content: 'Xin chao',
       timestamp: new Date('2026-04-24T08:00:00.000Z'),
+    });
+    chatAiService.generateReply.mockResolvedValue({
+      answer: 'Mình sẽ chuyển bạn tới bộ phận hỗ trợ.',
+      model: 'gemini-2.5-flash',
+      intent: 'human_support',
+      confidence: 0.95,
+      shouldHandoff: true,
+      handoffReason: 'human_support_requested',
+      citations: [],
+      blocks: [],
     });
 
     const client = createClient();

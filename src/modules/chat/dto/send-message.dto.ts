@@ -47,12 +47,14 @@ export class SendMessageDto {
     ],
   })
   @IsOptional()
-  attachments?: Array<{
-    url: string;
-    filename: string;
-    mimeType?: string;
-    size?: number;
-  }>;
+  attachments?:
+    | Array<{
+        url: string;
+        filename: string;
+        mimeType?: string;
+        size?: number;
+      }>
+    | Record<string, any>;
 
   @ApiPropertyOptional({
     description: 'Array of image URLs',
