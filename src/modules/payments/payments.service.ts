@@ -352,10 +352,6 @@ export class PaymentsService {
 
     const contracts = await this.prisma.rentalContract.findMany({
       where: {
-        endDate: {
-          gte: monthRange.billingPeriodStart,
-          lt: monthRange.billingPeriodEndExclusive,
-        },
         status: {
           in: [
             ContractStatus.expired,
@@ -363,6 +359,23 @@ export class PaymentsService {
             ContractStatus.signed,
           ],
         },
+        OR: [
+          {
+            endDate: {
+              gte: monthRange.billingPeriodStart,
+              lt: monthRange.billingPeriodEndExclusive,
+            },
+          },
+          {
+            invoices: {
+              some: {
+                invoiceType: { in: [InvoiceType.rent, InvoiceType.utility] },
+                status: InvoiceStatus.paid,
+                billingMonth: monthRange.payoutMonth,
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
