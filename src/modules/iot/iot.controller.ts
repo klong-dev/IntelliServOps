@@ -106,7 +106,7 @@ export class IoTController {
   }
 
   @Get('boards')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List IoT boards with their child devices' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: IoTStatus })
