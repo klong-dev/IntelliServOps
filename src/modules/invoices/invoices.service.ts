@@ -16,9 +16,12 @@ import {
   PaymentMethodType,
   PaymentStatus,
   Prisma,
+  TicketStatus,
+  TicketType,
 } from '@prisma/client';
 import type { JwtPayload } from '../auth/auth.service';
 import axios from 'axios';
+import * as crypto from 'crypto';
 import { PaymentsService } from '../payments/payments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -331,7 +334,7 @@ export class InvoicesService {
 
   @Cron(CronExpression.EVERY_HOUR)
   async autoMarkOverdueInvoices(): Promise<void> {
-    await this.markOverdue();
+    await this.markOverdue(true);
   }
 
   private readonly invoiceContractSelect = {
@@ -2599,7 +2602,7 @@ export class InvoicesService {
     });
   }
 
-  async markOverdue() {
+  async markOverdue(enforceRentTickets = false) {
     const now = new Date();
     const pendingStatuses: InvoiceStatus[] = [
       InvoiceStatus.draft,
@@ -2678,10 +2681,175 @@ export class InvoicesService {
       now,
     );
 
+    if (enforceRentTickets) {
+      await this.enforceRentOverdue(now);
+      await this.enforceRentOverdueRecovery(now);
+    }
+
     return {
       count:
         (cancelledDepositInvoices?.count ?? 0) + (overdueInvoices?.count ?? 0),
     };
+  }
+
+  private async enforceRentOverdue(now: Date) {
+    const thresholdDate = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        invoiceType: InvoiceType.rent,
+        status: { in: [InvoiceStatus.issued, InvoiceStatus.sent, InvoiceStatus.partially_paid, InvoiceStatus.overdue] },
+        issueDate: { lte: thresholdDate },
+        rentOverdueResolvedAt: null,
+        OR: [{ rentOverdueGraceUntil: null }, { rentOverdueGraceUntil: { lt: now } }],
+        tickets: { none: { type: TicketType.rent_overdue, status: TicketStatus.open } },
+      },
+      include: {
+        rentalContract: {
+          select: {
+            id: true,
+            apartmentId: true,
+            apartment: { select: { apartmentNumber: true } },
+            members: { select: { userId: true } },
+          },
+        },
+      },
+    });
+
+    for (const invoice of invoices) {
+      const ticket = await this.createRentTicket(invoice, TicketType.rent_overdue, now);
+      if (!ticket) {
+        continue;
+      }
+      await this.suspendApartmentBoards(
+        invoice.rentalContract.apartmentId,
+        `Rent invoice ${invoice.invoiceNumber} overdue from issueDate + 15 days`,
+        ticket.id,
+      );
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { rentOverdueTicketId: ticket.id },
+      });
+      await this.notifyRentTicket(invoice, ticket.id, 'Rent overdue enforcement', 'Your IoT board was disabled because rent is overdue over 15 days from issue date.');
+    }
+  }
+
+  private async enforceRentOverdueRecovery(now: Date) {
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        invoiceType: InvoiceType.rent,
+        status: { in: [InvoiceStatus.issued, InvoiceStatus.sent, InvoiceStatus.partially_paid, InvoiceStatus.overdue] },
+        rentOverdueGraceUntil: { lt: now },
+        rentOverdueResolvedAt: null,
+        tickets: { none: { type: TicketType.rent_overdue_recovery, status: TicketStatus.open } },
+      },
+      include: {
+        rentalContract: {
+          select: {
+            id: true,
+            apartmentId: true,
+            apartment: { select: { apartmentNumber: true } },
+            members: { select: { userId: true } },
+          },
+        },
+      },
+    });
+
+    for (const invoice of invoices) {
+      const ticket = await this.createRentTicket(invoice, TicketType.rent_overdue_recovery, now);
+      if (!ticket) {
+        continue;
+      }
+      await this.suspendApartmentBoards(
+        invoice.rentalContract.apartmentId,
+        `Rent invoice ${invoice.invoiceNumber} grace expired`,
+        ticket.id,
+      );
+      await this.notifyRentTicket(invoice, ticket.id, 'Rent overdue recovery', 'Your 3-day grace period expired. A recovery ticket was created.');
+    }
+  }
+
+  private async createRentTicket(
+    invoice: {
+      id: string;
+      rentalContractId: string;
+      rentalContract: { apartmentId: string };
+    },
+    type: TicketType,
+    now: Date,
+  ) {
+    const existing = await this.prisma.ticket.findFirst({
+      where: { invoiceId: invoice.id, type, status: TicketStatus.open },
+    });
+    if (existing) return existing;
+
+    return this.prisma.ticket.create({
+      data: {
+        ticketNumber: await this.generateTicketNumber(type),
+        type,
+        invoiceId: invoice.id,
+        rentalContractId: invoice.rentalContractId,
+        apartmentId: invoice.rentalContract.apartmentId,
+        metadata: { generatedAt: now.toISOString() },
+      },
+    });
+  }
+
+  private async suspendApartmentBoards(
+    apartmentId: string,
+    reason: string,
+    ticketId: string,
+  ) {
+    await this.prisma.ioTBoard.updateMany({
+      where: { apartmentId },
+      data: {
+        status: 'inactive',
+        suspendedAt: new Date(),
+        suspendedReason: reason,
+        suspendedByTicketId: ticketId,
+      },
+    });
+    await this.prisma.ioTDevice.updateMany({
+      where: { apartmentId },
+      data: { status: 'inactive' },
+    });
+  }
+
+  private async notifyRentTicket(
+    invoice: {
+      id: string;
+      rentalContract: { members: Array<{ userId: string }> };
+    },
+    ticketId: string,
+    title: string,
+    message: string,
+  ) {
+    await Promise.allSettled(
+      invoice.rentalContract.members.map((member) =>
+        this.notificationsService.createAndPush({
+          recipientType: ActorType.user,
+          recipientId: member.userId,
+          notificationType: 'warning',
+          channel: 'in_app',
+          priority: 'high',
+          title,
+          message,
+          actionUrl: `/tickets/${ticketId}`,
+          actionLabel: 'View ticket',
+          relatedEntityType: 'Ticket',
+          relatedEntityId: ticketId,
+        }),
+      ),
+    );
+  }
+
+  private async generateTicketNumber(type: TicketType) {
+    const prefix = type === TicketType.rent_overdue_recovery ? 'TOR' : 'TO';
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+      const exists = await this.prisma.ticket.findUnique({ where: { ticketNumber: candidate }, select: { id: true } });
+      if (!exists) return candidate;
+    }
+    return `${prefix}-${Date.now()}-${crypto.randomUUID()}`;
   }
 
   private async generateInvoiceNumber(): Promise<string> {
