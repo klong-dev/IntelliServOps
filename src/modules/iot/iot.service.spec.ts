@@ -1552,6 +1552,22 @@ describe('IoTService', () => {
         'door',
         7000,
       );
+      expect(prisma.activityLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            actorType: user.actorType,
+            actorId: user.sub,
+            action: 'IOT_DOOR_OPENED',
+            entityId: 'ESP_A101',
+            metadata: expect.objectContaining({
+              apartmentId: 'apt-123',
+              boardId: 'ESP_A101',
+              deviceId: 1,
+              source: 'door_unlock_api',
+            }),
+          }),
+        }),
+      );
     });
 
     it('should not unlock door when PIN is invalid', async () => {
@@ -2599,17 +2615,7 @@ describe('IoTService', () => {
           }),
         }),
       );
-      expect(prisma.activityLog.createMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: [
-            expect.objectContaining({
-              action: 'IOT_DOOR_OPENED',
-              actorType: 'system',
-              actorId: 'ESP_A101',
-            }),
-          ],
-        }),
-      );
+      expect(prisma.activityLog.createMany).not.toHaveBeenCalled();
     });
 
     it('should notify active residents when a fire alert is detected', async () => {
