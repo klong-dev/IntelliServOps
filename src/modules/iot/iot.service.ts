@@ -682,7 +682,7 @@ export class IoTService {
   ) {
     this.assertValidDoorPin(pin, 'pin');
 
-    const { doorDevice, boardDoorDeviceId } = await this.assertDoorAccess(
+    const { board, doorDevice, boardDoorDeviceId } = await this.assertDoorAccess(
       boardId,
       currentUser,
     );
@@ -701,7 +701,13 @@ export class IoTService {
       };
     }
 
-    return this.controlBoardDevice(boardId, deviceId, 'door', 'ON');
+    const result = await this.controlBoardDevice(boardId, deviceId, 'door', 'ON');
+
+    if (result.success) {
+      await this.logDoorUnlock(board.apartment?.id, boardId, deviceId, currentUser);
+    }
+
+    return result;
   }
 
   async findDoorHistory(query: DoorHistoryQueryDto, currentUser?: JwtPayload) {
@@ -730,9 +736,7 @@ export class IoTService {
         : [];
 
     const where: Prisma.ActivityLogWhereInput = {
-      action: {
-        in: ['IOT_DOOR_OPENED', 'IOT_DOOR_CLOSED'],
-      },
+      action: 'IOT_DOOR_OPENED',
       ...(query.boardId ? { entityId: query.boardId } : {}),
       ...((from || to) && {
         createdAt: {
@@ -1887,12 +1891,6 @@ export class IoTService {
       return;
     }
 
-    const doorTransitions: Array<{
-      apartmentId: string | null;
-      deviceId: number | null;
-      nextState: 'ON' | 'OFF';
-    }> = [];
-
     await Promise.all(
       devices.map((device) => {
         const metadata = this.extractMqttMetadata(
@@ -1907,20 +1905,6 @@ export class IoTService {
           matchesTopic && matchesDeviceId && event.state
             ? this.normalizeBoardDeviceState(event.state)
             : undefined;
-        const previousState = this.normalizeBoardDeviceState(metadata.state);
-
-        if (
-          metadata.topic === 'door' &&
-          nextState !== undefined &&
-          previousState !== undefined &&
-          previousState !== nextState
-        ) {
-          doorTransitions.push({
-            apartmentId: device.apartmentId ?? null,
-            deviceId: metadata.deviceId ?? null,
-            nextState,
-          });
-        }
 
         return this.prisma.ioTDevice.update({
           where: { id: device.id },
@@ -1940,8 +1924,6 @@ export class IoTService {
         });
       }),
     );
-
-    await this.logDoorStateTransitions(event.espId, doorTransitions, event);
 
     await this.updateStoredBoardMany({
       where: { id: event.espId },
@@ -2965,46 +2947,34 @@ export class IoTService {
     };
   }
 
-  private async logDoorStateTransitions(
+  private async logDoorUnlock(
+    apartmentId: string | null | undefined,
     boardId: string,
-    transitions: Array<{
-      apartmentId: string | null;
-      deviceId: number | null;
-      nextState: 'ON' | 'OFF';
-    }>,
-    event: IoTMqttStatusEvent,
+    deviceId: number,
+    currentUser: JwtPayload,
   ) {
-    if (transitions.length === 0) {
-      return;
-    }
-
     try {
-      await this.prisma.activityLog.createMany({
-        data: transitions.map((transition) => ({
-          actorType: ActorType.system,
-          actorId: boardId,
-          action:
-            transition.nextState === 'ON'
-              ? 'IOT_DOOR_OPENED'
-              : 'IOT_DOOR_CLOSED',
+      await this.prisma.activityLog.create({
+        data: {
+          actorType: currentUser.actorType,
+          actorId: currentUser.sub,
+          action: 'IOT_DOOR_OPENED',
           entityType: 'IoTBoard',
           entityId: boardId,
-          description: `Door ${transition.deviceId ?? 'unknown'} on board ${boardId} ${transition.nextState === 'ON' ? 'opened' : 'closed'}`,
+          description: `Door ${deviceId} on board ${boardId} opened`,
           metadata: {
-            apartmentId: transition.apartmentId,
+            apartmentId,
             boardId,
-            deviceId: transition.deviceId,
-            source: 'mqtt_status',
-            state: transition.nextState,
-            rawMessage: event.message,
+            deviceId,
+            source: 'door_unlock_api',
+            state: 'ON',
           } as Prisma.InputJsonValue,
           status: ActivityStatus.success,
-          createdAt: event.receivedAt,
-        })),
+        },
       });
     } catch (error) {
       this.logger.warn(
-        `Failed to write door history activity logs for ${boardId}: ${error instanceof Error ? error.message : 'unknown'}`,
+        `Failed to write door unlock activity log for ${boardId}: ${error instanceof Error ? error.message : 'unknown'}`,
       );
     }
   }

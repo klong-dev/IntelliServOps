@@ -360,11 +360,10 @@ export class IoTController {
   @ApiBearerAuth('JWT-auth')
   @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN, Role.USER)
   @ApiOperation({
-    summary: 'List door open and close history',
+    summary: 'List door unlock history',
   })
   @ApiJsonResponse(DoorHistoryListDto, {
-    description:
-      'Door open and close history derived from MQTT board state updates',
+    description: 'Door unlock history recorded from successful unlock API calls',
   })
   async findDoorHistory(
     @Query() query: DoorHistoryQueryDto,
