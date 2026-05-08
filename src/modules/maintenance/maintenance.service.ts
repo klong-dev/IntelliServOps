@@ -811,7 +811,8 @@ export class MaintenanceService {
     if (
       request.status !== MaintenanceStatus.in_progress &&
       request.status !== MaintenanceStatus.acknowledged &&
-      request.status !== MaintenanceStatus.scheduled
+      request.status !== MaintenanceStatus.scheduled &&
+      request.status !== MaintenanceStatus.submitted
     ) {
       throw new ConflictException('Request is not in a completable status');
     }

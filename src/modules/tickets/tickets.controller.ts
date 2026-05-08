@@ -76,7 +76,8 @@ export class TicketsController {
     FilesInterceptor('images', 10, {
       storage: memoryStorage(),
       fileFilter: (_req, file, cb) => {
-        if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) return cb(null, true);
+        if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype))
+          return cb(null, true);
         return cb(new BadRequestException('Invalid image format'), false);
       },
     }),
