@@ -220,14 +220,14 @@ export class IoTController {
   }
 
   @Post('meters')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
   @ApiOperation({ summary: 'Create utility meter' })
   async createMeter(@Body() body: CreateUtilityMeterDto) {
     return this.iotService.createMeter(body);
   }
 
   @Patch('meters/:id')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.USER)
   @ApiOperation({ summary: 'Update utility meter' })
   async updateMeter(
     @Param('id') id: string,
@@ -237,7 +237,7 @@ export class IoTController {
   }
 
   @Post('readings')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create utility meter reading' })
   async createReading(
     @Body() body: CreateUtilityReadingDto,
@@ -247,7 +247,7 @@ export class IoTController {
   }
 
   @Patch('readings/:id/verify')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Verify utility meter reading' })
   async verifyReading(
     @Param('id') id: string,
@@ -260,7 +260,7 @@ export class IoTController {
   }
 
   @Post('boards')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Create IoT board with child devices' })
   @ApiJsonResponse(IoTBoardDetailDto, {
     status: 201,
@@ -271,7 +271,7 @@ export class IoTController {
   }
 
   @Patch('boards/:boardId')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Update IoT board metadata' })
   @ApiJsonResponse(IoTBoardDetailDto, {
     description: 'Board updated successfully',
@@ -294,7 +294,7 @@ export class IoTController {
   }
 
   @Patch('boards/:boardId/unlink-apartment')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary: 'Remove apartment link from a board and its child devices',
   })
@@ -306,7 +306,7 @@ export class IoTController {
   }
 
   @Patch('boards/unlink-apartment-by-apartment/:apartmentId')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary:
       'Remove apartment link from all boards currently assigned to an apartment',
@@ -319,7 +319,7 @@ export class IoTController {
   }
 
   @Post('boards/:boardId/devices')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary:
       'Add a child device to an IoT board (topics: light, alarm, door, curtain)',
@@ -358,7 +358,7 @@ export class IoTController {
 
   @Get('doors/history')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @Roles(Role.USER, Role.STAFF, Role.OPERATOR, Role.ADMIN, Role.USER)
   @ApiOperation({
     summary: 'List door open and close history',
   })
@@ -400,7 +400,7 @@ export class IoTController {
 
   @Patch('doors/:boardId/:deviceId/pin/reset')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN)
+  @Roles(Role.STAFF, Role.OPERATOR, Role.ADMIN, Role.USER)
   @ApiOperation({
     summary:
       'Reset smart door PIN by staff/operator/admin and wait for board acknowledgement',
@@ -423,7 +423,7 @@ export class IoTController {
   }
 
   @Patch('boards/:boardId/devices/:deviceId')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Update an IoT board child device' })
   @ApiJsonResponse(IoTBoardDetailDto, {
     description: 'Child device updated successfully',
