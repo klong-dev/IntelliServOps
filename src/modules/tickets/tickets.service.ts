@@ -17,7 +17,7 @@ import type { JwtPayload } from '../auth/auth.service';
 import { IoTService } from '../iot/iot.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ResolveTicketDto } from './dto';
+import { ResolveTicketDto, TicketListQueryDto } from './dto';
 
 @Injectable()
 export class TicketsService {
@@ -28,9 +28,13 @@ export class TicketsService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async findAll(currentUser: JwtPayload) {
+  async findAll(currentUser: JwtPayload, query: TicketListQueryDto = {}) {
     this.assertStaff(currentUser);
     return this.prisma.ticket.findMany({
+      where: {
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.type ? { type: query.type } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         invoice: true,
