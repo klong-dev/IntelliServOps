@@ -122,7 +122,7 @@ export class IoTController {
   }
 
   @Get('boards/:boardId')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get IoT board details with grouped child devices' })
   @ApiJsonResponse(IoTBoardDetailDto, {
     description: 'Board details with child devices',
@@ -133,7 +133,7 @@ export class IoTController {
   }
 
   @Get('meter')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary:
       'Get utility meters separated from board devices (electric and water)',
@@ -191,7 +191,7 @@ export class IoTController {
   }
 
   @Get('meters')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List utility meters' })
   @ApiQuery({ name: 'apartmentId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: MeterStatus })
@@ -203,7 +203,7 @@ export class IoTController {
   }
 
   @Get('meters/:id/readings')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'List utility meter readings' })
   async getMeterReadings(
     @Param('id') id: string,
@@ -213,7 +213,7 @@ export class IoTController {
   }
 
   @Get('meters/:id')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({ summary: 'Get utility meter detail' })
   async findOneMeter(@Param('id') id: string) {
     return this.iotService.findOneMeter(id);
@@ -375,7 +375,7 @@ export class IoTController {
 
   @Patch('doors/:boardId/:deviceId/pin')
   @ApiBearerAuth('JWT-auth')
-  @Roles(Role.USER)
+  @Roles(Role.USER, Role.STAFF, Role.OPERATOR)
   @ApiOperation({
     summary:
       'Update smart door PIN for tenant flow with board acknowledgement; old PIN is only required after the first setup',
