@@ -897,7 +897,8 @@ export class PaymentsService {
 
     if (
       invoice.rentalContract.status !== ContractStatus.signed &&
-      invoice.rentalContract.status !== ContractStatus.active
+      invoice.rentalContract.status !== ContractStatus.active &&
+      invoice.rentalContract.status !== ContractStatus.expired
     ) {
       throw new BadRequestException(
         'Only signed or active contracts can receive payments',
@@ -1203,7 +1204,8 @@ export class PaymentsService {
 
     if (
       invoice.rentalContract.status !== ContractStatus.signed &&
-      invoice.rentalContract.status !== ContractStatus.active
+      invoice.rentalContract.status !== ContractStatus.active &&
+      invoice.rentalContract.status !== ContractStatus.expired
     ) {
       throw new BadRequestException(
         'Only signed or active contracts can receive payments',
