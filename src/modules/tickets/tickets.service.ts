@@ -111,8 +111,8 @@ export class TicketsService {
       await this.ioTService.resumeBoardsForApartment(ticket.apartmentId);
       await this.notifyMembers(
         ticket.invoiceId,
-        'Rent overdue grace approved',
-        'Your IoT access was restored for 3 days. Please complete payment.',
+        'Gia hạn thanh toán tiền nhà được duyệt',
+        'Quyền truy cập IoT đã được khôi phục trong 3 ngày. Vui lòng hoàn tất thanh toán.',
       );
     } else {
       throw new BadRequestException('Unsupported ticket action');
@@ -161,7 +161,7 @@ export class TicketsService {
           title,
           message,
           actionUrl: `/invoices/${invoiceId}`,
-          actionLabel: 'View invoice',
+          actionLabel: 'Xem hóa đơn',
           relatedEntityType: 'Invoice',
           relatedEntityId: invoiceId,
         }),

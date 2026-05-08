@@ -159,7 +159,7 @@ export class InvoicesService {
         ),
       );
       const invoiceTypeLabel =
-        invoice.invoiceType === InvoiceType.utility ? 'utility' : 'rent';
+        invoice.invoiceType === InvoiceType.utility ? 'điện nước' : 'tiền nhà';
       const apartmentLabel =
         invoice.rentalContract?.apartment?.apartmentNumber ?? 'unknown';
       const members = invoice.rentalContract?.members ?? [];
@@ -177,8 +177,8 @@ export class InvoicesService {
 
         const message =
           overdueDays >= 15
-            ? `Invoice ${invoice.invoiceNumber} (${invoiceTypeLabel}) for apartment ${apartmentLabel} is overdue ${overdueDays} days. IoT services are temporarily disabled until payment is completed.`
-            : `Invoice ${invoice.invoiceNumber} (${invoiceTypeLabel}) for apartment ${apartmentLabel} is overdue ${overdueDays} days. If it reaches 15 overdue days, IoT services will be temporarily disabled.`;
+            ? `Hóa đơn ${invoice.invoiceNumber} (${invoiceTypeLabel}) của căn hộ ${apartmentLabel} đã quá hạn ${overdueDays} ngày. Dịch vụ IoT tạm thời bị vô hiệu hóa cho đến khi thanh toán hoàn tất.`
+            : `Hóa đơn ${invoice.invoiceNumber} (${invoiceTypeLabel}) của căn hộ ${apartmentLabel} đã quá hạn ${overdueDays} ngày. Nếu quá hạn 15 ngày, dịch vụ IoT sẽ tạm thời bị vô hiệu hóa.`;
 
         tasks.push(
           this.notificationsService.createAndPush({
@@ -187,10 +187,10 @@ export class InvoicesService {
             notificationType: 'warning',
             channel: 'in_app',
             priority: 'high',
-            title: 'Invoice overdue',
+            title: 'Hóa đơn quá hạn',
             message,
             actionUrl: `/invoices/${invoice.id}`,
-            actionLabel: 'View invoice',
+            actionLabel: 'Xem hóa đơn',
             relatedEntityType: 'Invoice',
             relatedEntityId: invoice.id,
           }),
@@ -2729,7 +2729,12 @@ export class InvoicesService {
         where: { id: invoice.id },
         data: { rentOverdueTicketId: ticket.id },
       });
-      await this.notifyRentTicket(invoice, ticket.id, 'Rent overdue enforcement', 'Your IoT board was disabled because rent is overdue over 15 days from issue date.');
+      await this.notifyRentTicket(
+        invoice,
+        ticket.id,
+        'Khóa IoT do tiền nhà quá hạn',
+        'Thiết bị IoT đã bị vô hiệu hóa vì hóa đơn tiền nhà quá hạn hơn 15 ngày từ ngày phát hành.',
+      );
     }
   }
 
@@ -2764,7 +2769,12 @@ export class InvoicesService {
         `Rent invoice ${invoice.invoiceNumber} grace expired`,
         ticket.id,
       );
-      await this.notifyRentTicket(invoice, ticket.id, 'Rent overdue recovery', 'Your 3-day grace period expired. A recovery ticket was created.');
+      await this.notifyRentTicket(
+        invoice,
+        ticket.id,
+        'Hết thời gian gia hạn tiền nhà',
+        'Thời gian gia hạn 3 ngày đã kết thúc. Hệ thống đã tạo ticket xử lý thu hồi.',
+      );
     }
   }
 
@@ -2834,7 +2844,7 @@ export class InvoicesService {
           title,
           message,
           actionUrl: `/tickets/${ticketId}`,
-          actionLabel: 'View ticket',
+          actionLabel: 'Xem ticket',
           relatedEntityType: 'Ticket',
           relatedEntityId: ticketId,
         }),
