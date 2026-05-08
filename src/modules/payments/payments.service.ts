@@ -345,7 +345,9 @@ export class PaymentsService {
       );
     }
 
-    const monthRange = this.resolveMonthRange(query.month);
+    const monthRange = query.month
+      ? this.resolveMonthRange(query.month)
+      : this.resolveMonthRangeFromDate(new Date());
     const now = new Date();
 
     const contracts = await this.prisma.rentalContract.findMany({

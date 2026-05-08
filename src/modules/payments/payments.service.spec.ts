@@ -546,6 +546,26 @@ describe('PaymentsService', () => {
       ).resolves.toEqual([]);
     });
 
+    it('should default deposit payout list to current month', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-05-09T00:00:00.000Z'));
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findMany.mockResolvedValue([] as any);
+
+      await service.listDueContractDepositPayouts(staff, {});
+
+      expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            endDate: {
+              gte: new Date('2026-05-01T00:00:00.000Z'),
+              lt: new Date('2026-06-01T00:00:00.000Z'),
+            },
+          }),
+        }),
+      );
+      jest.useRealTimers();
+    });
+
     it('should show deposit payout after all utility invoices are paid', async () => {
       const staff = mockStaffJwtPayload();
       prisma.rentalContract.findMany.mockResolvedValue([
