@@ -70,7 +70,7 @@ export class IoTController {
   }
 
   @Get('devices/:espId/check-health')
-  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF)
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.STAFF, Role.USER)
   @ApiOperation({
     summary: 'Check whether board is online (based on latest status seen)',
   })
