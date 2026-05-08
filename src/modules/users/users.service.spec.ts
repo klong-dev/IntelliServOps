@@ -393,8 +393,10 @@ describe('UsersService', () => {
       } as any);
       prisma.userIdentity.findUnique.mockResolvedValue(null as any);
       prisma.userIdentity.upsert.mockResolvedValue({} as any);
-      prisma.user.findUniqueOrThrow.mockResolvedValue({
+      prisma.user.update.mockResolvedValue({
         ...user,
+        bankName: 'VCB',
+        bankAccountNumber: '0123456789',
         identity: { nationalId: '079203001234' },
       } as any);
 
@@ -417,6 +419,8 @@ describe('UsersService', () => {
         user.id,
         frontFile,
         backFile,
+        'VCB',
+        '0123456789',
       );
 
       expect(result.aiVerification.front?.success).toBe(true);
@@ -458,7 +462,7 @@ describe('UsersService', () => {
         .mockReturnValueOnce(false);
 
       await expect(
-        service.updateIdentityCard(user.id, frontFile, backFile),
+        service.updateIdentityCard(user.id, frontFile, backFile, 'VCB', '0123456789'),
       ).rejects.toThrow(BadRequestException);
     });
   });

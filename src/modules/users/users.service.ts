@@ -923,6 +923,8 @@ export class UsersService {
     userId: string,
     identityCardFrontFile: any,
     identityCardBackFile: any,
+    bankName: string,
+    bankAccount: string,
   ): Promise<UpdateIdentityCardResult> {
     // Validate file types
     const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -1102,7 +1104,11 @@ export class UsersService {
       this.configService.get<boolean>('fptAi.autoVerifyOnSuccess')
     ) {
       // Build update data: sync dob + fullName from extracted identity info
-      const userUpdateData: any = { isVerified: true };
+      const userUpdateData: any = {
+        isVerified: true,
+        bankName,
+        bankAccountNumber: bankAccount,
+      };
 
       if (extractedInfo.dob) {
         // Parse DD/MM/YYYY format from CCCD
@@ -1128,8 +1134,12 @@ export class UsersService {
         `User ${userId} auto-verified after ID card check. Synced dob/fullName from identity.`,
       );
     } else {
-      updatedUser = await this.prisma.user.findUniqueOrThrow({
+      updatedUser = await this.prisma.user.update({
         where: { id: userId },
+        data: {
+          bankName,
+          bankAccountNumber: bankAccount,
+        },
         include: { identity: true },
       });
     }

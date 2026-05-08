@@ -147,8 +147,21 @@ export class UsersController {
           description:
             'Back image of identity card (required) - JPEG, PNG, or WebP',
         },
+        bank_name: {
+          type: 'string',
+          description: 'Bank name for receiving refunds/payouts',
+        },
+        bank_account: {
+          type: 'string',
+          description: 'Bank account number for receiving refunds/payouts',
+        },
       },
-      required: ['identityCardFront', 'identityCardBack'],
+      required: [
+        'identityCardFront',
+        'identityCardBack',
+        'bank_name',
+        'bank_account',
+      ],
     },
   })
   @ApiOperation({
@@ -171,6 +184,8 @@ export class UsersController {
       identityCardFront?: any[];
       identityCardBack?: any[];
     },
+    @Body('bank_name') bankName: string,
+    @Body('bank_account') bankAccount: string,
     @CurrentUser() currentUser: JwtPayload,
   ): Promise<UpdateIdentityCardResult> {
     if (currentUser.actorType === 'staff') {
@@ -185,11 +200,19 @@ export class UsersController {
     if (!files?.identityCardBack?.[0]) {
       throw new BadRequestException('Back identity card image is required');
     }
+    if (!bankName?.trim()) {
+      throw new BadRequestException('bank_name is required');
+    }
+    if (!bankAccount?.trim()) {
+      throw new BadRequestException('bank_account is required');
+    }
 
     return this.usersService.updateIdentityCard(
       currentUser.sub,
       files.identityCardFront[0],
       files.identityCardBack[0],
+      bankName.trim(),
+      bankAccount.trim(),
     );
   }
 
