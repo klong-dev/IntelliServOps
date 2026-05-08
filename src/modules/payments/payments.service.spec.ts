@@ -6,6 +6,7 @@ import {
   createPrismaMock,
   mockUserJwtPayload,
   mockAdminJwtPayload,
+  mockStaffJwtPayload,
 } from '../../test-utils';
 import { CreatePaymentDto } from './dto';
 import {
@@ -14,6 +15,7 @@ import {
   ContractStatus,
   InvoiceType,
   UserApartmentStatus,
+  PartnerMonthlyPayoutStatus,
 } from '@prisma/client';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -414,7 +416,7 @@ describe('PaymentsService', () => {
       prisma.payment.findUnique.mockResolvedValue({
         ...payment,
         invoice: mockInvoice({
-          invoiceType: InvoiceType.monthlyRent,
+          invoiceType: InvoiceType.rent,
           rentalContract: {
             id: 'contract-123',
             status: ContractStatus.signed,
@@ -498,6 +500,191 @@ describe('PaymentsService', () => {
       );
       expect(ioTService.clearApartmentDoorPinHash).toHaveBeenCalledWith(
         'apt-123',
+      );
+    });
+  });
+
+  describe('payout eligibility', () => {
+    it('should hide deposit payout when contract has unpaid utility invoice', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findMany.mockResolvedValue([
+        {
+          id: 'contract-123',
+          contractNumber: 'CNT-001',
+          apartmentId: 'apt-123',
+          endDate: new Date('2026-04-01T00:00:00.000Z'),
+          depositAmount: 10000000,
+          apartment: { apartmentNumber: 'A101' },
+          members: [
+            {
+              userId: 'user-123',
+              memberType: 'primary',
+              isPrimaryContact: true,
+              user: {
+                id: 'user-123',
+                fullName: 'Nguyen Van A',
+                phone: '0901234567',
+                bankName: 'VCB',
+                bankAccountNumber: '0123456789',
+              },
+            },
+          ],
+          invoices: [
+            {
+              id: 'deposit-invoice-123',
+              currency: 'VND',
+              totalAmount: 10000000,
+              payments: [],
+            },
+          ],
+          _count: { invoices: 1 },
+        },
+      ] as any);
+
+      await expect(
+        service.listDueContractDepositPayouts(staff, { month: '2026-04' }),
+      ).resolves.toEqual([]);
+    });
+
+    it('should show deposit payout after all utility invoices are paid', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findMany.mockResolvedValue([
+        {
+          id: 'contract-123',
+          contractNumber: 'CNT-001',
+          apartmentId: 'apt-123',
+          endDate: new Date('2026-04-01T00:00:00.000Z'),
+          depositAmount: 10000000,
+          apartment: { apartmentNumber: 'A101' },
+          members: [
+            {
+              userId: 'user-123',
+              memberType: 'primary',
+              isPrimaryContact: true,
+              user: {
+                id: 'user-123',
+                fullName: 'Nguyen Van A',
+                phone: '0901234567',
+                bankName: 'VCB',
+                bankAccountNumber: '0123456789',
+              },
+            },
+          ],
+          invoices: [
+            {
+              id: 'deposit-invoice-123',
+              currency: 'VND',
+              totalAmount: 10000000,
+              payments: [],
+            },
+          ],
+          _count: { invoices: 0 },
+        },
+      ] as any);
+
+      const result = await service.listDueContractDepositPayouts(staff, {
+        month: '2026-04',
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        contractId: 'contract-123',
+        payoutAmount: '10000000.00',
+      });
+    });
+
+    it('should reject deposit payout confirmation when contract has unpaid utility invoice', async () => {
+      const staff = mockStaffJwtPayload();
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-123',
+        contractNumber: 'CNT-001',
+        endDate: new Date('2026-04-01T00:00:00.000Z'),
+        depositAmount: 10000000,
+        members: [{ userId: 'user-123', memberType: 'primary' }],
+        invoices: [
+          {
+            id: 'deposit-invoice-123',
+            currency: 'VND',
+            totalAmount: 10000000,
+            paymentMethod: 'bank_transfer',
+            payments: [],
+          },
+        ],
+      } as any);
+      prisma.invoice.count.mockResolvedValue(1 as any);
+
+      await expect(
+        service.confirmContractDepositPayout(
+          staff,
+          { contractId: 'contract-123' },
+          { mimetype: 'image/png', buffer: Buffer.from('proof') },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should create pending partner payout immediately when rent invoice is paid', async () => {
+      const payment = mockPayment({ status: PaymentStatus.pending });
+      const paidAt = new Date('2026-04-10T00:00:00.000Z');
+      prisma.payment.findUnique.mockResolvedValue({
+        ...payment,
+        invoice: mockInvoice({
+          invoiceType: InvoiceType.rent,
+          rentalContract: {
+            id: 'contract-123',
+            status: ContractStatus.active,
+            apartmentId: 'apt-123',
+            members: [{ userId: 'user-123' }],
+          },
+        }),
+      } as any);
+      prisma.$transaction.mockResolvedValue([] as any);
+      prisma.invoice.findUnique.mockResolvedValueOnce({
+        id: 'invoice-123',
+        invoiceType: InvoiceType.rent,
+        rentalContract: { apartmentId: 'apt-123' },
+      } as any);
+      prisma.invoice.findUnique.mockResolvedValueOnce({
+        id: 'invoice-123',
+        invoiceType: InvoiceType.rent,
+        paidAt,
+      } as any);
+      prisma.partnerCooperationContract.findMany.mockResolvedValue([
+        {
+          apartmentId: 'apt-123',
+          partnerId: 'partner-123',
+          startDate: new Date('2026-01-01T00:00:00.000Z'),
+          endDate: new Date('2026-12-31T00:00:00.000Z'),
+          commissionRate: 10,
+          partner: {
+            id: 'partner-123',
+            fullName: 'Partner A',
+            companyName: 'Partner Co',
+            bankName: 'VCB',
+            bankAccountNumber: '9876543210',
+            paymentTerms: 'day 5',
+          },
+        },
+      ] as any);
+      prisma.invoice.findMany.mockResolvedValue([
+        {
+          totalAmount: 10000000,
+          currency: 'VND',
+          paidAt,
+          rentalContract: { apartmentId: 'apt-123' },
+        },
+      ] as any);
+
+      await service.confirm('payment-123', 'tx-123');
+
+      expect(prisma.partnerMonthlyPayout.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            payoutMonth: '2026-04',
+            dueDate: paidAt,
+            payoutAmount: 9000000,
+            status: PartnerMonthlyPayoutStatus.pending,
+          }),
+        }),
       );
     });
   });
