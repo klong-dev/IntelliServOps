@@ -143,6 +143,7 @@ export class PaymentsService {
         id: true,
         partnerId: true,
         status: true,
+        dueDate: true,
         transferProofUrl: true,
         transferReference: true,
         transferNote: true,
@@ -171,7 +172,7 @@ export class PaymentsService {
           payoutMonth: draft.payoutMonth,
           billingPeriodStart: draft.billingPeriodStart,
           billingPeriodEndExclusive: draft.billingPeriodEndExclusive,
-          dueDate: draft.dueDate,
+          dueDate: existing?.dueDate ?? draft.dueDate,
           grossRevenue: draft.grossRevenue.toFixed(2),
           commissionAmount: draft.commissionAmount.toFixed(2),
           effectiveCommissionRate: Number(
@@ -180,7 +181,7 @@ export class PaymentsService {
           payoutAmount: draft.payoutAmount.toFixed(2),
           currency: draft.currency,
           status,
-          isDue: draft.dueDate <= now,
+          isDue: (existing?.dueDate ?? draft.dueDate) <= now,
           transferProofUrl: existing?.transferProofUrl ?? null,
           transferReference: existing?.transferReference ?? null,
           transferNote: existing?.transferNote ?? null,
@@ -238,10 +239,6 @@ export class PaymentsService {
       );
     }
 
-    if (draft.dueDate > new Date()) {
-      throw new BadRequestException('This partner payout is not due yet');
-    }
-
     const existing = await this.prisma.partnerMonthlyPayout.findUnique({
       where: {
         partnerId_payoutMonth: {
@@ -257,6 +254,10 @@ export class PaymentsService {
 
     if (existing?.status === PartnerMonthlyPayoutStatus.paid) {
       throw new ConflictException('This partner payout is already confirmed');
+    }
+
+    if (!existing && draft.dueDate > new Date()) {
+      throw new BadRequestException('This partner payout is not due yet');
     }
 
     const extension = this.getImageExtensionByMimeType(mimeType);
@@ -421,6 +422,16 @@ export class PaymentsService {
             },
           },
         },
+        _count: {
+          select: {
+            invoices: {
+              where: {
+                invoiceType: { in: [InvoiceType.rent, InvoiceType.utility] },
+                status: { notIn: [InvoiceStatus.paid, InvoiceStatus.cancelled] },
+              },
+            },
+          },
+        },
       },
       orderBy: {
         endDate: 'asc',
@@ -434,7 +445,7 @@ export class PaymentsService {
           contract.members.find((member) => member.isPrimaryContact) ||
           contract.members[0];
 
-        if (!primaryMember) {
+        if (!primaryMember || contract._count.invoices > 0) {
           return null;
         }
 
@@ -578,6 +589,12 @@ export class PaymentsService {
 
     if (contract.endDate > new Date()) {
       throw new BadRequestException('Contract has not ended yet');
+    }
+
+    if (await this.hasUnpaidRentUtilityInvoices(contract.id)) {
+      throw new BadRequestException(
+        'Contract still has unpaid rent/utility invoices',
+      );
     }
 
     const paidDepositInvoice = contract.invoices[0];
@@ -990,7 +1007,7 @@ export class PaymentsService {
 
     const txResult = await this.prisma.$transaction(txOperations);
 
-    await this.resolveRentOverdueOnPaid(payment.invoiceId);
+    await this.handleInvoicePaidSideEffects(payment.invoiceId);
 
     if (activationContext.shouldResetDoorPin) {
       const syncResult = await this.clearApartmentDoorPinHash(
@@ -1432,7 +1449,7 @@ export class PaymentsService {
 
       await this.prisma.$transaction(txOperations);
 
-      await this.resolveRentOverdueOnPaid(payment.invoiceId);
+      await this.handleInvoicePaidSideEffects(payment.invoiceId);
 
       if (activationContext.shouldResetDoorPin) {
         const syncResult = await this.clearApartmentDoorPinHash(
@@ -1487,6 +1504,11 @@ export class PaymentsService {
       paymentId: payment.id,
       status: PaymentStatus.failed,
     };
+  }
+
+  private async handleInvoicePaidSideEffects(invoiceId: string) {
+    await this.resolveRentOverdueOnPaid(invoiceId);
+    await this.upsertPendingPartnerPayoutForPaidRentInvoice(invoiceId);
   }
 
   private async resolveRentOverdueOnPaid(invoiceId: string) {
@@ -1986,6 +2008,87 @@ export class PaymentsService {
         };
       })
       .filter((item): item is InvoiceContentItem => item !== null);
+  }
+
+  private async hasUnpaidRentUtilityInvoices(contractId: string): Promise<boolean> {
+    const count = await this.prisma.invoice.count({
+      where: {
+        rentalContractId: contractId,
+        invoiceType: { in: [InvoiceType.rent, InvoiceType.utility] },
+        status: { notIn: [InvoiceStatus.paid, InvoiceStatus.cancelled] },
+      },
+    });
+
+    return count > 0;
+  }
+
+  private resolveMonthRangeFromDate(date: Date): MonthRange {
+    const year = date.getUTCFullYear();
+    const monthIndex = date.getUTCMonth();
+    const start = new Date(Date.UTC(year, monthIndex, 1));
+    const end = new Date(Date.UTC(year, monthIndex + 1, 1));
+
+    return {
+      payoutMonth: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
+      billingPeriodStart: start,
+      billingPeriodEndExclusive: end,
+    };
+  }
+
+  private async upsertPendingPartnerPayoutForPaidRentInvoice(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        invoiceType: true,
+        paidAt: true,
+      },
+    });
+
+    if (!invoice?.paidAt || invoice.invoiceType !== InvoiceType.rent) {
+      return;
+    }
+
+    const monthRange = this.resolveMonthRangeFromDate(invoice.paidAt);
+    const drafts = await this.buildPartnerPayoutDrafts(monthRange);
+
+    await Promise.all(
+      drafts
+        .filter((draft) => draft.payoutAmount > 0)
+        .map((draft) =>
+          this.prisma.partnerMonthlyPayout.upsert({
+            where: {
+              partnerId_payoutMonth: {
+                partnerId: draft.partnerId,
+                payoutMonth: draft.payoutMonth,
+              },
+            },
+            create: {
+              partner: { connect: { id: draft.partnerId } },
+              payoutMonth: draft.payoutMonth,
+              billingPeriodStart: draft.billingPeriodStart,
+              billingPeriodEnd: draft.billingPeriodEndExclusive,
+              dueDate: invoice.paidAt!,
+              grossRevenue: draft.grossRevenue,
+              commissionAmount: draft.commissionAmount,
+              payoutAmount: draft.payoutAmount,
+              effectiveCommissionRate: draft.effectiveCommissionRate,
+              currency: draft.currency,
+              status: PartnerMonthlyPayoutStatus.pending,
+            },
+            update: {
+              billingPeriodStart: draft.billingPeriodStart,
+              billingPeriodEnd: draft.billingPeriodEndExclusive,
+              dueDate: invoice.paidAt!,
+              grossRevenue: draft.grossRevenue,
+              commissionAmount: draft.commissionAmount,
+              payoutAmount: draft.payoutAmount,
+              effectiveCommissionRate: draft.effectiveCommissionRate,
+              currency: draft.currency,
+            },
+          }),
+        ),
+    );
   }
 
   private resolveMonthRange(month?: string): MonthRange {
