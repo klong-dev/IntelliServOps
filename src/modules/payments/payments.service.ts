@@ -128,116 +128,73 @@ export class PaymentsService {
     }
 
     const monthRange = this.resolveMonthRange(query.month);
-    const drafts = await this.buildPartnerPayoutDrafts(monthRange);
-
-    if (drafts.length === 0) {
-      return [];
-    }
-
-    await Promise.all(
-      drafts
-        .filter((draft) => draft.payoutAmount > 0)
-        .map((draft) =>
-          this.prisma.partnerMonthlyPayout.upsert({
-            where: {
-              partnerId_payoutMonth: {
-                partnerId: draft.partnerId,
-                payoutMonth: draft.payoutMonth,
-              },
-            },
-            create: {
-              partner: { connect: { id: draft.partnerId } },
-              payoutMonth: draft.payoutMonth,
-              billingPeriodStart: draft.billingPeriodStart,
-              billingPeriodEnd: draft.billingPeriodEndExclusive,
-              dueDate: draft.dueDate,
-              grossRevenue: draft.grossRevenue,
-              commissionAmount: draft.commissionAmount,
-              payoutAmount: draft.payoutAmount,
-              effectiveCommissionRate: draft.effectiveCommissionRate,
-              currency: draft.currency,
-              status: PartnerMonthlyPayoutStatus.pending,
-            },
-            update: {
-              billingPeriodStart: draft.billingPeriodStart,
-              billingPeriodEnd: draft.billingPeriodEndExclusive,
-              dueDate: draft.dueDate,
-              grossRevenue: draft.grossRevenue,
-              commissionAmount: draft.commissionAmount,
-              payoutAmount: draft.payoutAmount,
-              effectiveCommissionRate: draft.effectiveCommissionRate,
-              currency: draft.currency,
-            },
-          }),
-        ),
-    );
-
-    const existingPayouts = await this.prisma.partnerMonthlyPayout.findMany({
+    const payouts = await this.prisma.partnerMonthlyPayout.findMany({
       where: {
         payoutMonth: monthRange.payoutMonth,
-        partnerId: { in: drafts.map((item) => item.partnerId) },
+        status: { not: PartnerMonthlyPayoutStatus.paid },
+        payoutAmount: { gt: 0 },
       },
       select: {
         id: true,
         partnerId: true,
-        status: true,
+        payoutMonth: true,
+        billingPeriodStart: true,
+        billingPeriodEnd: true,
         dueDate: true,
+        grossRevenue: true,
+        commissionAmount: true,
+        effectiveCommissionRate: true,
+        payoutAmount: true,
+        currency: true,
+        status: true,
         transferProofUrl: true,
         transferReference: true,
         transferNote: true,
         confirmedAt: true,
         confirmedByStaffId: true,
+        partner: {
+          select: {
+            fullName: true,
+            companyName: true,
+            bankName: true,
+            bankAccountNumber: true,
+            paymentTerms: true,
+          },
+        },
       },
+      orderBy: [{ dueDate: 'asc' }, { partner: { fullName: 'asc' } }],
     });
 
-    const payoutByPartner = new Map(
-      existingPayouts.map((item) => [item.partnerId, item]),
-    );
-
     const now = new Date();
-    return drafts
-      .map((draft) => {
-        const existing = payoutByPartner.get(draft.partnerId);
-        const status = existing?.status ?? PartnerMonthlyPayoutStatus.pending;
-        return {
-          payoutId: existing?.id ?? null,
-          partnerId: draft.partnerId,
-          partnerName: draft.partnerName,
-          partnerCompanyName: draft.partnerCompanyName,
-          bankName: draft.bankName,
-          bankAccountNumber: draft.bankAccountNumber,
-          paymentTerms: draft.paymentTerms,
-          payoutMonth: draft.payoutMonth,
-          billingPeriodStart: draft.billingPeriodStart,
-          billingPeriodEndExclusive: draft.billingPeriodEndExclusive,
-          dueDate: existing?.dueDate ?? draft.dueDate,
-          grossRevenue: draft.grossRevenue.toFixed(2),
-          commissionAmount: draft.commissionAmount.toFixed(2),
-          effectiveCommissionRate: Number(
-            draft.effectiveCommissionRate.toFixed(2),
-          ),
-          payoutAmount: draft.payoutAmount.toFixed(2),
-          currency: draft.currency,
-          status,
-          isDue: (existing?.dueDate ?? draft.dueDate) <= now,
-          transferProofUrl: existing?.transferProofUrl ?? null,
-          transferReference: existing?.transferReference ?? null,
-          transferNote: existing?.transferNote ?? null,
-          confirmedAt: existing?.confirmedAt ?? null,
-          confirmedByStaffId: existing?.confirmedByStaffId ?? null,
-        };
-      })
-      .filter(
-        (item) =>
-          item.isDue &&
-          item.payoutAmount !== '0.00' &&
-          item.status !== PartnerMonthlyPayoutStatus.paid,
-      )
-      .sort(
-        (a, b) =>
-          +new Date(a.dueDate) - +new Date(b.dueDate) ||
-          a.partnerName.localeCompare(b.partnerName, 'vi'),
-      );
+    return payouts
+      .map((payout) => ({
+        payoutId: payout.id,
+        partnerId: payout.partnerId,
+        partnerName: payout.partner.fullName,
+        partnerCompanyName: payout.partner.companyName ?? null,
+        bankName: payout.partner.bankName ?? null,
+        bankAccountNumber: payout.partner.bankAccountNumber ?? null,
+        paymentTerms: payout.partner.paymentTerms ?? null,
+        payoutMonth: payout.payoutMonth,
+        billingPeriodStart: payout.billingPeriodStart,
+        billingPeriodEndExclusive: payout.billingPeriodEnd,
+        dueDate: payout.dueDate,
+        grossRevenue: Number(payout.grossRevenue).toFixed(2),
+        commissionAmount: Number(payout.commissionAmount).toFixed(2),
+        effectiveCommissionRate: Number(
+          payout.effectiveCommissionRate,
+        ),
+        payoutAmount: Number(payout.payoutAmount).toFixed(2),
+        currency: payout.currency,
+        status: payout.status,
+        isDue: payout.dueDate <= now,
+        transferProofUrl: payout.transferProofUrl ?? null,
+        transferReference: payout.transferReference ?? null,
+        transferNote: payout.transferNote ?? null,
+        confirmedAt: payout.confirmedAt ?? null,
+        confirmedByStaffId: payout.confirmedByStaffId ?? null,
+      }))
+      .filter((item) => item.isDue);
   }
 
   async confirmPartnerMonthlyPayout(

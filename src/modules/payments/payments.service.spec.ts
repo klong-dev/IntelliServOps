@@ -875,18 +875,28 @@ describe('PaymentsService', () => {
       expect(result.payoutPaymentId).toBe('refund-payment-123');
     });
 
-    it('should materialize partner payout rows when listing due payouts', async () => {
+    it('should list only persisted partner payout rows', async () => {
       const staff = mockStaffJwtPayload();
-      const paidAt = new Date('2026-04-10T00:00:00.000Z');
-      prisma.partnerCooperationContract.findMany.mockResolvedValue([
+      prisma.partnerMonthlyPayout.findMany.mockResolvedValue([
         {
-          apartmentId: 'apt-123',
+          id: 'payout-123',
           partnerId: 'partner-123',
-          startDate: new Date('2026-01-01T00:00:00.000Z'),
-          endDate: new Date('2026-12-31T00:00:00.000Z'),
-          commissionRate: 10,
+          payoutMonth: '2026-04',
+          billingPeriodStart: new Date('2026-04-01T00:00:00.000Z'),
+          billingPeriodEnd: new Date('2026-05-01T00:00:00.000Z'),
+          dueDate: new Date('2026-05-05T00:00:00.000Z'),
+          grossRevenue: 10000000,
+          commissionAmount: 1000000,
+          effectiveCommissionRate: 10,
+          payoutAmount: 9000000,
+          currency: 'VND',
+          status: PartnerMonthlyPayoutStatus.pending,
+          transferProofUrl: null,
+          transferReference: null,
+          transferNote: null,
+          confirmedAt: null,
+          confirmedByStaffId: null,
           partner: {
-            id: 'partner-123',
             fullName: 'Partner A',
             companyName: 'Partner Co',
             bankName: 'VCB',
@@ -895,43 +905,12 @@ describe('PaymentsService', () => {
           },
         },
       ] as any);
-      prisma.invoice.findMany.mockResolvedValue([
-        {
-          totalAmount: 10000000,
-          currency: 'VND',
-          paidAt,
-          rentalContract: { apartmentId: 'apt-123' },
-        },
-      ] as any);
-      prisma.partnerMonthlyPayout.findMany.mockResolvedValue([
-        {
-          id: 'payout-123',
-          partnerId: 'partner-123',
-          status: PartnerMonthlyPayoutStatus.pending,
-          dueDate: new Date('2026-05-05T00:00:00.000Z'),
-          transferProofUrl: null,
-          transferReference: null,
-          transferNote: null,
-          confirmedAt: null,
-          confirmedByStaffId: null,
-        },
-      ] as any);
 
       const result = await service.listDuePartnerMonthlyPayouts(staff, {
         month: '2026-04',
       });
 
-      expect(prisma.partnerMonthlyPayout.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          create: expect.objectContaining({
-            payoutMonth: '2026-04',
-            grossRevenue: 10000000,
-            commissionAmount: 1000000,
-            payoutAmount: 9000000,
-            status: PartnerMonthlyPayoutStatus.pending,
-          }),
-        }),
-      );
+      expect(prisma.partnerMonthlyPayout.upsert).not.toHaveBeenCalled();
       expect(result[0]).toMatchObject({
         payoutId: 'payout-123',
         payoutAmount: '9000000.00',
