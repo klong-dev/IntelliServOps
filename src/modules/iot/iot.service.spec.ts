@@ -2502,6 +2502,13 @@ describe('IoTService', () => {
           }),
         }),
       );
+      expect(prisma.utilityMeter.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            previousReading: expect.anything(),
+          }),
+        }),
+      );
     });
 
     it('should throw NotFoundException if meter is missing', async () => {
@@ -2885,6 +2892,13 @@ describe('IoTService', () => {
           data: expect.objectContaining({
             readingType: 'automatic',
             readingValue: 120.5,
+          }),
+        }),
+      );
+      expect(prisma.utilityMeter.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            previousReading: expect.anything(),
           }),
         }),
       );

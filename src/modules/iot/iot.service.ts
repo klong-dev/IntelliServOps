@@ -1805,7 +1805,6 @@ export class IoTService {
     await this.prisma.utilityMeter.update({
       where: { id: createDto.utilityMeterId },
       data: {
-        previousReading: meter.currentReading,
         currentReading: createDto.readingValue,
         readingDate: new Date(createDto.readingDate),
       },
@@ -2423,7 +2422,6 @@ export class IoTService {
     await this.prisma.utilityMeter.update({
       where: { id: meter.id },
       data: {
-        previousReading: meter.currentReading,
         currentReading: normalizedReading,
         readingDate: event.receivedAt,
       },
