@@ -354,23 +354,7 @@ export class PaymentsService {
             ContractStatus.signed,
           ],
         },
-        OR: [
-          {
-            endDate: {
-              gte: monthRange.billingPeriodStart,
-              lt: monthRange.billingPeriodEndExclusive,
-            },
-          },
-          {
-            invoices: {
-              some: {
-                invoiceType: { in: [InvoiceType.rent, InvoiceType.utility] },
-                status: InvoiceStatus.paid,
-                billingMonth: monthRange.payoutMonth,
-              },
-            },
-          },
-        ],
+        endDate: { lte: now },
       },
       select: {
         id: true,
@@ -417,6 +401,10 @@ export class PaymentsService {
               where: {
                 paymentGateway: 'manual_refund',
                 status: { in: [PaymentStatus.pending, PaymentStatus.refunded] },
+                paymentDate: {
+                  gte: monthRange.billingPeriodStart,
+                  lt: monthRange.billingPeriodEndExclusive,
+                },
               },
               orderBy: {
                 createdAt: 'desc',
@@ -466,6 +454,10 @@ export class PaymentsService {
         }
 
         const refundedPayment = paidDepositInvoice.payments[0] || null;
+        if (!refundedPayment) {
+          return null;
+        }
+
         const depositAmount = Number(contract.depositAmount);
         const fallbackAmount = Number(paidDepositInvoice.totalAmount);
         const payoutAmount =

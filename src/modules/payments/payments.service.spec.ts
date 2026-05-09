@@ -546,7 +546,7 @@ describe('PaymentsService', () => {
       ).resolves.toEqual([]);
     });
 
-    it('should default deposit payout list to current month', async () => {
+    it('should default deposit payout list to current month refund payments', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-05-09T00:00:00.000Z'));
       const staff = mockStaffJwtPayload();
       prisma.rentalContract.findMany.mockResolvedValue([] as any);
@@ -556,46 +556,28 @@ describe('PaymentsService', () => {
       expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            OR: expect.arrayContaining([
-              expect.objectContaining({
-                endDate: {
-                  gte: new Date('2026-05-01T00:00:00.000Z'),
-                  lt: new Date('2026-06-01T00:00:00.000Z'),
-                },
+            endDate: { lte: new Date('2026-05-09T00:00:00.000Z') },
+          }),
+          select: expect.objectContaining({
+            invoices: expect.objectContaining({
+              select: expect.objectContaining({
+                payments: expect.objectContaining({
+                  where: expect.objectContaining({
+                    paymentDate: {
+                      gte: new Date('2026-05-01T00:00:00.000Z'),
+                      lt: new Date('2026-06-01T00:00:00.000Z'),
+                    },
+                  }),
+                }),
               }),
-            ]),
+            }),
           }),
         }),
       );
       jest.useRealTimers();
     });
 
-    it('should include deposit payout by paid rent or utility billing month', async () => {
-      const staff = mockStaffJwtPayload();
-      prisma.rentalContract.findMany.mockResolvedValue([] as any);
-
-      await service.listDueContractDepositPayouts(staff, { month: '2026-04' });
-
-      expect(prisma.rentalContract.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            OR: expect.arrayContaining([
-              expect.objectContaining({
-                invoices: {
-                  some: {
-                    invoiceType: { in: [InvoiceType.rent, InvoiceType.utility] },
-                    status: InvoiceStatus.paid,
-                    billingMonth: '2026-04',
-                  },
-                },
-              }),
-            ]),
-          }),
-        }),
-      );
-    });
-
-    it('should show deposit payout after all utility invoices are paid', async () => {
+    it('should show deposit payout after refund payment is created', async () => {
       const staff = mockStaffJwtPayload();
       prisma.rentalContract.findMany.mockResolvedValue([
         {
@@ -624,7 +606,17 @@ describe('PaymentsService', () => {
               id: 'deposit-invoice-123',
               currency: 'VND',
               totalAmount: 10000000,
-              payments: [],
+              payments: [
+                {
+                  id: 'refund-payment-123',
+                  status: PaymentStatus.pending,
+                  paymentProofUrl: null,
+                  transactionId: null,
+                  notes: null,
+                  refundDate: null,
+                  processedByStaffId: null,
+                },
+              ],
             },
           ],
           _count: { invoices: 0 },
