@@ -2179,6 +2179,28 @@ export class PaymentsService {
         id: true,
         invoiceType: true,
         paidAt: true,
+        totalAmount: true,
+        currency: true,
+        rentalContract: {
+          select: {
+            apartment: {
+              select: {
+                owner: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    companyName: true,
+                    bankName: true,
+                    bankAccountNumber: true,
+                    paymentTerms: true,
+                    commissionRate: true,
+                    isPartner: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -2187,7 +2209,42 @@ export class PaymentsService {
     }
 
     const monthRange = this.resolveMonthRangeFromDate(invoice.paidAt);
-    const drafts = await this.buildPartnerPayoutDrafts(monthRange);
+    let drafts = await this.buildPartnerPayoutDrafts(monthRange);
+
+    if (drafts.length === 0) {
+      const owner = invoice.rentalContract?.apartment?.owner;
+      const grossRevenue = Number(invoice.totalAmount);
+      if (owner?.isPartner && Number.isFinite(grossRevenue) && grossRevenue > 0) {
+        const effectiveCommissionRate = Number(owner.commissionRate ?? 10);
+        const commissionAmount = (grossRevenue * effectiveCommissionRate) / 100;
+        const dueDay = this.resolveDueDay(owner.paymentTerms ?? null);
+        drafts = [
+          {
+            partnerId: owner.id,
+            partnerName: owner.fullName,
+            partnerCompanyName: owner.companyName ?? null,
+            bankName: owner.bankName ?? null,
+            bankAccountNumber: owner.bankAccountNumber ?? null,
+            paymentTerms: owner.paymentTerms ?? null,
+            payoutMonth: monthRange.payoutMonth,
+            billingPeriodStart: monthRange.billingPeriodStart,
+            billingPeriodEndExclusive: monthRange.billingPeriodEndExclusive,
+            dueDate: new Date(
+              Date.UTC(
+                monthRange.billingPeriodEndExclusive.getUTCFullYear(),
+                monthRange.billingPeriodEndExclusive.getUTCMonth(),
+                dueDay,
+              ),
+            ),
+            grossRevenue,
+            commissionAmount,
+            effectiveCommissionRate,
+            payoutAmount: Math.max(grossRevenue - commissionAmount, 0),
+            currency: invoice.currency || 'VND',
+          },
+        ];
+      }
+    }
 
     await Promise.all(
       drafts
@@ -2314,7 +2371,7 @@ export class PaymentsService {
 
     const paidInvoices = await this.prisma.invoice.findMany({
       where: {
-        status: InvoiceStatus.paid,
+        invoiceType: InvoiceType.rent,
         paidAt: {
           gte: monthRange.billingPeriodStart,
           lt: monthRange.billingPeriodEndExclusive,
