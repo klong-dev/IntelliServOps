@@ -131,7 +131,6 @@ export class PaymentsService {
     const payouts = await this.prisma.partnerMonthlyPayout.findMany({
       where: {
         payoutMonth: monthRange.payoutMonth,
-        status: { not: PartnerMonthlyPayoutStatus.paid },
         payoutAmount: { gt: 0 },
       },
       select: {
@@ -194,7 +193,7 @@ export class PaymentsService {
         confirmedAt: payout.confirmedAt ?? null,
         confirmedByStaffId: payout.confirmedByStaffId ?? null,
       }))
-      .filter((item) => item.isDue);
+      .filter((item) => item.payoutAmount !== '0.00');
   }
 
   async confirmPartnerMonthlyPayout(
@@ -500,12 +499,7 @@ export class PaymentsService {
         };
       })
       .filter((item) => item !== null)
-      .filter(
-        (item) =>
-          item.isDue &&
-          item.payoutAmount !== '0.00' &&
-          item.status !== PaymentStatus.refunded,
-      )
+      .filter((item) => item.payoutAmount !== '0.00')
       .sort(
         (a, b) =>
           +new Date(a.dueDate) - +new Date(b.dueDate) ||
