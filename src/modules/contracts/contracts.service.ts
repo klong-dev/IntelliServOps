@@ -1351,6 +1351,8 @@ export class ContractsService {
       select: { id: true, invoiceNumber: true, dueDate: true },
     });
 
+    await this.advanceUtilityMeterBillingBaselines(utilityItems);
+
     for (const userId of params.memberUserIds) {
       await this.notifySafely({
         recipientType: ActorType.user,
@@ -1363,6 +1365,24 @@ export class ContractsService {
         relatedEntityId: createdInvoice.id,
       });
     }
+  }
+
+  private async advanceUtilityMeterBillingBaselines(
+    utilityItems: UtilityChargeItem[],
+  ): Promise<void> {
+    await Promise.all(
+      utilityItems.map((item) =>
+        this.prisma.utilityMeter.update({
+          where: { id: item.meterId },
+          data: {
+            previousReading: item.currentReading,
+            currentReading: item.currentReading,
+            readingDate: new Date(item.readingEndDate),
+          },
+          select: { id: true },
+        }),
+      ),
+    );
   }
 
   private async generateMissingMonthlyRentInvoicesForContract(

@@ -1917,6 +1917,49 @@ describe('ContractsService', () => {
         }),
       );
       expect(prisma.utilityReading.updateMany).toHaveBeenCalledTimes(2);
+      expect(prisma.utilityMeter.update).toHaveBeenCalledTimes(2);
+      expect(prisma.utilityMeter.update).toHaveBeenCalledWith({
+        where: { id: 'meter-electricity' },
+        data: {
+          previousReading: 1250,
+          currentReading: 1250,
+          readingDate: new Date('2026-04-30T00:00:00.000Z'),
+        },
+        select: { id: true },
+      });
+      expect(prisma.utilityMeter.update).toHaveBeenCalledWith({
+        where: { id: 'meter-water' },
+        data: {
+          previousReading: 42,
+          currentReading: 42,
+          readingDate: new Date('2026-04-30T00:00:00.000Z'),
+        },
+        select: { id: true },
+      });
+    });
+
+    it('should not advance utility meter baseline when utility invoice already exists', async () => {
+      prisma.rentalContract.findUnique.mockResolvedValue({
+        id: 'contract-utility-1',
+        apartmentId: 'apt-utility-1',
+        contractNumber: 'CTR-UTILITY-00001',
+        startDate: new Date('2026-04-01T00:00:00.000Z'),
+        endDate: new Date('2026-12-31T00:00:00.000Z'),
+        paymentMethod: PaymentMethodType.bank_transfer,
+        paymentDueDay: 5,
+        utilitiesIncluded: { electricity: false, water: false },
+        status: ContractStatus.active,
+        members: [{ userId: 'user-1' }],
+      } as any);
+      prisma.invoice.findFirst.mockResolvedValue({ id: 'existing-invoice' } as any);
+
+      await (service as any).generateMissingMonthlyUtilityInvoicesForContract(
+        'contract-utility-1',
+        new Date('2026-05-01T00:00:00.000Z'),
+      );
+
+      expect(prisma.invoice.create).not.toHaveBeenCalled();
+      expect(prisma.utilityMeter.update).not.toHaveBeenCalled();
     });
   });
 });

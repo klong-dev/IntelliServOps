@@ -222,17 +222,6 @@ export class PaymentsService {
     }
 
     const monthRange = this.resolveMonthRange(body.payoutMonth);
-    const drafts = await this.buildPartnerPayoutDrafts(monthRange, [
-      body.partnerId,
-    ]);
-    const draft = drafts.find((item) => item.partnerId === body.partnerId);
-
-    if (!draft || draft.payoutAmount <= 0) {
-      throw new NotFoundException(
-        'No payable amount found for this partner/month',
-      );
-    }
-
     const existing = await this.prisma.partnerMonthlyPayout.findUnique({
       where: {
         partnerId_payoutMonth: {
@@ -243,11 +232,36 @@ export class PaymentsService {
       select: {
         id: true,
         status: true,
+        dueDate: true,
+        grossRevenue: true,
+        commissionAmount: true,
+        payoutAmount: true,
+        effectiveCommissionRate: true,
+        currency: true,
       },
     });
 
     if (existing?.status === PartnerMonthlyPayoutStatus.paid) {
       throw new ConflictException('This partner payout is already confirmed');
+    }
+
+    const draft = existing
+      ? {
+          dueDate: existing.dueDate,
+          grossRevenue: Number(existing.grossRevenue),
+          commissionAmount: Number(existing.commissionAmount),
+          payoutAmount: Number(existing.payoutAmount),
+          effectiveCommissionRate: Number(existing.effectiveCommissionRate),
+          currency: existing.currency,
+        }
+      : (await this.buildPartnerPayoutDrafts(monthRange, [body.partnerId])).find(
+          (item) => item.partnerId === body.partnerId,
+        );
+
+    if (!draft || draft.payoutAmount <= 0) {
+      throw new NotFoundException(
+        'No payable amount found for this partner/month',
+      );
     }
 
     if (!existing && draft.dueDate > new Date()) {
