@@ -463,7 +463,17 @@ export class ChatGateway
 
     if (this.isAiModeRequest(dto.content)) {
       await this.chatService.clearHumanHandoff(dto.conversationId);
-    } else if (await this.chatService.hasHumanHandoff(dto.conversationId)) {
+      this.server.to(roomId).emit('chat:handoff_status', {
+        conversationId: dto.conversationId,
+        status: 'connected',
+        source: 'ai',
+        actorType,
+        senderName: 'HomeIQ Assistant',
+      });
+      return;
+    }
+
+    if (await this.chatService.hasHumanHandoff(dto.conversationId)) {
       return;
     }
 

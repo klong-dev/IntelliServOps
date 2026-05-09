@@ -91,6 +91,14 @@ const APARTMENT_DISCOVERY_PHRASES = [
   'goi y nha',
   'co can ho nao',
   'co nha nao',
+  'con nha khong',
+  'con phong khong',
+  'con can ho khong',
+  'gan',
+  'gan dai hoc',
+  'dai hoc',
+  'fpt',
+  'dam sen',
   'khu vuc',
   'quan',
   'district',
@@ -160,7 +168,7 @@ export class ChatAiService {
     });
 
     try {
-      const response = await this.callGemini({
+      const response = await this.callAiProvider({
         actorType: params.actorType,
         message,
         context,
@@ -195,19 +203,37 @@ export class ChatAiService {
   private isEnabled(): boolean {
     const enabled = this.configService.get<boolean>('aiService.enabled');
     const provider = this.configService.get<string>('aiService.provider');
-    const apiKey = this.configService.get<string>('aiService.geminiApiKey');
+    const geminiApiKey = this.configService.get<string>('aiService.geminiApiKey');
+    const openAiApiKey = this.configService.get<string>('aiService.openAiApiKey');
+    const openAiBaseUrl = this.configService.get<string>('aiService.openAiBaseUrl');
 
     const isConfigured =
-      enabled === true && provider === 'gemini' && Boolean(apiKey);
+      enabled === true &&
+      ((provider === 'gemini' && Boolean(geminiApiKey)) ||
+        (provider === 'openai' && Boolean(openAiApiKey) && Boolean(openAiBaseUrl)));
 
     if (!isConfigured && !this.hasLoggedDisabledWarning) {
       this.logger.log(
-        'Gemini chat integration disabled or not fully configured; skipping auto-replies.',
+        'AI chat integration disabled or not fully configured; skipping auto-replies.',
       );
       this.hasLoggedDisabledWarning = true;
     }
 
     return isConfigured;
+  }
+
+  private async callAiProvider(payload: {
+    actorType: SenderType;
+    message: string;
+    context: AiContextChunk[];
+  }): Promise<AiServiceResponse> {
+    const provider = this.configService.get<string>('aiService.provider');
+
+    if (provider === 'openai') {
+      return this.callOpenAiCompatible(payload);
+    }
+
+    return this.callGemini(payload);
   }
 
   private async callGemini(payload: {
@@ -265,7 +291,119 @@ export class ChatAiService {
     }
   }
 
+  private async callOpenAiCompatible(payload: {
+    actorType: SenderType;
+    message: string;
+    context: AiContextChunk[];
+  }): Promise<AiServiceResponse> {
+    const apiKey = this.configService.getOrThrow<string>('aiService.openAiApiKey');
+    const baseUrl = this.configService
+      .getOrThrow<string>('aiService.openAiBaseUrl')
+      .replace(/\/+$/, '');
+    const model = this.configService.get<string>('aiService.openAiModel') || 'main';
+    const wireApi = this.configService.get<string>('aiService.openAiWireApi') || 'chat';
+    const timeoutMs = this.configService.get<number>('aiService.timeoutMs') ?? 0;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(
+        wireApi === 'responses' ? `${baseUrl}/responses` : `${baseUrl}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(
+            wireApi === 'responses'
+              ? {
+                  model,
+                  temperature: 0.2,
+                  input: this.buildAiPrompt(payload),
+                  text: { format: { type: 'json_object' } },
+                }
+              : {
+                  model,
+                  temperature: 0.2,
+                  response_format: { type: 'json_object' },
+                  messages: [
+                    {
+                      role: 'user',
+                      content: this.buildAiPrompt(payload),
+                    },
+                  ],
+                },
+          ),
+          signal: controller.signal,
+        },
+      );
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        throw new Error(`OpenAI-compatible request failed (${response.status}): ${responseText}`);
+      }
+
+      const parsed = JSON.parse(responseText) as {
+        output_text?: string;
+        output?: Array<{ content?: Array<{ text?: string }> }>;
+        choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
+        usage?: {
+          input_tokens?: number;
+          output_tokens?: number;
+          total_tokens?: number;
+          prompt_tokens?: number;
+          completion_tokens?: number;
+        };
+      };
+      const rawText =
+        parsed.output_text ??
+        parsed.output
+          ?.flatMap((item) => item.content ?? [])
+          .map((item) => item.text ?? '')
+          .join('') ??
+        parsed.choices?.[0]?.message?.content ??
+        '';
+      const modelOutput = this.parseModelOutput(rawText);
+
+      return this.normalizeGeminiResponse({
+        model,
+        finishReason: parsed.choices?.[0]?.finish_reason,
+        modelOutput,
+        context: payload.context,
+        usage: parsed.usage
+          ? {
+              promptTokenCount: parsed.usage.input_tokens ?? parsed.usage.prompt_tokens,
+              candidatesTokenCount: parsed.usage.output_tokens ?? parsed.usage.completion_tokens,
+              totalTokenCount: parsed.usage.total_tokens,
+            }
+          : undefined,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   private buildGeminiRequest(payload: {
+    actorType: SenderType;
+    message: string;
+    context: AiContextChunk[];
+  }) {
+    return {
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: this.buildAiPrompt(payload) }],
+        },
+      ],
+    };
+  }
+
+  private buildAiPrompt(payload: {
     actorType: SenderType;
     message: string;
     context: AiContextChunk[];
@@ -281,37 +419,22 @@ export class ChatAiService {
         .join('\n'),
     );
 
-    return {
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: 'application/json',
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: [
-                'Bạn là HomeIQ Assistant cho nền tảng cho thuê căn hộ.',
-                'Mặc định trả lời bằng tiếng Việt như AI tư vấn.',
-                'Chỉ chuyển CSKH khi người dùng yêu cầu gặp người thật/CSKH/nhân viên, khiếu nại, hoặc câu hỏi nhạy cảm về tài khoản/thanh toán/hợp đồng riêng.',
-                'Chỉ dùng CONTEXT, không bịa dữ liệu.',
-                'Nếu gợi ý căn hộ, có thể thêm block apartment_card với apartmentId bằng sourceId từ context sourceType apartment hoặc ID xuất hiện trong apartment_catalog.',
-                'Trả JSON strict: {"answer":"string","intent":"ai_chat|human_support","confidence":0.0,"shouldHandoff":false,"handoffReason":null,"sourceIds":["S1"],"blocks":[{"type":"text","text":"string"},{"type":"apartment_card","apartmentId":"string"}]}',
-                '',
-                `ACTOR: ${payload.actorType}`,
-                `QUESTION: ${payload.message}`,
-                '',
-                'CONTEXT:',
-                sourceSections.length > 0
-                  ? sourceSections.join('\n\n')
-                  : 'No context was provided.',
-              ].join('\n'),
-            },
-          ],
-        },
-      ],
-    };
+    return [
+      'Bạn là HomeIQ Assistant cho nền tảng cho thuê căn hộ.',
+      'Mặc định trả lời bằng tiếng Việt như AI tư vấn.',
+      'Chỉ chuyển CSKH khi người dùng yêu cầu gặp người thật/CSKH/nhân viên, khiếu nại, hoặc câu hỏi nhạy cảm về tài khoản/thanh toán/hợp đồng riêng.',
+      'Chỉ dùng CONTEXT, không bịa dữ liệu.',
+      'Nếu gợi ý căn hộ, có thể thêm block apartment_card với apartmentId bằng sourceId từ context sourceType apartment hoặc ID xuất hiện trong apartment_catalog.',
+      'Trả JSON strict: {"answer":"string","intent":"ai_chat|human_support","confidence":0.0,"shouldHandoff":false,"handoffReason":null,"sourceIds":["S1"],"blocks":[{"type":"text","text":"string"},{"type":"apartment_card","apartmentId":"string"}]}',
+      '',
+      `ACTOR: ${payload.actorType}`,
+      `QUESTION: ${payload.message}`,
+      '',
+      'CONTEXT:',
+      sourceSections.length > 0
+        ? sourceSections.join('\n\n')
+        : 'No context was provided.',
+    ].join('\n');
   }
 
   private parseModelOutput(rawText: string): GeminiModelOutput {
@@ -382,7 +505,12 @@ export class ChatAiService {
         title: chunk.title,
       }));
 
-    const blocks = this.normalizeBlocks(params.modelOutput.blocks, allowedApartmentIds, answer);
+    const blocks = this.normalizeBlocks(
+      params.modelOutput.blocks,
+      allowedApartmentIds,
+      answer,
+      params.context,
+    );
 
     return {
       answer: shouldHandoff
@@ -405,6 +533,7 @@ export class ChatAiService {
     blocks: ChatBlock[] | undefined,
     allowedApartmentIds: Set<string>,
     answer: string,
+    context: AiContextChunk[],
   ): ChatBlock[] {
     const normalized: ChatBlock[] = [];
 
@@ -421,11 +550,119 @@ export class ChatAiService {
       }
     }
 
-    if (normalized.length === 0 && answer.trim()) {
-      normalized.push({ type: 'text', text: answer.trim() });
+    if (!normalized.some((block) => block.type === 'text') && answer.trim()) {
+      normalized.unshift({ type: 'text', text: answer.trim() });
+    }
+
+    const existingCardIds = new Set(
+      normalized
+        .filter((block): block is { type: 'apartment_card'; apartmentId: string } =>
+          block.type === 'apartment_card',
+        )
+        .map((block) => block.apartmentId),
+    );
+
+    for (const apartmentId of this.extractApartmentIdsForCards(context, answer)) {
+      if (!allowedApartmentIds.has(apartmentId) || existingCardIds.has(apartmentId)) {
+        continue;
+      }
+
+      normalized.push({ type: 'apartment_card', apartmentId });
+      existingCardIds.add(apartmentId);
     }
 
     return normalized;
+  }
+
+  private extractApartmentIdsForCards(
+    context: AiContextChunk[],
+    answer: string,
+  ): string[] {
+    const normalizedAnswer = this.normalizeText(answer);
+    const apartmentRefs = context
+      .filter((chunk) => ['apartment', 'apartment_catalog'].includes(chunk.sourceType))
+      .flatMap((chunk) => {
+        const refs: Array<{ id: string; label: string; codes: string[] }> = [];
+
+        if (chunk.sourceId) {
+          const label = `${chunk.title}\n${chunk.content}`;
+          refs.push({ id: chunk.sourceId, label, codes: this.extractApartmentCodes(label) });
+        }
+
+        const entries = chunk.content.split(/\n\n+/);
+        for (const entry of entries) {
+          const id = entry.match(/ID: ([^\n]+)/)?.[1]?.trim();
+          if (!id) {
+            continue;
+          }
+
+          refs.push({ id, label: entry, codes: this.extractApartmentCodes(entry) });
+        }
+
+        return refs;
+      });
+
+    const selectedIds = apartmentRefs
+      .filter((ref) => {
+        const normalizedLabel = this.normalizeText(ref.label);
+        return (
+          normalizedAnswer.includes(this.normalizeText(ref.id)) ||
+          ref.codes.some((code) => normalizedAnswer.includes(code)) ||
+          normalizedLabel
+            .split(' ')
+            .filter((token) => token.length >= 4)
+            .some((token) => normalizedAnswer.includes(token))
+        );
+      })
+      .map((ref) => ref.id);
+
+    const uniqueSelectedIds = Array.from(new Set(selectedIds));
+    if (uniqueSelectedIds.length > 0) {
+      return uniqueSelectedIds.slice(0, 3);
+    }
+
+    return Array.from(new Set(apartmentRefs.map((ref) => ref.id))).slice(0, 3);
+  }
+
+  private extractApartmentCodes(input: string): string[] {
+    return this.extractApartmentCodeQueries(input)
+      .map((code) => this.normalizeText(code))
+      .filter((code, index, values) => values.indexOf(code) === index);
+  }
+
+  private extractApartmentCodeQueries(input: string): string[] {
+    return Array.from(input.matchAll(/\bHIQ\s*-?\s*\d+[A-Z]?\b/gi))
+      .flatMap((match) => {
+        const compact = match[0].replace(/\s+/g, '').toUpperCase();
+        const normalized = compact.replace(/-/g, '');
+        return [compact, normalized];
+      })
+      .filter((code, index, values) => values.indexOf(code) === index);
+  }
+
+  private extractPriceReferencesVnd(input: string): number[] {
+    return Array.from(input.matchAll(/(\d+(?:[.,]\d+)?)\s*(trieu|tr|m|k|nghin|ngan|d|dong|vnd|đ)?/gi))
+      .map((match) => {
+        const amount = Number(match[1].replace(',', '.'));
+        if (!Number.isFinite(amount) || amount <= 0) {
+          return null;
+        }
+
+        const unit = this.normalizeText(match[2] ?? '');
+        if (['trieu', 'tr', 'm'].includes(unit)) {
+          return Math.round(amount * 1_000_000);
+        }
+        if (['k', 'nghin', 'ngan'].includes(unit)) {
+          return Math.round(amount * 1_000);
+        }
+        if (['d', 'dong', 'vnd'].includes(unit)) {
+          return Math.round(amount);
+        }
+
+        return amount < 1_000 ? Math.round(amount * 1_000) : Math.round(amount);
+      })
+      .filter((price): price is number => price !== null)
+      .filter((price, index, values) => values.indexOf(price) === index);
   }
 
   private clampNumber(value: number | undefined, min: number, max: number): number {
@@ -562,7 +799,14 @@ export class ChatAiService {
 
     const normalizedMessage = this.normalizeText(message);
     const maxBudgetVnd = this.extractMaxBudgetVnd(normalizedMessage);
-    if (!this.isApartmentDiscoveryMessage(normalizedMessage, maxBudgetVnd)) {
+    const apartmentCodes = this.extractApartmentCodes(message);
+    const apartmentCodeQueries = this.extractApartmentCodeQueries(message);
+    const priceReferences = this.extractPriceReferencesVnd(message);
+    if (
+      !this.isApartmentDiscoveryMessage(normalizedMessage, maxBudgetVnd) &&
+      apartmentCodes.length === 0 &&
+      priceReferences.length === 0
+    ) {
       return [];
     }
 
@@ -591,6 +835,15 @@ export class ChatAiService {
       ...(maxBudgetVnd
         ? { baseRentPrice: { lte: new Prisma.Decimal(maxBudgetVnd) } }
         : {}),
+      ...(apartmentCodeQueries.length > 0
+        ? {
+            OR: apartmentCodeQueries.flatMap((code) => [
+              { apartmentNumber: { contains: code, mode: 'insensitive' as const } },
+              { slug: { contains: code, mode: 'insensitive' as const } },
+              { buildingName: { contains: code, mode: 'insensitive' as const } },
+            ]),
+          }
+        : {}),
     } satisfies Prisma.ApartmentWhereInput;
     const apartmentOrderBy = maxBudgetVnd
       ? [{ baseRentPrice: 'asc' as const }, { updatedAt: 'desc' as const }]
@@ -600,7 +853,7 @@ export class ChatAiService {
       where: apartmentWhere,
       select: apartmentSelect,
       orderBy: apartmentOrderBy,
-      take: maxBudgetVnd ? 30 : 18,
+      take: maxBudgetVnd || apartmentCodes.length > 0 || priceReferences.length > 0 ? 30 : 18,
     });
 
     if (apartments.length === 0 && isHoChiMinhQuery) {
@@ -614,6 +867,21 @@ export class ChatAiService {
         select: apartmentSelect,
         orderBy: apartmentOrderBy,
         take: maxBudgetVnd ? 30 : 18,
+      });
+    }
+
+    if (apartments.length === 0 && priceReferences.length > 0) {
+      apartments = await this.prisma.apartment.findMany({
+        where: {
+          status: { in: PUBLIC_LISTING_STATUSES },
+          OR: priceReferences.flatMap((price) => [
+            { baseRentPrice: new Prisma.Decimal(price) },
+            { depositAmount: new Prisma.Decimal(price) },
+          ]),
+        },
+        select: apartmentSelect,
+        orderBy: apartmentOrderBy,
+        take: 30,
       });
     }
 
@@ -634,9 +902,23 @@ export class ChatAiService {
           .filter((value): value is string => Boolean(value))
           .join('\n');
 
+        const exactCodeScore = apartmentCodes.some((code) =>
+          this.normalizeText(haystack).includes(code),
+        )
+          ? 100
+          : 0;
+        const priceReferenceScore = priceReferences.some(
+          (price) =>
+            Number(apartment.baseRentPrice) === price ||
+            Number(apartment.depositAmount) === price,
+        )
+          ? 80
+          : 0;
         const priceScore = maxBudgetVnd ? 50 : 0;
         const score =
           this.scoreHaystack(messageTokens, haystack) +
+          exactCodeScore +
+          priceReferenceScore +
           (isHoChiMinhQuery ? 20 : 0) +
           priceScore;
 

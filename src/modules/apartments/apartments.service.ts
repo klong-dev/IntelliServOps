@@ -1,10 +1,13 @@
 import {
   Injectable,
+  Inject,
   NotFoundException,
   ForbiddenException,
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateApartmentDto,
@@ -59,12 +62,83 @@ export class ApartmentsService {
   private readonly cooperationVerifiedStatus = 'verified' as ApartmentStatus;
   private readonly cooperationPendingStatus = 'pending' as ApartmentStatus;
   private readonly defaultPartnerCommissionRate = 10;
+  private readonly apartmentCacheTtl = 15 * 60 * 1000;
+  private readonly apartmentCacheVersionKey = 'apartments:cache-version';
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly contractPdfService: ContractPdfService,
     private readonly notificationsService: NotificationsService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
+
+  private stableStringify(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value);
+    }
+
+    if (Array.isArray(value)) {
+      return '[' + value.map((item) => this.stableStringify(item)).join(',') + ']';
+    }
+
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => JSON.stringify(key) + ':' + this.stableStringify(record[key]));
+
+    return '{' + entries.join(',') + '}';
+  }
+
+  private async getApartmentCacheVersion(): Promise<number> {
+    try {
+      const cachedVersion = await this.cacheManager.get<number>(
+        this.apartmentCacheVersionKey,
+      );
+
+      if (typeof cachedVersion === 'number') {
+        return cachedVersion;
+      }
+    } catch {
+      return 1;
+    }
+
+    return 1;
+  }
+
+  private async getApartmentCacheKey(
+    scope: string,
+    payload: unknown,
+  ): Promise<string> {
+    const version = await this.getApartmentCacheVersion();
+    return 'apartments:v' + version + ':' + scope + ':' + this.stableStringify(payload);
+  }
+
+  private async getApartmentCache<T>(key: string): Promise<T | undefined> {
+    try {
+      const cached = await this.cacheManager.get<T>(key);
+      return cached === null ? undefined : cached;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async setApartmentCache(key: string, value: unknown): Promise<void> {
+    try {
+      await this.cacheManager.set(key, value, this.apartmentCacheTtl);
+    } catch {}
+  }
+
+  private async bumpApartmentCacheVersion(): Promise<void> {
+    try {
+      const version = await this.getApartmentCacheVersion();
+      await this.cacheManager.set(
+        this.apartmentCacheVersionKey,
+        version + 1,
+        24 * 60 * 60 * 1000,
+      );
+    } catch {}
+  }
 
   private async ensureOwnerPartnerDefaultCommission(
     ownerId?: string | null,
@@ -694,6 +768,13 @@ export class ApartmentsService {
    * By default returns all statuses unless status filter is provided
    */
   async search(searchDto: SearchApartmentDto) {
+    const cacheKey = await this.getApartmentCacheKey('search', searchDto);
+    const cachedResult = await this.getApartmentCache(cacheKey);
+
+    if (cachedResult) {
+      return cachedResult;
+    }
+
     const {
       provinceCode,
       wardCode,
@@ -869,19 +950,35 @@ export class ApartmentsService {
 
     const enrichedItems = await this.enrichApartmentsWithWardAddress(items);
 
-    return {
+    const result = {
       items: enrichedItems,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
     };
+
+    await this.setApartmentCache(cacheKey, result);
+
+    return result;
   }
 
   /**
    * Get apartment by ID with full details
    */
   async findOne(id: string, currentUser?: JwtPayload) {
+    const cacheKey = !currentUser
+      ? await this.getApartmentCacheKey('detail', { id })
+      : null;
+
+    if (cacheKey) {
+      const cachedResult = await this.getApartmentCache(cacheKey);
+
+      if (cachedResult) {
+        return cachedResult;
+      }
+    }
+
     const apartmentDetailQuery = {
       include: {
         owner: {
@@ -1065,7 +1162,7 @@ export class ApartmentsService {
     void _rooms;
     void _apartmentAmenities;
 
-    return {
+    const result = {
       ...apartmentWithoutRooms,
       amenities: this.mapApartmentAmenities(apartment.apartmentAmenities),
       streetAddress: apartment.streetAddress,
@@ -1081,6 +1178,12 @@ export class ApartmentsService {
       provinceName: enrichedApartment.provinceName,
       fullAddress: enrichedApartment.fullAddress,
     };
+
+    if (cacheKey) {
+      await this.setApartmentCache(cacheKey, result);
+    }
+
+    return result;
   }
 
   async rateApartment(
@@ -1155,10 +1258,14 @@ export class ApartmentsService {
       _avg: { rating: true },
     });
 
-    return {
+    const result = {
       ...createdRating,
       averageRating: this.toRoundedRating(ratingAggregate._avg.rating),
     };
+
+    await this.bumpApartmentCacheVersion();
+
+    return result;
   }
 
   /**
@@ -1250,6 +1357,7 @@ export class ApartmentsService {
     });
 
     await this.ensureOwnerPartnerDefaultCommission(ownerId);
+    await this.bumpApartmentCacheVersion();
 
     return this.normalizeApartmentMediaFields(apartment);
   }
@@ -1373,6 +1481,8 @@ export class ApartmentsService {
       });
     }
 
+    await this.bumpApartmentCacheVersion();
+
     return this.normalizeApartmentMediaFields(apartment);
   }
 
@@ -1480,7 +1590,7 @@ export class ApartmentsService {
       await this.validateAmenityIds(updateDto.amenityIds);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       if (updateDto?.amenityIds) {
         await tx.apartmentAmenity.deleteMany({ where: { apartmentId: id } });
       }
@@ -1510,6 +1620,10 @@ export class ApartmentsService {
         },
       });
     });
+
+    await this.bumpApartmentCacheVersion();
+
+    return result;
   }
 
   async rejectPartnerCooperation(
@@ -1589,13 +1703,17 @@ export class ApartmentsService {
       });
     }
 
-    return {
+    const result = {
       id: updatedApartment.id,
       apartmentNumber: updatedApartment.apartmentNumber,
       status: updatedApartment.status,
       rejectedAt,
       rejectionReason: reason,
     };
+
+    await this.bumpApartmentCacheVersion();
+
+    return result;
   }
 
   /**
@@ -1733,6 +1851,8 @@ export class ApartmentsService {
       });
     });
 
+    await this.bumpApartmentCacheVersion();
+
     return this.normalizeApartmentMediaFields(updatedApartment);
   }
 
@@ -1749,7 +1869,7 @@ export class ApartmentsService {
       throw new NotFoundException('Apartment not found');
     }
 
-    return this.prisma.apartment.update({
+    const result = await this.prisma.apartment.update({
       where: { id },
       data: { status: ApartmentStatus.inactive },
       select: {
@@ -1758,12 +1878,23 @@ export class ApartmentsService {
         status: true,
       },
     });
+
+    await this.bumpApartmentCacheVersion();
+
+    return result;
   }
 
   /**
    * Get apartments by owner (for owner dashboard)
    */
   async findByOwner(ownerId: string) {
+    const cacheKey = await this.getApartmentCacheKey('owner', { ownerId });
+    const cachedResult = await this.getApartmentCache(cacheKey);
+
+    if (cachedResult) {
+      return cachedResult;
+    }
+
     const apartments = await this.prisma.apartment.findMany({
       where: { ownerId },
       include: {
@@ -1891,14 +2022,18 @@ export class ApartmentsService {
       };
     });
 
-    return this.enrichApartmentsWithWardAddress(apartmentWithRating);
+    const result = await this.enrichApartmentsWithWardAddress(apartmentWithRating);
+
+    await this.setApartmentCache(cacheKey, result);
+
+    return result;
   }
 
   /**
    * Update apartment status
    */
   async updateStatus(id: string, status: ApartmentStatus) {
-    return this.prisma.apartment.update({
+    const result = await this.prisma.apartment.update({
       where: { id },
       data: { status },
       select: {
@@ -1907,6 +2042,10 @@ export class ApartmentsService {
         status: true,
       },
     });
+
+    await this.bumpApartmentCacheVersion();
+
+    return result;
   }
 
   /**
@@ -2085,6 +2224,8 @@ export class ApartmentsService {
       relatedEntityId: id,
     });
 
+    await this.bumpApartmentCacheVersion();
+
     return {
       ...result.approvedApartment,
       cooperationContractId: result.contract.id,
@@ -2213,6 +2354,8 @@ export class ApartmentsService {
       });
     }
 
+    await this.bumpApartmentCacheVersion();
+
     return {
       apartmentId: apartment.id,
       apartmentNumber: apartment.apartmentNumber,
@@ -2329,6 +2472,8 @@ export class ApartmentsService {
         relatedEntityId: apartmentId,
       });
     }
+
+    await this.bumpApartmentCacheVersion();
 
     return {
       apartmentId: updated.updatedApartment.id,

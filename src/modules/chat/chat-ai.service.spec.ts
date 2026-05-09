@@ -142,6 +142,109 @@ describe('ChatAiService', () => {
     expect(payload.contents[0].parts[0].text).toContain('ID: apt-1');
   });
 
+  it('adds apartment cards when Gemini mentions apartments without blocks', async () => {
+    prisma.apartment.findMany.mockResolvedValue([
+      {
+        id: 'apt-fpt-1',
+        buildingName: 'Sunrise Riverside Tower B',
+        apartmentNumber: 'HIQ-010A',
+        slug: 'sunrise-riverside-tower-b-hiq-010a',
+        streetAddress: 'Gần Đại học FPT',
+        totalArea: new Prisma.Decimal(200),
+        numberOfBedrooms: 2,
+        numberOfBathrooms: 2,
+        furnishingStatus: FurnishingStatus.unfurnished,
+        baseRentPrice: new Prisma.Decimal(2_000_000),
+        depositAmount: new Prisma.Decimal(4_000_000),
+        status: ApartmentStatus.available,
+        description: 'Căn hộ gần đại học FPT.',
+      },
+      {
+        id: 'apt-fpt-2',
+        buildingName: 'Căn hộ HomeIQ',
+        apartmentNumber: 'HIQ-001B',
+        slug: 'can-ho-homeiq-hiq-001b',
+        streetAddress: 'Gần Đại học FPT',
+        totalArea: new Prisma.Decimal(36),
+        numberOfBedrooms: 1,
+        numberOfBathrooms: 1,
+        furnishingStatus: FurnishingStatus.fully_furnished,
+        baseRentPrice: new Prisma.Decimal(5_000),
+        depositAmount: new Prisma.Decimal(10_000),
+        status: ApartmentStatus.available,
+        description: 'Căn hộ gần đại học FPT.',
+      },
+    ] as any);
+    mockGeminiResponse({
+      answer:
+        'HomeIQ có hai căn gần Đại học FPT: Sunrise Riverside Tower B HIQ-010A và Căn hộ HomeIQ HIQ-001B.',
+      intent: 'ai_chat',
+      confidence: 0.91,
+      shouldHandoff: false,
+      handoffReason: null,
+      sourceIds: ['S1'],
+      blocks: [],
+    });
+
+    const result = await service.generateReply({
+      conversationId: 'conversation-fpt',
+      actorType: SenderType.user,
+      message: 'Tìm nhà gần đại học FPT',
+    });
+
+    expect(result?.blocks).toEqual(
+      expect.arrayContaining([
+        { type: 'apartment_card', apartmentId: 'apt-fpt-1' },
+        { type: 'apartment_card', apartmentId: 'apt-fpt-2' },
+      ]),
+    );
+  });
+
+  it('injects apartment context for availability questions', async () => {
+    prisma.apartment.findMany.mockResolvedValue([
+      {
+        id: 'apt-dam-sen',
+        buildingName: 'Đầm Sen Residence',
+        apartmentNumber: 'HIQ-020A',
+        slug: 'dam-sen-residence-hiq-020a',
+        streetAddress: 'Đầm Sen',
+        totalArea: new Prisma.Decimal(45),
+        numberOfBedrooms: 1,
+        numberOfBathrooms: 1,
+        furnishingStatus: FurnishingStatus.fully_furnished,
+        baseRentPrice: new Prisma.Decimal(6_000_000),
+        depositAmount: new Prisma.Decimal(12_000_000),
+        status: ApartmentStatus.available,
+        description: 'Căn hộ khu Đầm Sen còn trống.',
+      },
+    ] as any);
+    mockGeminiResponse({
+      answer: 'Đầm Sen Residence HIQ-020A hiện đang sẵn sàng cho thuê.',
+      intent: 'ai_chat',
+      confidence: 0.9,
+      shouldHandoff: false,
+      handoffReason: null,
+      sourceIds: ['S1'],
+      blocks: [],
+    });
+
+    const result = await service.generateReply({
+      conversationId: 'conversation-dam-sen',
+      actorType: SenderType.user,
+      message: 'Căn hộ đầm sen còn nhà không?',
+    });
+
+    expect(result?.shouldHandoff).toBe(false);
+    expect(result?.blocks).toContainEqual({
+      type: 'apartment_card',
+      apartmentId: 'apt-dam-sen',
+    });
+
+    const [, requestInit] = mockFetch.mock.calls[0];
+    const payload = JSON.parse((requestInit?.body as string) || '{}');
+    expect(payload.contents[0].parts[0].text).toContain('Đầm Sen Residence');
+  });
+
   it('injects cheap apartments for budget queries', async () => {
     prisma.apartment.findMany.mockResolvedValue([
       {

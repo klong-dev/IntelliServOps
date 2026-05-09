@@ -274,7 +274,7 @@ export class ChatService {
 
     const metadata = this.asJsonObject(conversation?.metadata);
     const handoff = this.asJsonObject(metadata.handoff);
-    if (handoff.reason === 'low_confidence') {
+    if (handoff.reason === 'low_confidence' || handoff.reason === 'service_unavailable') {
       return false;
     }
     return handoff.status === 'connecting' || handoff.status === 'connected';

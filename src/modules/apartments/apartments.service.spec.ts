@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ApartmentsService } from './apartments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractPdfService } from '../contracts/contract-pdf.service';
@@ -23,6 +24,7 @@ const mockedAxios = jest.mocked(axios, true);
 describe('ApartmentsService', () => {
   let service: ApartmentsService;
   let prisma: ReturnType<typeof createPrismaMock>;
+  let cacheManager: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
 
   const contractPdfService = {
     generatePartnerCooperationPdf: jest.fn(),
@@ -67,6 +69,11 @@ describe('ApartmentsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    cacheManager = {
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn().mockResolvedValue(undefined),
+    };
     prisma.apartment.findMany.mockResolvedValue([] as any);
 
     mockedAxios.get.mockResolvedValue({
@@ -85,11 +92,70 @@ describe('ApartmentsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: ContractPdfService, useValue: contractPdfService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: CACHE_MANAGER, useValue: cacheManager },
       ],
     }).compile();
 
     service = module.get<ApartmentsService>(ApartmentsService);
     jest.clearAllMocks();
+  });
+
+
+  it('should return apartment search results from cache', async () => {
+    cacheManager.get.mockResolvedValueOnce(1).mockResolvedValueOnce({
+      items: [{ id: 'apt-cached' }],
+      total: 1,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
+
+    const result = await service.search({ page: 1, limit: 20 });
+
+    expect(result.items[0].id).toBe('apt-cached');
+    expect(prisma.apartment.findMany).not.toHaveBeenCalled();
+  });
+
+  it('should cache apartment search results after database lookup', async () => {
+    prisma.apartment.findMany.mockResolvedValue([mockApartmentListItem()] as any);
+    prisma.apartment.count.mockResolvedValue(1);
+    prisma.apartmentRating.groupBy.mockResolvedValue([] as any);
+
+    await service.search({ page: 1, limit: 20 });
+
+    expect(cacheManager.set).toHaveBeenCalledWith(
+      expect.stringContaining('apartments:v1:search:'),
+      expect.objectContaining({ total: 1 }),
+      15 * 60 * 1000,
+    );
+  });
+
+  it('should return public apartment detail from cache', async () => {
+    cacheManager.get.mockResolvedValueOnce(1).mockResolvedValueOnce({
+      id: 'apt-cached',
+    });
+
+    const result = await service.findOne('apt-123');
+
+    expect(result.id).toBe('apt-cached');
+    expect(prisma.apartment.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('should bypass detail cache for authenticated users', async () => {
+    const user = mockUserJwtPayload();
+    prisma.apartment.findUnique.mockResolvedValue(mockApartmentDetail() as any);
+    prisma.apartmentRating.aggregate.mockResolvedValue({
+      _avg: { rating: 4.2 },
+    } as any);
+    prisma.userContractMember.findFirst.mockResolvedValue(null);
+    prisma.apartmentRating.findUnique.mockResolvedValue(null);
+
+    await service.findOne('apt-123', user);
+
+    expect(cacheManager.get).not.toHaveBeenCalledWith(
+      expect.stringContaining('apartments:cache-version'),
+    );
+    expect(prisma.apartment.findUnique).toHaveBeenCalled();
   });
 
   it('should return paginated apartment search results with rating', async () => {
