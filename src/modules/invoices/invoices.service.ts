@@ -2773,7 +2773,7 @@ export class InvoicesService {
         invoice,
         ticket.id,
         'Hết thời gian gia hạn tiền nhà',
-        'Thời gian gia hạn 3 ngày đã kết thúc. Hệ thống đã tạo ticket xử lý thu hồi.',
+        'Thời gian gia hạn 3 ngày đã kết thúc. Hệ thống đã tạo yêu cầu hỗ trợ xử lý thu hồi.',
       );
     }
   }
@@ -2844,7 +2844,7 @@ export class InvoicesService {
           title,
           message,
           actionUrl: `/tickets/${ticketId}`,
-          actionLabel: 'Xem ticket',
+          actionLabel: 'Xem yêu cầu hỗ trợ',
           relatedEntityType: 'Ticket',
           relatedEntityId: ticketId,
         }),

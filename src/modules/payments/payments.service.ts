@@ -317,7 +317,7 @@ export class PaymentsService {
     });
 
     return {
-      message: 'Partner monthly payout confirmed successfully',
+      message: 'Đã xác nhận thanh toán hàng tháng cho đối tác thành công',
       payoutId: payout.id,
       partnerId: payout.partnerId,
       payoutMonth: payout.payoutMonth,
@@ -698,7 +698,7 @@ export class PaymentsService {
         });
 
     return {
-      message: 'Contract deposit payout confirmed successfully',
+      message: 'Đã xác nhận hoàn trả tiền cọc hợp đồng thành công',
       payoutPaymentId: payoutPayment.id,
       contractId: contract.id,
       contractNumber: contract.contractNumber,

@@ -579,7 +579,7 @@ export class IoTService {
     const details = this.ioTMqttService.sendDoorPassword(espId, id, password);
     return {
       success: true,
-      message: 'Password sent successfully.',
+      message: 'Đã gửi mật khẩu thành công.',
       details: this.toSignalDetails(details, {
         deviceTopic: 'door',
         deviceId: details.doorId,
@@ -1873,7 +1873,7 @@ export class IoTService {
       deviceTopic: 'alarm',
       deviceId: deviceId ?? null,
       message:
-        'Fake fire alert dispatched. Matching active residents will receive push notifications.',
+        'Đã phát cảnh báo cháy thử. Cư dân đang hoạt động phù hợp sẽ nhận thông báo đẩy.',
       emittedAt: receivedAt,
     };
   }
@@ -2806,7 +2806,7 @@ export class IoTService {
 
     if (suspendedBoard) {
       throw new ForbiddenException(
-        'IoT services are temporarily disabled for this apartment',
+        'Dịch vụ IoT tạm thời bị vô hiệu hóa cho căn hộ này',
       );
     }
 
@@ -2847,7 +2847,7 @@ export class IoTService {
 
     if (blockedInvoice) {
       throw new ForbiddenException(
-        'IoT services are temporarily disabled because rent/utility invoices are overdue for more than 15 days',
+        'Dịch vụ IoT tạm thời bị vô hiệu hóa vì hóa đơn tiền nhà hoặc điện nước đã quá hạn hơn 15 ngày',
       );
     }
   }
